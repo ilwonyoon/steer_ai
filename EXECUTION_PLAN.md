@@ -6,7 +6,7 @@ Last updated: 2026-05-06
 
 This is the master execution document for Steer. Use it to track what we are building, why the current architecture exists, what is in scope for each phase, and which decisions have already been made.
 
-Steer is a macOS-first AI operations room for CLI coding agents. The core loop is simple: capture reports from multiple AI CLI sessions, show them in a DM-like room interface, and inject user replies or proactive instructions back into the correct session so work does not stall.
+Steer is a macOS-first AI action queue for CLI coding agents. The core loop is simple: capture reports from multiple AI CLI sessions, surface stuck or waiting sessions as prioritized action cards, and inject user replies or proactive instructions back into the correct session so work does not stall.
 
 ## Source Documents
 
@@ -19,21 +19,23 @@ Keep this document focused on execution. Durable product or architecture changes
 
 ## Current Product Decisions
 
-- Steer is an AI operations room, not a full chat mirror.
-- The default UX is a unified room, but users may later create multiple rooms.
+- Steer is an AI action queue, not a full chat mirror.
+- The default UX is an action card stack, not a chat timeline.
+- Opening a card shows a Claude/Codex-style session detail with full context and reply controls.
+- Rooms are grouping/filtering constructs, and users may later create multiple rooms.
 - Room membership and session invitation/routing are follow-up specs.
 - v1 is Mac-first and local-first.
 - The core loop requires bidirectional control: report capture plus instruction injection.
 - Hook-only mode is not sufficient for the product. It can only be a read-only fallback.
 - Happy is a reference implementation and possible source for wrapper/pty learnings, not the product architecture to fork wholesale.
-- Design direction: Instagram DM for messaging ergonomics, Telegram for multi-room flexibility, Linear for technical status and metadata.
+- Design direction: Tinder-style card stack for primary triage, Claude/Codex-style session detail, Instagram DM for reply lightness, Gmail/Smart Reply for quick responses, and Linear for technical status and metadata.
 
 ## Target v1 Architecture
 
 ```text
 Steer.app
   - SwiftUI/AppKit shell
-  - Menu bar and room UI
+  - Menu bar and action queue UI
   - Notifications
   - Local API client
 
@@ -106,11 +108,12 @@ Goal: make the core loop usable from a native Mac UI.
 
 - [ ] Create SwiftUI macOS app shell.
 - [ ] Add menu bar status item.
-- [ ] Build default unified room view.
+- [ ] Build default action card stack view.
+- [ ] Open card into Claude/Codex-style session detail.
 - [ ] Show session badges and state pills.
-- [ ] Render report, decision, blocker, completion, and idle messages.
+- [ ] Render report, decision, blocker, completion, and idle cards.
 - [ ] Add quick reply / quick instruction chips.
-- [ ] Add composer with target session selection.
+- [ ] Add detail composer with target session selection.
 - [ ] Add macOS notifications for waiting/blocker states.
 
 Exit criteria:
@@ -160,7 +163,11 @@ Exit criteria:
 
 ### 2026-05-06: Product Framing
 
-Steer is framed as an AI operations room, not just a decision triage tool. The user should be able to receive reports, answer questions, and proactively instruct sessions.
+Steer is framed as an AI action queue / operations room, not just a decision triage tool. The user should be able to receive reports, answer questions, and proactively instruct sessions.
+
+### 2026-05-06: Card Stack Primary UX
+
+The default UI is a Tinder-style action card stack for stuck, waiting, decision, completion, and idle AI sessions. Chat/message views are secondary detail surfaces opened from a card. The detail should feel closer to Claude/Codex session context than a pure DM thread, while reply surfaces can keep Instagram DM-like lightness.
 
 ### 2026-05-06: Room Model
 
@@ -199,7 +206,7 @@ v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid
 - Do not require Accessibility permissions for core input injection.
 - Do not attach to arbitrary existing terminal sessions in v1.
 - Do not send raw transcripts to any remote service without an explicit user-controlled setting.
-- Keep UI message-first. Avoid turning the first version into a terminal dashboard.
+- Keep UI action-card-first. Avoid turning the first version into a chat timeline or terminal dashboard.
 - Keep wrapper, agent, and app responsibilities separate.
 
 ## Progress Notes

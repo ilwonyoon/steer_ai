@@ -1,8 +1,8 @@
 # Steer
 
-Steer is a macOS-first AI operations room for CLI coding agents.
+Steer is a macOS-first action queue for CLI coding agents.
 
-The goal is to keep multiple AI coding sessions moving: capture reports from Claude Code, Codex, and other CLI agents; show them in a lightweight DM-like room interface; and inject user replies or proactive instructions back into the correct session.
+The goal is to keep multiple AI coding sessions moving: capture reports from Claude Code, Codex, and other CLI agents; surface stuck or waiting sessions as a fast card stack; and inject user replies or proactive instructions back into the correct session.
 
 ## Current Status
 
@@ -19,12 +19,13 @@ This repository is in the planning and early execution stage. It currently conta
 
 ## Product Direction
 
-Steer is not a full chat mirror. It is an AI operations room:
+Steer is not a full chat mirror. It is an AI action queue:
 
-- Reports from multiple CLI sessions appear in one default room.
+- Waiting, blocked, decision, completion, and idle states appear as prioritized cards.
+- Opening a card shows full Claude/Codex-style session context and transcript.
 - Users can answer questions or send proactive instructions.
 - The system tracks session states such as `running`, `waiting`, `blocked`, `idle`, and `done`.
-- The design borrows messaging ergonomics from Instagram DM, multi-room flexibility from Telegram, and technical status clarity from Linear.
+- The design uses a Tinder-style stack for one-at-a-time triage, Claude/Codex-style detail for context, Instagram DM-like reply lightness, and Linear-style technical status clarity.
 
 ## Technical Direction
 

@@ -1,18 +1,19 @@
 # Steer Design System
 
-## 1. Visual Theme & Atmosphere
+## 1. Product Feel
 
-Steer is an AI operations room that feels as immediate as Instagram DM and as precise as Linear. The product should not look like a developer dashboard first. It should feel like a fast, personal messaging app where AI CLI sessions report progress, ask questions, and receive instructions without making the user return to a terminal.
+Steer is an AI action queue, not a chat app first. The default screen should help the user answer the AI session that is most likely to be stuck, then move to the next one without hunting through terminal windows or long threads.
 
-The interface is compact, quiet, and message-first. The chat stream carries the product. Chrome should stay mostly monochrome so that session state, urgency, and user actions are easy to scan. Use Linear-style status language for technical metadata, but keep the interaction model close to mobile messaging: room list, unread counts, bubbles/cards, quick replies, and a composer that can target a session.
+The primary interaction is a large card stack: one active AI request in front, with the backlog visible behind it. Opening a card leads to a Claude/Codex-style session detail where the user can read full context and send a precise instruction.
 
 Reference mix:
-- Primary: Instagram DM for light, immediate, mobile-first messaging.
-- Secondary: Telegram for multi-room structure and flexible chat organization.
-- Technical layer: Linear for status, priority, dense metadata, and calm precision.
-- Optional Mac interaction: Raycast for command-style routing and session switching.
+- Primary interaction: Tinder-style card stack for one-at-a-time triage.
+- Triage workflow: Gmail inbox plus Smart Reply for fast decision handling.
+- Detail view: Claude/Codex-style assistant session for full context and response.
+- Visual tone: Instagram DM for immediacy, lightness, and approachable messaging surfaces.
+- Technical layer: Linear for status, priority, metadata, and calm precision.
 
-Do not copy Instagram feed, stories, reels, profile grids, or brand gradient behavior. Steer borrows DM ergonomics, not social media content patterns.
+Do not use dating-app aesthetics, social scoring, profile browsing, likes, matches, or playful swipe semantics. Steer borrows the one-card-at-a-time stack mechanic, not Tinder's content model.
 
 ## 2. Color Palette & Roles
 
@@ -35,12 +36,12 @@ Do not copy Instagram feed, stories, reels, profile grids, or brand gradient beh
 ### Actions
 - Primary Action Blue: `#0A84FF`
 - Primary Action Pressed: `#006EDB`
+- Quick Chip Fill Light: `#F1F1F3`
+- Quick Chip Fill Dark: `#1F1F23`
 - Incoming Bubble Light: `#F0F0F2`
 - Incoming Bubble Dark: `#262629`
 - Outgoing Bubble Light: `#0A84FF`
 - Outgoing Bubble Dark: `#0A84FF`
-- Composer Fill Light: `#F1F1F3`
-- Composer Fill Dark: `#1F1F23`
 
 ### Session Status
 - Running: `#34C759`
@@ -50,9 +51,9 @@ Do not copy Instagram feed, stories, reels, profile grids, or brand gradient beh
 - Idle: `#A1A1AA`
 - Info: `#5E6AD2`
 
-Use status colors sparingly in pills, dots, thin borders, and small icons. Do not flood cards or backgrounds with saturated color.
+Use status colors in dots, pills, thin borders, and small icons. Do not flood the stack, background, or cards with saturated color.
 
-## 3. Typography Rules
+## 3. Typography
 
 Use the platform system font.
 
@@ -65,146 +66,175 @@ Use the platform system font.
 - Monospace: `"SF Mono", "Menlo", "Monaco", "Consolas", monospace`
 
 ### Type Scale
-- Screen Title: 17pt / 17px, weight 600, line-height 1.25
-- Room Name: 16pt / 16px, weight 600, line-height 1.25
-- Sender Name: 14pt / 14px, weight 600, line-height 1.25
-- Message Body: 15pt / 15px, weight 400, line-height 1.38
-- Message Summary: 14pt / 14px, weight 400, line-height 1.35
+- Queue Title: 17pt / 17px, weight 600, line-height 1.25
+- Card Title: 18pt / 18px, weight 650, line-height 1.25
+- Card Summary: 15pt / 15px, weight 400, line-height 1.38
+- Detail Message Body: 15pt / 15px, weight 400, line-height 1.38
+- Session Name: 14pt / 14px, weight 600, line-height 1.25
 - Metadata: 12pt / 12px, weight 400, line-height 1.25
 - Status Pill: 11pt / 11px, weight 600, line-height 1.0
-- Button: 14pt / 14px, weight 600, line-height 1.0
+- Button / Chip: 14pt / 14px, weight 600, line-height 1.0
 - Code / CLI: 12pt / 12px, weight 400, line-height 1.45
 
-Avoid large marketing-style headings inside the product. This is a working surface, not a landing page.
+Avoid large marketing headings inside the product. This is a working surface.
 
-## 4. Component Stylings
+## 4. Primary Screen: Action Card Stack
 
 ### App Shell
-- Left rail or sheet: room list with unread badges and session counts.
-- Main pane: selected room message stream.
-- Optional right/detail pane on desktop: selected session details, transcript, metrics.
-- Mobile should use a familiar messaging hierarchy: room list -> room -> session detail.
+- Main pane: centered action card stack.
+- Top bar: queue name, urgent/waiting count, filter/sort controls.
+- Optional side rail on desktop: session filters, rooms, recent completions, search.
+- Menu bar popover: urgent and waiting cards first.
+- Mobile starts directly on the active stack, not a room list.
 
-### Room Row
-- Height: 56-64pt.
-- Leading: room icon or stacked session avatars.
-- Title: room name, semibold.
-- Subtitle: latest report or active session summary.
-- Trailing: timestamp, unread count, and small status aggregate.
-- Pressed: subtle gray fill.
+### Action Card
+- Shows one AI session that may need user attention.
+- Recommended desktop size: 520-680px wide, 560-720px tall.
+- Recommended mobile size: 92vw wide, 68-76vh tall.
+- Radius: 18-24pt.
+- Elevation: subtle shadow plus hairline border.
+- Background cards: offset 8-14px, scaled 96-98%, muted opacity.
 
-### Message Bubbles And Cards
-- User instructions use outgoing blue bubbles aligned right.
-- Agent reports use incoming neutral bubbles/cards aligned left.
-- Decision/blocker messages may expand into compact cards with options.
-- Keep normal reports lightweight. Do not card every single message if a bubble is enough.
-- Radius: 18-20pt for simple bubbles, 12pt for structured decision cards.
-- Max width: 76% on mobile, 640px on desktop.
+Required content:
+- Session badge: provider, project/session name, current state.
+- Waiting age: e.g. `waiting 12m`.
+- Category: `question`, `decision`, `blocker`, `completion`, `idle`.
+- AI-generated summary in 3-6 lines.
+- Why it needs attention.
+- Suggested response chips.
+- Primary action: `Reply`.
+- Secondary actions: `Open`, `Skip`, `Snooze`, `Done`.
 
-### Session Badge
-- Compact label showing session display name, agent, and state.
-- Example: `brief-app · waiting`
-- Use a 6-8px status dot plus small text. Do not rely on color alone.
+The active card should communicate enough context to answer simple cases without opening detail. It should not attempt to display the full transcript.
 
-### Status Pills
-- Running: green dot, label `running`
-- Waiting: amber dot, label `waiting`
-- Blocked: red dot, label `blocked`
-- Done: gray dot, label `done`
-- Idle: gray outline dot, label `idle`
-- Pill background should be a 10-14% tint of the status color.
+### Stack Navigation
+- Click/tap card: open detail.
+- Arrow keys or swipe/trackpad: move through cards.
+- `Enter`: reply to active card.
+- `Space`: preview/open detail.
+- `S`: snooze.
+- `D`: mark done when no response is needed.
+- `Cmd+K`: switch session, room, or command.
 
-### Quick Reply / Quick Instruction
-- Use horizontal chips below a message.
-- Height: 32-36pt.
-- Radius: 16-18pt.
-- Default fill: surface.
-- Primary recommended option may use blue text or a subtle blue tint.
-- Chips should contain short action text, not long explanations.
+Use rotation and stack movement subtly. The interaction should feel fast and precise, not game-like.
+
+## 5. Detail View: Session Thread
+
+Opening a card shows the full session context in a Claude/Codex-style view.
+
+### Layout
+- Header: session name, provider, state, cwd/project, room, elapsed waiting time.
+- Body: full message/transcript view with grouped agent reports and user instructions.
+- Right pane on wide desktop: metadata, files mentioned, recent commands, delivery status.
+- Bottom: reply composer with quick chips.
+
+### Message Surfaces
+- Agent messages use neutral incoming bubbles or compact cards.
+- User instructions use outgoing blue bubbles.
+- Structured blocker/decision messages may use small cards.
+- Do not make every transcript line a heavy card.
+- CLI snippets use SF Mono and compact code blocks.
 
 ### Composer
-- Rounded input bar pinned to the bottom of the room.
-- Fill: composer fill.
-- Min height: 40pt; grows up to 120pt before scrolling.
-- Leading target control: selected session or `@` mention affordance.
-- Trailing send button: circular blue button when text exists; muted icon when empty.
-- Support `@session` routing. The mention token should be visually distinct but quiet.
+- Bottom-pinned input bar.
+- Min height: 40pt; grows to 120pt before scrolling.
+- Leading target control: selected session or `@session` mention.
+- Trailing send button: circular blue button when text exists.
+- Supports proactive instructions, not only replies to the active card.
 
-### Notifications
-- Use urgency levels:
-  - Silent: progress reports, no push.
-  - Normal: completion or low-risk question.
-  - Urgent: blocker, waiting decision, failed injection.
-- Notification copy should be short and action-oriented.
+### Quick Chips
+- Horizontal chips above the composer.
+- Height: 32-36pt.
+- Radius: 16-18pt.
+- Default fill: quick chip fill.
+- Keep text short: `Proceed`, `Test first`, `Use option A`, `Explain more`, `Stop here`.
+- Recommended option may use blue text or subtle blue tint.
 
-## 5. Layout Principles
+## 6. Rooms, Filters, And Routing
+
+Rooms are a grouping model, not the v1 home screen. The default experience can be one unified queue, but users may later create multiple rooms and decide which CLI sessions belong there.
+
+Use rooms for:
+- Project grouping.
+- Session filtering.
+- Notification policy.
+- Later invitation/routing controls.
+
+Do not require the user to manage rooms before the product is useful.
+
+## 7. Layout Principles
 
 Base grid: 4pt with 8pt as the common spacing unit.
 
-- Outer page padding: 12-16pt mobile, 16-24px desktop.
-- Room list row padding: 12-16pt horizontal.
-- Message vertical gap: 6-10pt within same sender, 14-18pt between sender/state changes.
-- Message inner padding: 10-14pt vertical, 12-16pt horizontal.
-- Quick action gap: 8pt.
+- Outer padding: 12-16pt mobile, 16-24px desktop.
+- Card internal padding: 18-24pt.
+- Card section gap: 12-18pt.
+- Chip gap: 8pt.
+- Detail message gap: 6-10pt within same sender, 14-18pt between state changes.
 - Composer padding: 8-12pt.
 
-Use dense but breathable layouts. The user should see several active sessions and recent reports without the UI becoming a project-management table.
+The default screen should optimize for the next action, not for seeing every message at once. Density belongs in detail views and filters.
 
-## 6. Depth & Elevation
+## 8. Depth & Elevation
 
-Use nearly flat surfaces.
+Use mostly flat surfaces with a clear stack layer.
 
 - Level 0: canvas.
-- Level 1: subtle surface fill for room rows, composer, incoming bubbles.
-- Level 2: hairline border for structured cards and panels.
-- Level 3: sheet/modal shadow only.
+- Level 1: detail surfaces, composer, side rail.
+- Level 2: active action card.
+- Level 3: background stack cards.
+- Level 4: sheet/modal shadow only.
 
-Avoid decorative gradients, glow effects, and oversized cards. Depth should come from spacing, hairlines, and state hierarchy.
+Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels. Depth should come from card ordering, spacing, hairlines, and state hierarchy.
 
-## 7. Do's And Don'ts
+## 9. Do's And Don'ts
 
 ### Do
-- Make the default experience feel like a messaging app.
-- Keep chrome monochrome and let status colors carry meaning.
+- Make the default screen a stuck-AI action queue.
+- Let the active card answer: what is waiting, why it matters, and what I can do.
+- Preserve Instagram DM's lightness in message surfaces and replies.
+- Use Claude/Codex-style session detail for full context.
 - Use Linear-like labels for technical state.
-- Let reports be easy to skim.
 - Keep quick actions short and tappable.
-- Support proactive instructions, not only replies.
-- Make room/session routing visible but not heavy.
+- Support proactive instructions.
+- Make room/session routing visible but secondary.
 - Use SF Symbols or established icon libraries for common actions.
 
 ### Don't
 - Do not build a Slack clone.
+- Do not make the default UI a chat timeline.
 - Do not build a terminal dashboard as the primary surface.
+- Do not use Tinder's dating language, social gestures, or playful match feedback.
 - Do not use Instagram feed, story, reel, profile, or social engagement patterns.
 - Do not use large hero text inside the app.
 - Do not use purple/blue gradients as the dominant look.
 - Do not put cards inside cards.
-- Do not make every message a heavy card.
 - Do not hide critical state behind color only.
 
-## 8. Responsive Behavior
+## 10. Responsive Behavior
 
 ### Mobile
-- Default to room list -> room detail navigation.
-- Composer is fixed above the keyboard.
-- Quick actions wrap horizontally or scroll as chips.
+- Default to the card stack.
+- Detail opens as a full-screen view or sheet.
+- Composer is fixed above the keyboard in detail.
+- Quick chips scroll horizontally.
 - Touch targets must be at least 44x44pt.
 
 ### Desktop / Mac
-- Use a two-pane layout by default: room list + message stream.
-- Add optional session detail pane when width allows.
+- Center the card stack with optional side rail.
+- Detail can open as a split view or separate focused pane.
 - Keyboard-first navigation is important:
-  - `Cmd+K` for room/session switcher.
+  - `Cmd+K` for session/room/command switcher.
+  - Arrow keys to move through cards.
+  - `Enter` to reply.
   - `@` in composer to target sessions.
-  - Arrow keys to move between quick actions.
-- Menu bar popover should show urgent/waiting items first.
+- Menu bar popover should show urgent/waiting cards first.
 
-## 9. Agent Prompt Guide
+## 11. Agent Prompt Guide
 
 When generating Steer UI, use this prompt:
 
-Build Steer as an AI operations messaging app. Use Instagram DM as the primary interaction model: compact room list, lightweight bubbles, unread badges, quick replies, and a bottom composer. Add Linear-style technical state with small status pills for running, waiting, blocked, done, and idle. Use Telegram-like multi-room flexibility, but keep v1 focused on a default unified room. Avoid Slack/Discord density unless explicitly building advanced room/session management. Keep chrome monochrome, reserve color for actions and status, and make reports/instructions fast to scan.
+Build Steer as a stuck-AI action queue. The primary screen is a large Tinder-style card stack, with one waiting/blocker/decision card in front and the backlog visible behind it. Use Gmail-like triage and Smart Reply chips for fast responses. Opening a card shows a Claude/Codex-style session detail with full context, transcript, metadata, quick chips, and a bottom composer. Preserve Instagram DM's light, immediate feel in message surfaces, but do not make the app chat-first. Add Linear-style technical state with small pills for running, waiting, blocked, done, and idle. Keep chrome monochrome, reserve color for actions and status, and make the next user action obvious.
 
 Quick color reference:
 - Canvas light/dark: `#FFFFFF` / `#000000`
@@ -215,4 +245,3 @@ Quick color reference:
 - Waiting: `#FFB020`
 - Blocked: `#FF453A`
 - Done/Idle: `#8E8E93`
-
