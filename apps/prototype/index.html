@@ -281,16 +281,20 @@
         border: 1px solid var(--line);
         border-radius: 17px;
         padding: 0 13px;
-        background: var(--surface-2);
+        background: var(--glass-strong);
+        backdrop-filter: blur(18px) saturate(1.35);
+        -webkit-backdrop-filter: blur(18px) saturate(1.35);
         color: var(--text);
         font-size: 14px;
         font-weight: 600;
         cursor: pointer;
       }
 
-      .chip.primary {
-        border-color: rgba(10, 132, 255, 0.34);
-        color: var(--blue);
+      .chip:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible {
+        border-color: rgba(10, 132, 255, 0.45);
+        box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.12);
       }
 
       .spacer {
@@ -300,26 +304,24 @@
       .reply-dock {
         min-width: 0;
         margin-top: 18px;
-        border: 1px solid rgba(229, 229, 231, 0.72);
-        border-radius: 28px;
-        background: var(--glass);
-        backdrop-filter: blur(26px) saturate(1.6);
-        -webkit-backdrop-filter: blur(26px) saturate(1.6);
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
-        padding: 10px;
       }
 
       .reply-dock .chips {
-        margin: 0 0 9px;
+        margin: 0 0 10px;
         flex-wrap: nowrap;
         overflow-x: auto;
         overscroll-behavior-x: contain;
-        padding-bottom: 1px;
+        padding-bottom: 0;
+        scrollbar-width: none;
+      }
+
+      .reply-dock .chips::-webkit-scrollbar,
+      .detail-reply .chips::-webkit-scrollbar {
+        display: none;
       }
 
       .reply-dock .chip {
         white-space: nowrap;
-        background: rgba(255, 255, 255, 0.55);
       }
 
       .card-composer,
@@ -425,20 +427,12 @@
         line-height: 1.45;
       }
 
-      .detail-reply {
-        border: 1px solid rgba(229, 229, 231, 0.72);
-        border-radius: 28px;
-        background: var(--glass);
-        backdrop-filter: blur(26px) saturate(1.6);
-        -webkit-backdrop-filter: blur(26px) saturate(1.6);
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
-        padding: 10px;
-      }
-
       .detail-reply .chips {
-        margin: 0 0 9px;
+        margin: 0 0 10px;
         flex-wrap: nowrap;
         overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
       }
 
       input,
@@ -447,15 +441,22 @@
         min-height: 44px;
         max-height: 120px;
         resize: none;
-        border: 1px solid rgba(229, 229, 231, 0.7);
+        border: 1px solid rgba(229, 229, 231, 0.72);
         border-radius: 22px;
-        background: var(--glass-strong);
-        backdrop-filter: blur(18px) saturate(1.35);
-        -webkit-backdrop-filter: blur(18px) saturate(1.35);
+        background: rgba(255, 255, 255, 0.58);
+        backdrop-filter: blur(20px) saturate(1.4);
+        -webkit-backdrop-filter: blur(20px) saturate(1.4);
         color: var(--text);
         padding: 12px 14px;
         outline: none;
         cursor: text;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        input,
+        textarea {
+          background: rgba(28, 28, 31, 0.58);
+        }
       }
 
       .send {
@@ -646,7 +647,7 @@
         byId("card-summary").textContent = item.summary;
         byId("card-reason").textContent = item.reason;
         byId("chips").innerHTML = item.chips
-          .map((chip, chipIndex) => `<button class="chip ${chipIndex === 0 ? "primary" : ""}" type="button">${chip}</button>`)
+          .map((chip) => `<button class="chip" type="button">${chip}</button>`)
           .join("");
         byId("queue-dots").innerHTML = cards
           .map((_, dotIndex) => `<span class="${dotIndex === index ? "active" : ""}"></span>`)
@@ -659,7 +660,7 @@
         byId("detail-session").textContent = item.session;
         byId("detail-status").textContent = item.state;
         byId("detail-chips").innerHTML = item.chips
-          .map((chip, chipIndex) => `<button class="chip ${chipIndex === 0 ? "primary" : ""}" type="button">${chip}</button>`)
+          .map((chip) => `<button class="chip" type="button">${chip}</button>`)
           .join("");
         byId("thread").innerHTML = item.thread
           .map(([who, text]) => {

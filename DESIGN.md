@@ -146,11 +146,12 @@ Opening a card shows the full session context in a Claude/Codex-style view.
 - Radius: 16-18pt.
 - Default fill: quick chip fill.
 - Keep text short: `Proceed`, `Test first`, `Use option A`, `Explain more`, `Stop here`.
-- Recommended option may use blue text or subtle blue tint.
+- Chips should be visually neutral before selection. Do not highlight the first chip by default.
+- Selection, keyboard focus, or an explicit recommendation state may use a subtle blue outline.
 
 ### Liquid Glass Treatment
 - Use native iOS/macOS Liquid Glass APIs in SwiftUI where available.
-- Group chips and input inside one glass reply dock.
+- Keep chips visually separate from the input field while preserving shared vertical grouping.
 - Use interactive glass only for tappable chips, send buttons, and focusable input surfaces.
 - Keep card glass subtle; content legibility is more important than translucency.
 - Provide material-style fallback for OS versions without Liquid Glass.
