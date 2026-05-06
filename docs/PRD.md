@@ -28,7 +28,7 @@ Claude Code, Codex, Gemini CLI 등 에이전트 CLI가 mainstream화 (25-26). "V
 
 제품의 핵심은 "결정만 빨리 답하기"가 아니라, 사용자가 여러 CLI 세션의 보고를 받고, 막힌 세션에 지시하고, 완료된 세션에 다음 작업을 이어붙여 AI가 멈추지 않게 하는 것이다.
 
-비유: Tinder-style card stack의 one-at-a-time triage + Claude/Codex-style session detail + Instagram DM의 가벼운 답변 감각 + Linear의 작업 상태/우선순위. 사용자는 기본 화면에서 urgent card를 빠르게 처리하고, 필요할 때 상세로 들어가 전체 맥락을 본다.
+비유: Tinder-style card stack의 one-at-a-time triage + terminal tail의 신뢰 가능한 작업 맥락 + Claude/Codex-style session detail + Instagram DM의 가벼운 답변 감각 + Linear의 작업 상태/우선순위. 사용자는 기본 화면에서 urgent card를 빠르게 처리하고, 필요할 때 상세로 들어가 전체 맥락을 본다.
 
 데이터 모델은 사용자-에이전트 세션의 1:1 대화 N개와, 그 위에 쌓이는 action item queue다. UX 모델은 기본적으로 하나의 action card stack이지만, 반드시 하나의 대화방이어야 하는 것은 아니다. 사용자는 원하면 여러 room으로 나눠 관리할 수 있다. 어떤 CLI session을 어떤 room에 초대할지는 후속 스펙으로 둔다.
 
@@ -50,7 +50,7 @@ Claude Code, Codex, Gemini CLI 등 에이전트 CLI가 mainstream화 (25-26). "V
 1. 사용자가 데스크톱에서 `steer claude` 등으로 AI CLI 세션을 시작한다.
 2. Steer가 세션 출력과 상태를 캡처한다.
 3. 세션이 완료, blocker, decision, question, idle 상태에 도달하면 action card로 올라온다.
-4. 분류 AI가 메시지를 요약하고, 필요한 경우 quick reply/quick instruction 옵션을 만든다.
+4. 분류 AI가 마지막 actionable terminal block을 추출하고, 보조 요약과 quick reply/quick instruction 옵션을 만든다.
 5. 사용자는 카드에서 바로 버튼을 탭하거나, 카드를 열어 전체 맥락을 본 뒤 짧은 텍스트로 응답한다.
 6. 답변 또는 지시가 해당 CLI session에 주입되고, 세션은 즉시 작업을 계속한다.
 7. 사용자는 기존 질문에 답하는 것뿐 아니라, 상세 composer에서 먼저 특정 session에 새 지시를 보낼 수 있다.
@@ -61,9 +61,12 @@ Claude Code, Codex, Gemini CLI 등 에이전트 CLI가 mainstream화 (25-26). "V
 
 **Provider identity**: 각 카드는 해당 CLI session이 Claude Code, Codex CLI, Gemini CLI 등 어디서 왔는지 보여줘야 한다. provider icon과 텍스트를 함께 표시해 빠르게 식별하게 하고, 아이콘이 없는 provider는 글자 fallback badge를 쓴다.
 
+**Terminal tail card**: 기본 action card의 본문은 큰 마케팅식 제목/요약 카드가 아니라, 터미널 마지막 actionable block이다. AI 요약은 보조 역할만 하고, 사용자가 실제로 판단해야 하는 근거는 CLI tail, 검증 결과, 에러, 질문, 완료 보고를 SF Mono 기반 terminal panel로 보여준다. 이렇게 해야 Steer가 "챗 앱"보다 "터미널의 운영 연장선"으로 느껴지고, 사용자가 AI 요약을 신뢰하지 못하는 순간에도 원문 근거를 바로 볼 수 있다.
+
 ## Design Direction
 
 - **Primary interaction**: Tinder-style card stack. 한 번에 하나의 stuck/waiting card를 보고 빠르게 처리.
+- **Primary content**: Warp-style terminal tail. 카드 본문은 마지막 actionable CLI block을 우선하고, 요약은 보조.
 - **Triage workflow**: Gmail + Smart Reply. 빠른 분류, input 위 quick chip, 짧은 답변 입력.
 - **Detail view**: Claude/Codex-style session. 전체 transcript/context, metadata, composer.
 - **Platform feel**: iOS native + restrained Liquid Glass. Reply chips/input은 minimal white pills, Liquid Glass는 app chrome/sheets/floating surfaces에 제한.

@@ -25,13 +25,14 @@ Keep this document focused on execution. Durable product or architecture changes
 - The Mac app should start as a focused mobile-width utility window, 375px wide x 812px tall, so the core stack ports cleanly to iOS.
 - The UI should feel iOS-native and use Liquid Glass sparingly for app chrome, navigation controls, sheets, and larger floating surfaces. Do not use it for card reply chips/input.
 - The main card bottom should be a reply input with suggested chips above it, not Skip/Snooze/Done buttons.
+- The main card body should show the last actionable terminal block as the primary trust surface. AI summary is secondary.
 - Rooms are grouping/filtering constructs, and users may later create multiple rooms.
 - Room membership and session invitation/routing are follow-up specs.
 - v1 is Mac-first and local-first.
 - The core loop requires bidirectional control: report capture plus instruction injection.
 - Hook-only mode is not sufficient for the product. It can only be a read-only fallback.
 - Happy is a reference implementation and possible source for wrapper/pty learnings, not the product architecture to fork wholesale.
-- Design direction: Tinder-style card stack for primary triage, Claude/Codex-style session detail, Instagram DM for reply lightness, Gmail/Smart Reply for quick responses, and Linear for technical status and metadata.
+- Design direction: Tinder-style card stack for primary triage, Warp-style terminal tail for card content, Claude/Codex-style session detail, Instagram DM for reply lightness, Gmail/Smart Reply for quick responses, and Linear for technical status and metadata.
 
 ## Target v1 Architecture
 
@@ -118,6 +119,7 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] Render report, decision, blocker, completion, and idle cards.
 - [x] Add quick reply / quick instruction chips above the input field.
 - [x] Add detail composer with target session selection.
+- [x] Pivot card content from large summary cards to terminal-tail excerpts.
 - [ ] Add macOS notifications for waiting/blocker states.
 
 Exit criteria:
@@ -181,6 +183,10 @@ The Mac app should default to a mobile-like focused utility window, 375px wide x
 
 The card stack should use an iOS-native visual model with restrained Liquid Glass where appropriate. The dominant bottom surface is a minimal reply area: suggested chips above an input field. Skip/Snooze/Done should not be primary bottom buttons; secondary queue movement can live in gestures, keyboard shortcuts, or less prominent controls.
 
+### 2026-05-06: Terminal Tail Card
+
+The card stack remains the primary triage interaction, but the card body should not be a large AI-generated summary. Since Steer is an extension of CLI work, the default card content should be the last actionable terminal block: report tail, error, validation result, prompt-ready question, or decision point. AI summary and quick chips help speed up response, but the terminal excerpt is the primary source of trust.
+
 ### 2026-05-06: Room Model
 
 The default room is unified, but the system should allow multiple rooms later. Session invitation and room routing are follow-up specs.
@@ -219,6 +225,7 @@ v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid
 - Do not attach to arbitrary existing terminal sessions in v1.
 - Do not send raw transcripts to any remote service without an explicit user-controlled setting.
 - Keep UI action-card-first. Avoid turning the first version into a chat timeline or terminal dashboard.
+- Keep card content terminal-grounded. Avoid returning to large editorial summary cards as the default.
 - Keep wrapper, agent, and app responsibilities separate.
 
 ## Progress Notes

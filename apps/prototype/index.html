@@ -251,26 +251,49 @@
       }
 
       h1 {
-        margin: 42px 0 12px;
-        font-size: 28px;
-        line-height: 1.12;
+        margin: 22px 0 8px;
+        font-size: 18px;
+        line-height: 1.25;
         letter-spacing: 0;
       }
 
       .summary {
         color: var(--muted);
-        font-size: 15px;
-        line-height: 1.45;
-        margin: 0 0 18px;
+        font-size: 13px;
+        line-height: 1.38;
+        margin: 0 0 16px;
       }
 
-      .reason {
-        border: 1px solid var(--line);
+      .terminal-tail {
+        overflow: auto;
+        height: 268px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 16px;
-        background: var(--surface-2);
+        background: #1a1a1d;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
         padding: 14px;
-        font-size: 14px;
-        line-height: 1.38;
+        font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+        font-size: 11.5px;
+        line-height: 1.45;
+        color: #eeeeef;
+        white-space: pre-wrap;
+      }
+
+      .terminal-tail .muted {
+        color: #9fa1a8;
+      }
+
+      .terminal-tail .accent {
+        color: #89cdd0;
+        font-weight: 650;
+      }
+
+      .terminal-tail .success {
+        color: #9ee0a8;
+      }
+
+      .terminal-tail .warning {
+        color: #ffc76b;
       }
 
       .chips {
@@ -448,9 +471,7 @@
         resize: none;
         border: 1px solid rgba(229, 229, 231, 0.72);
         border-radius: 22px;
-        background: rgba(255, 255, 255, 0.58);
-        backdrop-filter: blur(20px) saturate(1.4);
-        -webkit-backdrop-filter: blur(20px) saturate(1.4);
+        background: rgba(255, 255, 255, 0.78);
         color: var(--text);
         padding: 12px 50px 12px 14px;
         outline: none;
@@ -460,7 +481,7 @@
       @media (prefers-color-scheme: dark) {
         input,
         textarea {
-          background: rgba(28, 28, 31, 0.58);
+          background: rgba(28, 28, 31, 0.78);
         }
       }
 
@@ -519,8 +540,8 @@
         }
 
         h1 {
-          margin-top: 24px;
-          font-size: 24px;
+          margin-top: 18px;
+          font-size: 17px;
         }
       }
     </style>
@@ -554,11 +575,9 @@
           </div>
           <h1 id="card-title">Supabase RLS decision needed</h1>
           <p class="summary" id="card-summary">
-            Claude finished the schema pass and is blocked on choosing row isolation. It can continue once you choose user-level or workspace-level policies.
+            Claude is waiting for the RLS scope before applying migrations.
           </p>
-          <div class="reason" id="card-reason">
-            Workspace-level RLS supports future collaboration, but user-level RLS is simpler for the first dogfood build.
-          </div>
+          <div class="terminal-tail" id="terminal-tail" aria-label="Terminal tail"></div>
           <div class="spacer"></div>
           <div class="reply-dock" aria-label="Quick reply">
             <div class="chips" id="chips"></div>
@@ -609,9 +628,19 @@
           age: "waiting 12m",
           title: "Supabase RLS decision needed",
           summary:
-            "Claude finished the schema pass and is blocked on choosing row isolation. It can continue once you choose user-level or workspace-level policies.",
-          reason:
-            "Workspace-level RLS supports future collaboration, but user-level RLS is simpler for the first dogfood build.",
+            "Claude is waiting for the RLS scope before applying migrations.",
+          terminal: [
+            ["success", "• Schema pass complete. One policy decision is blocking migration."],
+            ["", ""],
+            ["accent", "Decision needed:"],
+            ["", "- Option A: user-level RLS"],
+            ["muted", "  simpler first dogfood build, fewer membership joins"],
+            ["", "- Option B: workspace-level RLS"],
+            ["muted", "  better future collaboration, more schema surface now"],
+            ["", ""],
+            ["accent", "Next:"],
+            ["warning", "Choose one so I can generate policies and run migrations."]
+          ],
           chips: ["Use user-level", "Use workspace-level", "Explain tradeoffs"],
           thread: [
             ["agent", "I finished the table sketch and found one decision before writing policies."],
@@ -630,9 +659,18 @@
           age: "blocked 4m",
           title: "Mac app window model is unresolved",
           summary:
-            "Codex is ready to update the app shell spec, but needs a default window size decision before creating SwiftUI layout constraints.",
-          reason:
-            "A mobile-sized Mac window makes iOS porting easier, but the desktop version still needs optional side rails at wider sizes.",
+            "Codex needs the default Mac window rule before locking SwiftUI constraints.",
+          terminal: [
+            ["warning", "• Found conflicting layout assumptions in DESIGN.md and SwiftUI shell."],
+            ["", ""],
+            ["accent", "Blocked on:"],
+            ["", "- default fixed utility window"],
+            ["", "- resizable desktop-first app shell"],
+            ["", ""],
+            ["accent", "Recommended:"],
+            ["success", "Use 375 x 812 for v1 preview."],
+            ["muted", "Allow side rail only after the base iOS-portable stack works."]
+          ],
           chips: ["Use 375 x 812", "Allow resize", "Add side rail later"],
           thread: [
             ["agent", "I recommend a focused utility window: 375px wide by 812px tall by default, with a later resizable desktop split view."],
@@ -649,9 +687,18 @@
           age: "running",
           title: "Happy adapter notes are ready",
           summary:
-            "Claude summarized the provider-control approach and can now turn it into a first adapter spike plan.",
-          reason:
-            "No answer is required, but you can send a proactive next instruction while the context is fresh.",
+            "Gemini can turn the Happy research into the first adapter spike.",
+          terminal: [
+            ["success", "• Happy wrapper research summarized."],
+            ["", ""],
+            ["accent", "Learned:"],
+            ["", "- Claude path: Agent SDK / hooks / session scanner"],
+            ["", "- Codex path: codex app-server JSON-RPC"],
+            ["muted", "- raw pty should be fallback, not ideology"],
+            ["", ""],
+            ["accent", "Next:"],
+            ["success", "Pick one provider adapter and prove bidirectional delivery."]
+          ],
           chips: ["Start Codex adapter", "Start Claude adapter", "Write spike tasks"],
           thread: [
             ["agent", "Happy is not a raw pty wrapper anymore. Claude and Codex use provider-native control paths where available."],
@@ -675,7 +722,12 @@
         byId("wait-age").textContent = item.age;
         byId("card-title").textContent = item.title;
         byId("card-summary").textContent = item.summary;
-        byId("card-reason").textContent = item.reason;
+        byId("terminal-tail").innerHTML = item.terminal
+          .map(([kind, text]) => {
+            const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            return `<div class="${kind}">${safe || "&nbsp;"}</div>`;
+          })
+          .join("");
         byId("chips").innerHTML = item.chips
           .map((chip) => `<button class="chip" type="button">${chip}</button>`)
           .join("");

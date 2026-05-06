@@ -12,27 +12,20 @@ struct ActionCardView: View {
             SessionHeader(card: card)
 
             Text(card.title)
-                .font(.system(size: 28, weight: .bold))
-                .lineSpacing(-1)
-                .padding(.top, 46)
+                .font(.system(size: 18, weight: .bold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 22)
 
             Text(card.summary)
-                .font(.system(size: 15))
-                .lineSpacing(5)
+                .font(.system(size: 13))
+                .lineSpacing(3)
                 .foregroundStyle(.secondary)
-                .padding(.top, 12)
+                .padding(.top, 8)
 
-            Text(card.reason)
-                .font(.system(size: 14))
-                .lineSpacing(4)
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.black.opacity(0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
-                }
-                .padding(.top, 18)
+            TerminalExcerptView(lines: card.terminalLines)
+                .frame(height: 268)
+                .padding(.top, 16)
 
             Spacer(minLength: 24)
 

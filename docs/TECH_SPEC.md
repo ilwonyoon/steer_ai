@@ -20,11 +20,13 @@
     - room/message/instruction store
     - stop/waiting/block detection
     - report/decision/blocker/completion classification
+    - terminal tail extraction for actionable cards
     - quick reply / quick instruction generation
     - pending instruction delivery to target session
        ↓
   Steer Mac App
     - prioritized action card stack
+    - terminal-tail action cards
     - Claude/Codex-style session detail
     - Linear-style session status
     - quick reply chips above input
@@ -70,7 +72,9 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 
 **Instruction**: id, roomId, targetSessionId, sourceMessageId nullable, text, isQuickReply, status (`pending`/`injecting`/`injected`/`failed`), createdAt, injectedAt, failureReason.
 
-**ActionCard**: derived view over `Message`/`Session`, id, sourceMessageId, sessionId, category, priority, title, summary, reason, options, state (`active`/`skipped`/`snoozed`/`done`/`answered`), createdAt, snoozedUntil nullable.
+**TerminalExcerpt**: id, sessionId, sourceMessageId, startOffset nullable, endOffset nullable, rawText, displayLines, highlightedLineIndexes, createdAt. Stores the last actionable CLI block used by an action card.
+
+**ActionCard**: derived view over `Message`/`Session`/`TerminalExcerpt`, id, sourceMessageId, sessionId, terminalExcerptId nullable, category, priority, title, summary, actionPrompt, options, state (`active`/`skipped`/`snoozed`/`done`/`answered`), createdAt, snoozedUntil nullable.
 
 **MetricEvent**: id, sessionId, roomId, type, timestamp, metadataJson.
 
@@ -101,6 +105,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Default window size: focused mobile-width utility window, 375px wide x 812px tall.
 - iOS-native visual system; use Liquid Glass APIs where available, with material fallback.
 - Action card stack as the default surface.
+- Card body renders a terminal tail excerpt as the primary context, with AI summary as secondary text.
 - Session filter and optional room list as secondary surfaces.
 - Claude/Codex-style session detail opened from a card.
 - Cards for progress, completion, decision, blocker, question, and idle.
@@ -121,12 +126,16 @@ Classifier output JSON:
 - `category`: `progress`, `completion`, `decision`, `blocker`, `question`, `idle`
 - `priority`: `silent`, `normal`, `urgent`
 - `summary`
+- `terminalExcerpt`
+- `highlightedLineIndexes`
+- `actionPrompt`
 - `options`
 - `suggestedInstructions`
 - `cardTitle`
-- `cardReason`
 
 `requiresAction=false` should be the default. Precision matters more than recall for urgent notifications.
+
+The classifier should not invent terminal output. `terminalExcerpt` must be copied or losslessly trimmed from captured transcript data. The summary can explain the excerpt, but the excerpt is the user's primary source of truth.
 
 ## Security And Privacy
 

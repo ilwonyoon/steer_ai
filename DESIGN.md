@@ -9,9 +9,10 @@ The primary interaction is a large card stack: one active AI request in front, w
 Reference mix:
 - Primary interaction: Tinder-style card stack for one-at-a-time triage.
 - Triage workflow: Gmail inbox plus Smart Reply for fast decision handling.
+- Card content: Warp-style terminal blocks for readable CLI tail context.
 - Detail view: Claude/Codex-style assistant session for full context and response.
 - Platform feel: iOS-native surfaces with Liquid Glass where available.
-- Visual tone: Instagram DM for immediacy, lightness, and approachable messaging surfaces.
+- Visual tone: Claude warmth plus Instagram DM immediacy in reply surfaces.
 - Technical layer: Linear for status, priority, metadata, and calm precision.
 
 Do not use dating-app aesthetics, social scoring, profile browsing, likes, matches, or playful swipe semantics. Steer borrows the one-card-at-a-time stack mechanic, not Tinder's content model.
@@ -68,14 +69,14 @@ Use the platform system font.
 
 ### Type Scale
 - Queue Title: 17pt / 17px, weight 600, line-height 1.25
-- Card Title: 18pt / 18px, weight 650, line-height 1.25
-- Card Summary: 15pt / 15px, weight 400, line-height 1.38
+- Card Title: 17-18pt / 17-18px, weight 650, line-height 1.25
+- Card Summary: 13-14pt / 13-14px, weight 400, line-height 1.35
 - Detail Message Body: 15pt / 15px, weight 400, line-height 1.38
 - Session Name: 14pt / 14px, weight 600, line-height 1.25
 - Metadata: 12pt / 12px, weight 400, line-height 1.25
 - Status Pill: 11pt / 11px, weight 600, line-height 1.0
 - Button / Chip: 14pt / 14px, weight 600, line-height 1.0
-- Code / CLI: 12pt / 12px, weight 400, line-height 1.45
+- Code / CLI: 11.5-12pt / 11.5-12px, weight 400, line-height 1.45
 
 Avoid large marketing headings inside the product. This is a working surface.
 
@@ -100,12 +101,24 @@ Required content:
 - Session badge: provider icon, provider name, project/session name, current state.
 - Waiting age: e.g. `waiting 12m`.
 - Category: `question`, `decision`, `blocker`, `completion`, `idle`.
-- AI-generated summary in 3-6 lines.
-- Why it needs attention.
+- Short action title and one-line AI summary.
+- Terminal tail excerpt: the last actionable CLI block, report, error, or prompt-ready section.
+- Highlighted action line: what the AI needs from the user now.
 - Suggested response chips above the input field.
 - Bottom reply input for direct instruction.
 
-The active card should communicate enough context to answer simple cases without opening detail. It should not attempt to display the full transcript.
+The active card should communicate enough context to answer simple cases without opening detail. The terminal excerpt is the primary trust surface; AI summary is secondary. Do not turn the card into a full terminal dashboard or transcript viewer.
+
+### Terminal Tail Card
+
+Use terminal-tail cards when a CLI session has just reported, paused, errored, or asked for a decision.
+
+- Show the latest 20-40 relevant lines, trimmed to the last actionable block.
+- Use SF Mono in a compact terminal panel.
+- Preserve useful terminal semantics: bullets, headings, code tokens, command names, validation output, and failure lines.
+- Use subtle syntax-like color only for meaning: muted context, success, warning, error, and actionable prompts.
+- Keep the surrounding card iOS-native and calm. Only the inner excerpt should feel terminal-like.
+- Avoid fake shell chrome, decorative window controls, or noisy ANSI art.
 
 ### Stack Navigation
 - Click/tap card: open detail.
@@ -123,6 +136,7 @@ Opening a card shows the full session context in a Claude/Codex-style view.
 ### Layout
 - Header: session name, provider, state, cwd/project, room, elapsed waiting time.
 - Body: full message/transcript view with grouped agent reports and user instructions.
+- First block: expanded terminal tail or transcript excerpt that caused the card.
 - Right pane on wide desktop: metadata, files mentioned, recent commands, delivery status.
 - Bottom: reply composer with quick chips.
 
@@ -219,6 +233,7 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 - Do not build a Slack clone.
 - Do not make the default UI a chat timeline.
 - Do not build a terminal dashboard as the primary surface.
+- Do not use AI-written summary as the only card body when terminal context is available.
 - Do not put Skip/Snooze/Done as dominant bottom actions on the main card.
 - Do not use Tinder's dating language, social gestures, or playful match feedback.
 - Do not use Instagram feed, story, reel, profile, or social engagement patterns.

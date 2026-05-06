@@ -35,6 +35,15 @@ struct DetailView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Terminal tail")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        TerminalExcerptView(lines: card.terminalLines)
+                            .frame(height: 240)
+                    }
+                    .padding(.bottom, 8)
+
                     ForEach(card.thread) { message in
                         ThreadBubble(message: message)
                     }
