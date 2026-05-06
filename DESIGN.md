@@ -97,7 +97,7 @@ Avoid large marketing headings inside the product. This is a working surface.
 - Background cards: offset 8-14px, scaled 96-98%, muted opacity.
 
 Required content:
-- Session badge: provider, project/session name, current state.
+- Session badge: provider icon, provider name, project/session name, current state.
 - Waiting age: e.g. `waiting 12m`.
 - Category: `question`, `decision`, `blocker`, `completion`, `idle`.
 - AI-generated summary in 3-6 lines.
@@ -154,6 +154,13 @@ Opening a card shows the full session context in a Claude/Codex-style view.
 - Use interactive glass only for tappable chips, send buttons, and focusable input surfaces.
 - Keep card glass subtle; content legibility is more important than translucency.
 - Provide material-style fallback for OS versions without Liquid Glass.
+
+### Provider Identity
+- Show the origin of every CLI session visually.
+- Use provider icons for Claude Code, Codex CLI, Gemini CLI, and future adapters when available.
+- Pair the icon with text such as `Claude Code`, `Codex CLI`, or `Gemini CLI`; do not rely on icon recognition alone.
+- If an icon is missing, use a compact letter fallback badge.
+- Keep provider identity inside the session badge, not as a large decorative brand surface.
 
 ## 6. Rooms, Filters, And Routing
 

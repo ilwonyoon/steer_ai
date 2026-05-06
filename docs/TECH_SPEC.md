@@ -64,6 +64,8 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 
 **RoomSession**: roomId, sessionId, joinedAt, muted, pinned. v1은 default room에 모든 session을 자동 포함해도 된다.
 
+**Provider**: id (`claude`/`codex`/`gemini`/custom), displayName, iconAssetName nullable, adapterKind, supportedCapabilities.
+
 **Message**: id, roomId, sessionId, timestamp, direction (`agent_to_user`/`user_to_agent`/`system`), rawContent, displayContent, summary, category, priority, requiresAction, needsInput, options, suggestedInstructions, replyToMessageId, answeredAt, source.
 
 **Instruction**: id, roomId, targetSessionId, sourceMessageId nullable, text, isQuickReply, status (`pending`/`injecting`/`injected`/`failed`), createdAt, injectedAt, failureReason.
@@ -104,7 +106,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Cards for progress, completion, decision, blocker, question, and idle.
 - Quick reply / quick instruction chips above the card/detail input field.
 - Detail composer with target session selection or `@session` mention routing.
-- Agent badges and Linear-style state pills.
+- Provider icons, agent badges, and Linear-style state pills.
 
 SwiftUI implementation note: use native Liquid Glass APIs for grouped reply surfaces when available. Wrap chips/input/send controls in one glass container; apply interactive glass only to tappable or focusable elements. Provide `.ultraThinMaterial` or equivalent fallback for earlier macOS/iOS versions.
 

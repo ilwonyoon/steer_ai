@@ -22,6 +22,7 @@ This repository is in the planning and early execution stage. It currently conta
 Steer is not a full chat mirror. It is an AI action queue:
 
 - Waiting, blocked, decision, completion, and idle states appear as prioritized cards.
+- Each card shows where the CLI session came from, such as Claude Code, Codex CLI, or Gemini CLI.
 - Opening a card shows full Claude/Codex-style session context and transcript.
 - Users answer through an input field with suggested chips directly above it.
 - The system tracks session states such as `running`, `waiting`, `blocked`, `idle`, and `done`.

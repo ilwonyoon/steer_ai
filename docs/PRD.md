@@ -59,6 +59,8 @@ Claude Code, Codex, Gemini CLI 등 에이전트 CLI가 mainstream화 (25-26). "V
 
 **Reply surface**: 카드 하단의 기본 행동은 Skip/Snooze/Done 버튼이 아니라 input field다. 추천 chip은 input 바로 위에 두고, 사용자는 chip을 탭해 입력을 채우거나 직접 짧게 답한다. 전체 UI는 iOS native 스타일을 우선하고, 가능한 OS에서는 Liquid Glass를 reply dock, chip, input surface에 활용한다.
 
+**Provider identity**: 각 카드는 해당 CLI session이 Claude Code, Codex CLI, Gemini CLI 등 어디서 왔는지 보여줘야 한다. provider icon과 텍스트를 함께 표시해 빠르게 식별하게 하고, 아이콘이 없는 provider는 글자 fallback badge를 쓴다.
+
 ## Design Direction
 
 - **Primary interaction**: Tinder-style card stack. 한 번에 하나의 stuck/waiting card를 보고 빠르게 처리.
