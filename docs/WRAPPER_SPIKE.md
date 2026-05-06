@@ -10,7 +10,7 @@ This is a minimal control-loop spike, not the final Claude/Codex adapter.
 
 ## Commands
 
-Start the local agent:
+The CLI auto-starts the local agent when needed. To run it manually for debugging:
 
 ```sh
 node packages/agent/src/agent.js

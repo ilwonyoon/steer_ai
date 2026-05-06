@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import net from "node:net";
+import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
 import { socketPath } from "../../agent/src/paths.js";
 
 const [, , command, ...args] = process.argv;
+const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
 
 switch (command) {
   case "agent":
@@ -46,7 +50,7 @@ async function wrapCommand(args) {
 
 async function wrapProvider(provider, childCommand, childArgs) {
   const sessionId = `${provider}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const agent = connectToAgent();
+  const agent = await connectToAgent();
   const child = spawn(childCommand, childArgs, {
     cwd: process.cwd(),
     env: process.env,
@@ -106,7 +110,7 @@ async function runClaudeAdapter(args) {
   }
 
   const sessionId = `claude-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const agent = connectToAgent();
+  const agent = await connectToAgent();
   const claudeArgs = [
     "-p",
     "--input-format",
@@ -183,7 +187,7 @@ async function runCodexAdapter(args) {
   }
 
   const sessionId = `codex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const agent = connectToAgent();
+  const agent = await connectToAgent();
   const codex = createCodexRpcClient();
   let threadId = null;
   let activeTurnId = null;
@@ -350,17 +354,25 @@ async function listSessions() {
   console.log(JSON.stringify(response.sessions ?? [], null, 2));
 }
 
-function connectToAgent() {
-  if (!fs.existsSync(socketPath)) {
-    throw new Error(`SteerAgent is not running. Start it with: node packages/agent/src/agent.js`);
+async function connectToAgent() {
+  if (fs.existsSync(socketPath)) {
+    try {
+      return await openAgentSocket();
+    } catch {
+      try {
+        fs.unlinkSync(socketPath);
+      } catch {}
+    }
   }
 
-  return net.createConnection(socketPath);
+  await startAgent();
+  return openAgentSocket();
 }
 
-function requestAgent(message) {
+async function requestAgent(message) {
+  const socket = await connectToAgent();
+
   return new Promise((resolve, reject) => {
-    const socket = connectToAgent();
     socket.setEncoding("utf8");
     socket.on("data", createLineDecoder((response) => {
       resolve(response);
@@ -369,6 +381,33 @@ function requestAgent(message) {
     socket.on("error", reject);
     socket.write(encodeMessage(message));
   });
+}
+
+function openAgentSocket() {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(socketPath);
+    socket.once("connect", () => resolve(socket));
+    socket.once("error", reject);
+  });
+}
+
+async function startAgent() {
+  fs.mkdirSync(path.dirname(socketPath), { recursive: true });
+  const child = spawn(process.execPath, [agentEntryPath], {
+    cwd: process.cwd(),
+    env: process.env,
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
+
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(socketPath)) return;
+    await delay(50);
+  }
+
+  throw new Error("SteerAgent did not start within 3s");
 }
 
 function printUsage() {

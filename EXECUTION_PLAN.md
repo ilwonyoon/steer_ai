@@ -219,6 +219,8 @@ Claude should be the first real provider target. `steer claude` now uses Claude 
 
 `SteerAgent` now owns the local SQLite write path at `~/.steer/steer.sqlite`. The schema includes rooms, sessions, messages, instructions, terminal excerpts, transcript entries, and metric events. Session registration, state transitions, transcript chunks, user instructions, and injection acknowledgements are persisted while active delivery sockets remain in memory.
 
+CLI commands now auto-start `SteerAgent` in the background when the local socket is missing. `steer agent` remains available for manual debugging, but users should be able to run `steer claude`, `steer codex`, `steer sessions`, and `steer send` without a separate startup step.
+
 ### 2026-05-06: macOS Strategy
 
 v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid Accessibility/Input Monitoring by owning the pty through the wrapper.

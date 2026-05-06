@@ -70,11 +70,12 @@ docs/
 The first wrapper/control-loop spike is Node-based:
 
 ```sh
-node packages/agent/src/agent.js
 node packages/cli/src/index.js wrap -- node -i
 node packages/cli/src/index.js sessions
 node packages/cli/src/index.js send <sessionId> "console.log('steer injection ok')"
 ```
+
+The CLI auto-starts `SteerAgent` in the background when needed. Use `steer agent` only when you want to run the agent manually for debugging.
 
 The agent writes local state to `~/.steer/steer.sqlite` and transcript logs to `~/.steer/sessions/`. Set `STEER_HOME` for isolated local tests.
 
