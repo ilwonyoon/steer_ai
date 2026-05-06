@@ -142,6 +142,8 @@ Classifier output JSON:
 - `suggestedInstructions`
 - `cardTitle`
 
+See `docs/CLASSIFIER_CONTRACT.md` for the current concrete contract, filtering rules, and card lifecycle rules.
+
 `requiresAction=false` should be the default. Precision matters more than recall for urgent notifications.
 
 The classifier should not invent terminal output. `terminalExcerpt` must be copied or losslessly trimmed from captured transcript data. The summary can explain the excerpt, but the excerpt is the user's primary source of truth. Terminal styling is structural, not necessarily dark-themed; dark terminal rendering is optional and should be driven by source theme, dense error/log mode, or user preference.

@@ -12,6 +12,7 @@ Steer is a macOS-first AI action queue for CLI coding agents. The core loop is s
 
 - `DESIGN.md`: visual system and interaction direction.
 - `AGENTS.md`: contributor and agent workflow guide.
+- `docs/CLASSIFIER_CONTRACT.md`: card classifier input/output and lifecycle rules.
 - Backtick Memory `Steer / prd`: product requirements and positioning.
 - Backtick Memory `Steer / tech-spec`: technical architecture and implementation notes.
 
@@ -131,10 +132,11 @@ Exit criteria:
 
 Goal: make reports actionable without becoming noisy.
 
-- [ ] Define classifier JSON contract.
+- [x] Define classifier JSON contract.
 - [x] Add first heuristic categories: `progress`, `completion`, `decision`, `blocker`, `question`.
 - [x] Generate first `ActionCard` rows with `priority`, `summary`, `actionPrompt`, and `options`.
-- [ ] Run classifier against real transcript samples.
+- [x] Add regression tests for real Codex chrome/noise and answered-card lifecycle failures.
+- [ ] Run classifier against a broader real transcript sample set.
 - [ ] Track false positive and false negative notifications.
 - [ ] Tune prompts for high precision on `requiresAction`.
 
