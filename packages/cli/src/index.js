@@ -159,7 +159,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   agent.on("data", createLineDecoder((message) => {
     if (message.type !== "instruction") return;
 
-    child.stdin.write(`${message.text}\n`);
+    child.stdin.write(`${message.text}\r`);
     agent.write(encodeMessage({
       type: "ack",
       sessionId,

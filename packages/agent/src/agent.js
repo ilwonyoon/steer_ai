@@ -51,6 +51,9 @@ const server = net.createServer((socket) => {
           stream: "system",
           chunk: `[steer] instruction ${message.instructionId} ${message.status}\n`
         });
+        if (message.status === "injected") {
+          store.resolveActionCardsForSession(message.sessionId);
+        }
         break;
       default:
         send({ type: "error", error: `unknown message type: ${message.type}` });

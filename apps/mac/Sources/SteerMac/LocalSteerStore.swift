@@ -169,7 +169,7 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
         FROM action_cards ac
         JOIN sessions s ON s.id = ac.session_id
         LEFT JOIN terminal_excerpts te ON te.id = ac.terminal_excerpt_id
-        WHERE ac.state IN ('active', 'done')
+        WHERE ac.state = 'active'
         ORDER BY
           CASE ac.priority
             WHEN 'urgent' THEN 0
@@ -305,15 +305,12 @@ private func defaultChips(for state: SessionState) -> [String] {
 }
 
 private func makeTerminalLines(from entries: [TranscriptEntryRow]) -> [TerminalLine] {
-    let lines = entries
-        .flatMap { entry in
-            entry.chunk
-                .components(separatedBy: .newlines)
-                .map { rawLine in
-                    TerminalLine(cleanTerminalText(rawLine), kind: lineKind(for: entry.stream))
-                }
+    let rawText = entries.map(\.chunk).joined()
+    let fallbackKind = entries.last.map { lineKind(for: $0.stream) } ?? .standard
+    let lines = terminalDisplayLines(from: rawText)
+        .map { line in
+            TerminalLine(line, kind: kind(forTerminalLine: line, fallback: fallbackKind))
         }
-        .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         .suffix(28)
 
     if lines.isEmpty {
@@ -335,6 +332,38 @@ private func makeTerminalLines(from displayLines: [String], category: String) ->
         .map { TerminalLine($0, kind: kind) }
 
     return lines.ifEmpty([TerminalLine("[no transcript yet]", kind: .muted)])
+}
+
+private func terminalDisplayLines(from rawText: String) -> [String] {
+    var text = cleanTerminalText(rawText)
+    text = text.replacingOccurrences(
+        of: "\\s+([⚠✖✔])\\s*",
+        with: "\n$1 ",
+        options: .regularExpression
+    )
+    text = text.replacingOccurrences(
+        of: "\\s+([›>])\\s+",
+        with: "\n$1 ",
+        options: .regularExpression
+    )
+    text = text.replacingOccurrences(
+        of: "\\s*(\\[(?:user|steer|codex|claude)\\])",
+        with: "\n$1",
+        options: [.regularExpression, .caseInsensitive]
+    )
+    text = text.replacingOccurrences(
+        of: "\\s{2,}(gpt-[\\w.-]+[^\\n]*·[^\\n]*)",
+        with: "\n$1",
+        options: .regularExpression
+    )
+
+    let lines = text
+        .components(separatedBy: .newlines)
+        .flatMap(splitTerminalDisplayLine)
+        .map { collapseTerminalWhitespace($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        .filter(isMeaningfulTerminalLine)
+
+    return Array(lines.suffix(28))
 }
 
 private func makeThread(from entries: [TranscriptEntryRow]) -> [ThreadMessage] {
@@ -360,13 +389,73 @@ private func lineKind(for stream: String) -> TerminalLineKind {
     }
 }
 
+private func kind(forTerminalLine line: String, fallback: TerminalLineKind) -> TerminalLineKind {
+    if line.contains("⚠") || line.localizedCaseInsensitiveContains("failed") || line.localizedCaseInsensitiveContains("error") {
+        return .warning
+    }
+    if line.localizedCaseInsensitiveContains("complete") || line.localizedCaseInsensitiveContains("success") {
+        return .success
+    }
+    if line.hasPrefix("›") || line.hasPrefix(">") {
+        return .accent
+    }
+    if line.hasPrefix("gpt-") {
+        return .muted
+    }
+    return fallback
+}
+
 private func cleanTerminalText(_ value: String) -> String {
-    let withoutANSI = value.replacingOccurrences(
-        of: "\u{001B}\\[[0-?]*[ -/]*[@-~]",
-        with: "",
-        options: .regularExpression
-    )
-    return withoutANSI.replacingOccurrences(of: "\r", with: "")
+    var cleaned = value
+    let patterns = [
+        "\u{001B}\\][^\u{0007}]*(?:\u{0007}|\u{001B}\\\\)",
+        "\u{001B}[PX^_][\\s\\S]*?\u{001B}\\\\",
+        "\u{001B}\\[[0-?]*[ -/]*[@-~]",
+        "\u{001B}[@-Z\\\\-_]",
+        "[\u{0000}-\u{0008}\u{000B}\u{000C}\u{000E}-\u{001F}\u{007F}]"
+    ]
+
+    for pattern in patterns {
+        cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+    }
+
+    return cleaned.replacingOccurrences(of: "\r", with: "\n")
+}
+
+private func splitTerminalDisplayLine(_ line: String) -> [String] {
+    line
+        .replacingOccurrences(
+            of: "\\s+(gpt-[\\w.-]+[^\\n]*·[^\\n]*)",
+            with: "\n$1",
+            options: .regularExpression
+        )
+        .components(separatedBy: .newlines)
+}
+
+private func collapseTerminalWhitespace(_ value: String) -> String {
+    value.replacingOccurrences(of: "[ \\t]{2,}", with: " ", options: .regularExpression)
+}
+
+private func isMeaningfulTerminalLine(_ line: String) -> Bool {
+    guard !line.isEmpty else { return false }
+    guard line.range(of: "[A-Za-z0-9가-힣⚠✖✔›>]", options: .regularExpression) != nil else {
+        return false
+    }
+    if line.range(of: "^\\]1[01];\\?\\\\?$", options: .regularExpression) != nil {
+        return false
+    }
+    if line.localizedCaseInsensitiveContains("esc to interr") {
+        return false
+    }
+    if line.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,
+       line.range(of: "/permissions", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.count > 80,
+       line.range(of: "codex_a|xcodebui|xcodebuildmcp", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    return true
 }
 
 private func decodeStringArray(_ value: String?) -> [String] {

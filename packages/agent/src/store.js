@@ -113,6 +113,11 @@ export function createStore(filePath = databasePath) {
         options_json = excluded.options_json,
         state = excluded.state,
         updated_at = excluded.updated_at
+    `),
+    resolveActionCardsForSession: db.prepare(`
+      UPDATE action_cards
+      SET state = 'done', updated_at = ?
+      WHERE session_id = ? AND state = 'active'
     `)
   };
 
@@ -214,6 +219,9 @@ export function createStore(filePath = databasePath) {
         type: "instruction_status_changed",
         metadata: { instructionId: id, status, failureReason }
       });
+    },
+    resolveActionCardsForSession(sessionId) {
+      statements.resolveActionCardsForSession.run(new Date().toISOString(), sessionId);
     }
   };
 
@@ -263,10 +271,15 @@ function transcriptMessageForStream(stream, chunk) {
 
 function transcriptDisplayLines(rawText) {
   const lines = cleanTerminalText(rawText)
+    .replace(/\s+([⚠✖✔])\s*/g, "\n$1 ")
+    .replace(/\s+([›>])\s+/g, "\n$1 ")
+    .replace(/\s*(\[(?:user|steer|codex|claude)\])/gi, "\n$1")
+    .replace(/\s{2,}(gpt-[\w.-]+[^\n]*·[^\n]*)/g, "\n$1")
     .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .slice(-32);
+    .flatMap(splitTerminalDisplayLine)
+    .map((line) => line.replace(/[ \t]{2,}/g, " ").trim())
+    .filter(isMeaningfulTerminalLine)
+    .slice(-28);
 
   return lines.length > 0 ? lines : ["[no transcript yet]"];
 }
@@ -375,8 +388,28 @@ function highlightIndexes(lines, needles) {
 
 function cleanTerminalText(value) {
   return value
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "")
+    .replace(/\x1B[PX^_][\s\S]*?\x1B\\/g, "")
     .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\r/g, "");
+    .replace(/\x1B[@-Z\\-_]/g, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/\r/g, "\n");
+}
+
+function splitTerminalDisplayLine(line) {
+  return line
+    .replace(/\s+(gpt-[\w.-]+[^\n]*·[^\n]*)/g, "\n$1")
+    .split("\n");
+}
+
+function isMeaningfulTerminalLine(line) {
+  if (!line) return false;
+  if (!/[A-Za-z0-9가-힣⚠✖✔›>]/.test(line)) return false;
+  if (/^\]1[01];\?\\?$/.test(line)) return false;
+  if (/esc to interr/i.test(line)) return false;
+  if (/\/model\s+choose what model/i.test(line) && /\/permissions/i.test(line)) return false;
+  if (/codex_a|xcodebui|xcodebuildmcp/i.test(line) && line.length > 80) return false;
+  return true;
 }
 
 const schemaSql = `

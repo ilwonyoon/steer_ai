@@ -11,6 +11,8 @@ struct TerminalExcerptView: View {
                         .font(.system(size: 11.5, weight: weight(for: line.kind), design: .monospaced))
                         .foregroundStyle(color(for: line.kind))
                         .textSelection(.enabled)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
