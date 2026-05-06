@@ -349,7 +349,7 @@ function classifyActionCard(session, displayLines) {
       summary,
       actionPrompt: "Review the result or send a follow-up instruction.",
       options: ["Summarize result", "Next task", "Archive"],
-      state: session.run_state === "ended" ? "done" : "active",
+      state: "done",
       highlightedLineIndexes: highlightIndexes(displayLines, ["complete", "done", "success", "passed"])
     };
   }
@@ -361,7 +361,7 @@ function classifyActionCard(session, displayLines) {
     summary,
     actionPrompt: "Send a proactive instruction if needed.",
     options: ["Continue", "Summarize progress", "Pause after current step"],
-    state: "active",
+    state: "done",
     highlightedLineIndexes: []
   };
 }
@@ -407,8 +407,10 @@ function isMeaningfulTerminalLine(line) {
   if (!/[A-Za-z0-9가-힣⚠✖✔›>]/.test(line)) return false;
   if (/^\]1[01];\?\\?$/.test(line)) return false;
   if (/esc to interr/i.test(line)) return false;
+  if (/Starting MCP servers/i.test(line)) return false;
+  if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(line)) return false;
   if (/\/model\s+choose what model/i.test(line) && /\/permissions/i.test(line)) return false;
-  if (/codex_a|xcodebui|xcodebuildmcp/i.test(line) && line.length > 80) return false;
+  if (/codex_a|xcodebui|xcodebuildmcp|context left/i.test(line) && line.length > 80) return false;
   return true;
 }
 

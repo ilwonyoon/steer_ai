@@ -5,7 +5,6 @@ struct SteerRootView: View {
 
     @State private var cards: [ActionCard] = []
     @State private var currentIndex = 0
-    @State private var isShowingDetail = false
     @State private var cardDragOffset: CGFloat = 0
     @State private var isLoading = true
     @State private var lastError: String?
@@ -30,19 +29,9 @@ struct SteerRootView: View {
                     .padding(.bottom, 8)
             }
             .padding(14)
-
-            if isShowingDetail, let currentCard {
-                DetailView(
-                    card: currentCard,
-                    onClose: { isShowingDetail = false },
-                    onSend: { text in insertReply(text) }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
         .frame(width: 375, height: 812)
         .animation(.snappy(duration: 0.22), value: currentIndex)
-        .animation(.snappy(duration: 0.22), value: isShowingDetail)
         .task {
             await refreshLoop()
         }
@@ -84,7 +73,6 @@ struct SteerRootView: View {
 
                 ActionCardView(
                     card: currentCard,
-                    onOpenDetail: { isShowingDetail = true },
                     onSend: { text in sendFromCard(text) }
                 )
                 .id(currentCard.id)
@@ -151,15 +139,6 @@ struct SteerRootView: View {
         Task {
             await send(text, to: currentCard.sessionId)
             move(1)
-        }
-    }
-
-    private func insertReply(_ text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        guard let currentCard else { return }
-
-        Task {
-            await send(text, to: currentCard.sessionId)
         }
     }
 

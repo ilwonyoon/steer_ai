@@ -12,6 +12,17 @@ struct ReplyDock: View {
         }
     }
 
+    private var trimmedReply: String {
+        reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func submitReply() {
+        let text = trimmedReply
+        guard !text.isEmpty else { return }
+        onSend(text)
+        reply = ""
+    }
+
     private var chipScroller: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -56,6 +67,7 @@ struct ReplyDock: View {
             TextField("reply to this session", text: $reply)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: .monospaced))
+                .onSubmit(submitReply)
                 .padding(.leading, 14)
                 .padding(.trailing, 46)
                 .frame(height: 42)
@@ -65,11 +77,8 @@ struct ReplyDock: View {
                         .stroke(Color.black.opacity(0.075), lineWidth: 1)
                 }
 
-            if !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button {
-                    onSend(reply)
-                    reply = ""
-                } label: {
+            if !trimmedReply.isEmpty {
+                Button(action: submitReply) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)

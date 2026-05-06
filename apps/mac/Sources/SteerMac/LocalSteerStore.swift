@@ -447,12 +447,18 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     if line.localizedCaseInsensitiveContains("esc to interr") {
         return false
     }
+    if line.range(of: "Starting MCP servers", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "SStt|WWoorr|MMCC|rrvv|sseerr", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
     if line.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,
        line.range(of: "/permissions", options: .caseInsensitive) != nil {
         return false
     }
     if line.count > 80,
-       line.range(of: "codex_a|xcodebui|xcodebuildmcp", options: [.regularExpression, .caseInsensitive]) != nil {
+       line.range(of: "codex_a|xcodebui|xcodebuildmcp|context left", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
     return true

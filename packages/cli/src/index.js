@@ -107,6 +107,8 @@ async function wrapProvider(provider, childCommand, childArgs) {
 async function wrapPtyProvider(provider, childCommand, childArgs) {
   const sessionId = `${provider}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const agent = await connectToAgent();
+  const pendingInstructions = [];
+  let ptyReady = provider === "custom";
   const child = spawn("python3", [ptyBridgePath, childCommand, ...childArgs], {
     cwd: process.cwd(),
     env: {
@@ -131,6 +133,23 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   process.stderr.write(`[steer] ${provider} session ${sessionId}\n`);
   process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
 
+  const flushPendingInstructions = () => {
+    if (!ptyReady) return;
+    while (pendingInstructions.length > 0) {
+      submitPtyInstruction(pendingInstructions.shift());
+    }
+  };
+
+  const markPtyReady = () => {
+    if (ptyReady) return;
+    ptyReady = true;
+    flushPendingInstructions();
+  };
+
+  const readinessTimeout = provider === "codex" ? 15000 : 2500;
+  const readinessTimer = setTimeout(markPtyReady, readinessTimeout);
+  readinessTimer.unref?.();
+
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
   process.stdin.on("data", (chunk) => {
@@ -145,11 +164,13 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   child.stdout.on("data", (chunk) => {
     process.stdout.write(chunk);
     agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: chunk.toString("utf8") }));
+    observePtyReadiness(provider, chunk.toString("utf8"), markPtyReady);
   });
 
   child.stderr.on("data", (chunk) => {
     process.stderr.write(chunk);
     agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: chunk.toString("utf8") }));
+    observePtyReadiness(provider, chunk.toString("utf8"), markPtyReady);
   });
 
   process.stdout.on("resize", () => {
@@ -159,21 +180,71 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   agent.on("data", createLineDecoder((message) => {
     if (message.type !== "instruction") return;
 
-    child.stdin.write(`${message.text}\r`);
-    agent.write(encodeMessage({
-      type: "ack",
-      sessionId,
-      instructionId: message.instructionId,
-      status: "injected"
-    }));
+    if (!ptyReady) {
+      pendingInstructions.push(message);
+      return;
+    }
+
+    submitPtyInstruction(message);
   }));
 
   child.on("exit", (exitCode) => {
+    clearTimeout(readinessTimer);
     restoreInput();
     agent.write(encodeMessage({ type: "state", sessionId, runState: "ended", exitCode }));
     agent.end();
     process.exit(exitCode ?? 0);
   });
+
+  function submitPtyInstruction(message) {
+    child.stdin.write(message.text, (textError) => {
+      if (textError) {
+        agent.write(encodeMessage({
+          type: "ack",
+          sessionId,
+          instructionId: message.instructionId,
+          status: "failed",
+          failureReason: textError.message
+        }));
+        return;
+      }
+
+      setTimeout(() => {
+        child.stdin.write("\r", (submitError) => {
+          agent.write(encodeMessage({
+            type: "ack",
+            sessionId,
+            instructionId: message.instructionId,
+            status: submitError ? "failed" : "injected",
+            ...(submitError ? { failureReason: submitError.message } : {})
+          }));
+        });
+      }, 50);
+    });
+  }
+}
+
+function observePtyReadiness(provider, chunk, markReady) {
+  if (provider === "codex") {
+    const text = cleanTerminalControl(chunk);
+    if (/MCP startup (?:incomplete|complete)/i.test(text)) {
+      markReady();
+    }
+    return;
+  }
+
+  if (chunk.length > 0) {
+    markReady();
+  }
+}
+
+function cleanTerminalControl(value) {
+  return value
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "")
+    .replace(/\x1B[PX^_][\s\S]*?\x1B\\/g, "")
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1B[@-Z\\-_]/g, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
 }
 
 async function runClaudeAdapter(args) {

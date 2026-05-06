@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ActionCardView: View {
     let card: ActionCard
-    let onOpenDetail: () -> Void
     let onSend: (String) -> Void
 
     @State private var reply = ""
@@ -38,8 +37,6 @@ struct ActionCardView: View {
                 .stroke(Color.black.opacity(0.10), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.08), radius: 24, y: 16)
-        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .onTapGesture(perform: onOpenDetail)
     }
 }
 
