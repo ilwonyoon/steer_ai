@@ -4,12 +4,14 @@ enum ProviderKind: String {
     case claude
     case codex
     case gemini
+    case custom
 
     var displayName: String {
         switch self {
         case .claude: "Claude Code"
         case .codex: "Codex CLI"
         case .gemini: "Gemini CLI"
+        case .custom: "CLI Session"
         }
     }
 
@@ -17,7 +19,7 @@ enum ProviderKind: String {
         switch self {
         case .claude: "claude"
         case .codex: "codex-color"
-        case .gemini: nil
+        case .gemini, .custom: nil
         }
     }
 
@@ -26,6 +28,7 @@ enum ProviderKind: String {
         case .claude: "C"
         case .codex: "C"
         case .gemini: "G"
+        case .custom: ">"
         }
     }
 }
@@ -34,12 +37,16 @@ enum SessionState: String {
     case waiting
     case blocked
     case running
+    case ended
+    case disconnected
 
     var color: Color {
         switch self {
         case .waiting: Color(red: 1.0, green: 0.69, blue: 0.13)
         case .blocked: Color(red: 1.0, green: 0.27, blue: 0.23)
         case .running: Color(red: 0.20, green: 0.78, blue: 0.35)
+        case .ended: Color(red: 0.46, green: 0.46, blue: 0.50)
+        case .disconnected: Color(red: 0.72, green: 0.35, blue: 0.00)
         }
     }
 }
@@ -50,9 +57,15 @@ struct ThreadMessage: Identifiable {
         case user
     }
 
-    let id = UUID()
+    let id: String
     let sender: Sender
     let text: String
+
+    init(id: String = UUID().uuidString, sender: Sender, text: String) {
+        self.id = id
+        self.sender = sender
+        self.text = text
+    }
 }
 
 enum TerminalLineKind {
@@ -64,18 +77,20 @@ enum TerminalLineKind {
 }
 
 struct TerminalLine: Identifiable {
-    let id = UUID()
+    let id: String
     let text: String
     let kind: TerminalLineKind
 
-    init(_ text: String, kind: TerminalLineKind = .standard) {
+    init(_ text: String, kind: TerminalLineKind = .standard, id: String = UUID().uuidString) {
+        self.id = id
         self.text = text
         self.kind = kind
     }
 }
 
 struct ActionCard: Identifiable {
-    let id = UUID()
+    let id: String
+    let sessionId: String
     let project: String
     let provider: ProviderKind
     let state: SessionState
@@ -86,6 +101,34 @@ struct ActionCard: Identifiable {
     let terminalLines: [TerminalLine]
     let chips: [String]
     var thread: [ThreadMessage]
+
+    init(
+        id: String = UUID().uuidString,
+        sessionId: String = "",
+        project: String,
+        provider: ProviderKind,
+        state: SessionState,
+        age: String,
+        title: String,
+        summary: String,
+        reason: String,
+        terminalLines: [TerminalLine],
+        chips: [String],
+        thread: [ThreadMessage]
+    ) {
+        self.id = id
+        self.sessionId = sessionId.isEmpty ? id : sessionId
+        self.project = project
+        self.provider = provider
+        self.state = state
+        self.age = age
+        self.title = title
+        self.summary = summary
+        self.reason = reason
+        self.terminalLines = terminalLines
+        self.chips = chips
+        self.thread = thread
+    }
 }
 
 extension ActionCard {

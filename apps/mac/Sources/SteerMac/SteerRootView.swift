@@ -1,13 +1,18 @@
 import SwiftUI
 
 struct SteerRootView: View {
-    @State private var cards = ActionCard.samples
+    private let store = LocalSteerStore()
+
+    @State private var cards: [ActionCard] = []
     @State private var currentIndex = 0
     @State private var isShowingDetail = false
     @State private var cardDragOffset: CGFloat = 0
+    @State private var isLoading = true
+    @State private var lastError: String?
 
-    private var currentCard: ActionCard {
-        cards[currentIndex]
+    private var currentCard: ActionCard? {
+        guard cards.indices.contains(currentIndex) else { return nil }
+        return cards[currentIndex]
     }
 
     var body: some View {
@@ -18,28 +23,15 @@ struct SteerRootView: View {
             VStack(spacing: 12) {
                 topBar
 
-                ZStack {
-                    CardBackplate(offset: 34, scale: 0.92, opacity: 0.20)
-                    CardBackplate(offset: 18, scale: 0.96, opacity: 0.42)
-
-                    ActionCardView(
-                        card: currentCard,
-                        onOpenDetail: { isShowingDetail = true },
-                        onSend: { text in sendFromCard(text) }
-                    )
-                    .id(currentCard.id)
-                    .offset(x: cardDragOffset)
-                    .rotationEffect(.degrees(cardDragOffset / 34))
-                    .gesture(cardSwipeGesture)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                cardStack
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 PageDots(count: cards.count, index: currentIndex)
                     .padding(.bottom, 8)
             }
             .padding(14)
 
-            if isShowingDetail {
+            if isShowingDetail, let currentCard {
                 DetailView(
                     card: currentCard,
                     onClose: { isShowingDetail = false },
@@ -51,6 +43,9 @@ struct SteerRootView: View {
         .frame(width: 375, height: 812)
         .animation(.snappy(duration: 0.22), value: currentIndex)
         .animation(.snappy(duration: 0.22), value: isShowingDetail)
+        .task {
+            await refreshLoop()
+        }
     }
 
     private var topBar: some View {
@@ -58,7 +53,7 @@ struct SteerRootView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Steer")
                     .font(.system(size: 17, weight: .semibold))
-                Text("\(cards.count) waiting actions")
+                Text(statusText)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -77,7 +72,43 @@ struct SteerRootView: View {
         .frame(height: 44)
     }
 
+    @ViewBuilder
+    private var cardStack: some View {
+        if isLoading && cards.isEmpty {
+            ProgressView()
+                .controlSize(.small)
+        } else if let currentCard {
+            ZStack {
+                CardBackplate(offset: 34, scale: 0.92, opacity: 0.20)
+                CardBackplate(offset: 18, scale: 0.96, opacity: 0.42)
+
+                ActionCardView(
+                    card: currentCard,
+                    onOpenDetail: { isShowingDetail = true },
+                    onSend: { text in sendFromCard(text) }
+                )
+                .id(currentCard.id)
+                .offset(x: cardDragOffset)
+                .rotationEffect(.degrees(cardDragOffset / 34))
+                .gesture(cardSwipeGesture)
+            }
+        } else {
+            EmptyStateView(message: lastError ?? "No Steer sessions yet")
+        }
+    }
+
+    private var statusText: String {
+        if let lastError {
+            return lastError
+        }
+        if cards.isEmpty {
+            return isLoading ? "loading sessions" : "no active sessions"
+        }
+        return "\(cards.count) sessions"
+    }
+
     private func move(_ delta: Int) {
+        guard !cards.isEmpty else { return }
         currentIndex = (currentIndex + delta + cards.count) % cards.count
     }
 
@@ -115,13 +146,50 @@ struct SteerRootView: View {
 
     private func sendFromCard(_ text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        cards[currentIndex].thread.append(ThreadMessage(sender: .user, text: text))
-        move(1)
+        guard let currentCard else { return }
+
+        Task {
+            await send(text, to: currentCard.sessionId)
+            move(1)
+        }
     }
 
     private func insertReply(_ text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        cards[currentIndex].thread.append(ThreadMessage(sender: .user, text: text))
+        guard let currentCard else { return }
+
+        Task {
+            await send(text, to: currentCard.sessionId)
+        }
+    }
+
+    private func send(_ text: String, to sessionId: String) async {
+        do {
+            try await store.send(text, to: sessionId)
+            await reload()
+        } catch {
+            lastError = "send failed"
+        }
+    }
+
+    private func refreshLoop() async {
+        await reload()
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(2))
+            await reload()
+        }
+    }
+
+    private func reload() async {
+        let loadedCards = await store.loadCards()
+        cards = loadedCards
+        isLoading = false
+        if currentIndex >= cards.count {
+            currentIndex = max(cards.count - 1, 0)
+        }
+        if !loadedCards.isEmpty {
+            lastError = nil
+        }
     }
 }
 
@@ -174,6 +242,30 @@ private struct PageDots: View {
             }
         }
         .frame(height: 38)
+    }
+}
+
+private struct EmptyStateView: View {
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "terminal")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(message)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text("Run steer claude or steer codex in a terminal.")
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: 590)
+        .background(Color(red: 0.985, green: 0.985, blue: 0.975), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.black.opacity(0.10), lineWidth: 1)
+        }
     }
 }
 

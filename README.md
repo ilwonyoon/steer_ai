@@ -57,6 +57,8 @@ swift build
 swift run SteerMac
 ```
 
+The Mac app reads live sessions from `~/.steer/steer.sqlite` and sends replies through `steer send`.
+
 Current structure:
 
 ```text

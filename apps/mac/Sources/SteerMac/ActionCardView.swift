@@ -62,6 +62,10 @@ private struct TerminalMetaView: View {
             "blocked"
         case .running:
             "running"
+        case .ended:
+            "ended"
+        case .disconnected:
+            "disconnected"
         }
     }
 }

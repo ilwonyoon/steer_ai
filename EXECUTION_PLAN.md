@@ -120,6 +120,8 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] Add quick reply / quick instruction chips above the input field.
 - [x] Add detail composer with target session selection.
 - [x] Pivot card content from large summary cards to terminal-tail excerpts.
+- [x] Read live sessions and transcript entries from local SQLite.
+- [x] Send replies from the card/detail composer through `steer send`.
 - [ ] Add macOS notifications for waiting/blocker states.
 
 Exit criteria:
