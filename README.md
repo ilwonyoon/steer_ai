@@ -76,6 +76,8 @@ node packages/cli/src/index.js sessions
 node packages/cli/src/index.js send <sessionId> "console.log('steer injection ok')"
 ```
 
+The agent writes local state to `~/.steer/steer.sqlite` and transcript logs to `~/.steer/sessions/`. Set `STEER_HOME` for isolated local tests.
+
 Claude Code is the first real provider target:
 
 ```sh

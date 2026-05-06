@@ -95,12 +95,12 @@ Exit criteria:
 
 Goal: centralize session state, messages, and instruction delivery.
 
-- [ ] Define SQLite schema for `Room`, `Session`, `Message`, `Instruction`, and `MetricEvent`.
-- [ ] Implement `SteerAgent` as the single writer.
-- [ ] Add Unix domain socket or local IPC API.
-- [ ] Stream wrapper events into the agent.
-- [ ] Persist session state transitions.
-- [ ] Persist pending/injected/failed instruction status.
+- [x] Define SQLite schema for `Room`, `Session`, `Message`, `Instruction`, and `MetricEvent`.
+- [x] Implement `SteerAgent` as the single writer.
+- [x] Add Unix domain socket or local IPC API.
+- [x] Stream wrapper events into the agent.
+- [x] Persist session state transitions.
+- [x] Persist pending/injected/failed instruction status.
 - [ ] Add crash/reconnect behavior for wrapper processes.
 
 Exit criteria:
@@ -160,8 +160,8 @@ Exit criteria:
 - [x] Export Backtick PRD and Tech Spec into `docs/`.
 - [x] Write Happy wrapper research note.
 - [x] Choose prototype stack: Node agent first vs Swift/Rust agent first.
-- [ ] Define v1 SQLite schema.
-- [ ] Define local IPC protocol.
+- [x] Define v1 SQLite schema.
+- [x] Define local IPC protocol.
 - [x] Create first wrapper spike.
 - [x] Create Mac app skeleton.
 
@@ -214,6 +214,10 @@ Claude should be the first real provider target. `steer claude` now uses Claude 
 ### 2026-05-06: Codex App-Server Adapter
 
 `steer codex` now uses `codex app-server --listen stdio://` by default, initializes JSON-RPC, starts a Codex thread, sends idle instructions with `turn/start`, streams agent deltas back to the terminal and transcript, and returns the session to `waiting` after `turn/completed`. `steer codex --raw` remains as the generic fallback. A smoke test returned `STEER_CODEX_WAIT_OK`, proving the provider-native Codex control path works for the basic report/instruct loop.
+
+### 2026-05-06: SQLite Store
+
+`SteerAgent` now owns the local SQLite write path at `~/.steer/steer.sqlite`. The schema includes rooms, sessions, messages, instructions, terminal excerpts, transcript entries, and metric events. Session registration, state transitions, transcript chunks, user instructions, and injection acknowledgements are persisted while active delivery sockets remain in memory.
 
 ### 2026-05-06: macOS Strategy
 
@@ -283,6 +287,6 @@ Learned:
 Next:
 - Harden Claude adapter event parsing and waiting/action detection.
 - Harden Codex same-turn steering, approval events, and waiting/action detection.
-- Define SQLite schema for session, message, instruction, transcript records, and provider thread ids.
+- Add transcript excerpt extraction and classifier-generated action card rows.
 - Add menu bar status item and notification shell.
 - Decide prototype stack, IPC approach, and first provider adapter target.

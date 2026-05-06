@@ -12,6 +12,6 @@
     "test:wrapper": "node packages/cli/src/index.js wrap -- node -i"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.5.0"
   }
 }

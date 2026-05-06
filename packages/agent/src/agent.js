@@ -5,8 +5,10 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { encodeMessage, createLineDecoder } from "./protocol.js";
 import { sessionsDir, socketPath } from "./paths.js";
+import { createStore } from "./store.js";
 
 const sessions = new Map();
+const store = createStore();
 
 fs.mkdirSync(sessionsDir, { recursive: true });
 if (fs.existsSync(socketPath)) {
@@ -39,6 +41,11 @@ const server = net.createServer((socket) => {
         });
         break;
       case "ack":
+        store.updateInstructionStatus(
+          message.instructionId,
+          message.status,
+          message.failureReason ?? null
+        );
         appendTranscript({
           sessionId: message.sessionId,
           stream: "system",
@@ -60,6 +67,9 @@ const server = net.createServer((socket) => {
           runState: session.runState === "ended" ? "ended" : "disconnected",
           updatedAt: new Date().toISOString()
         });
+        if (session.runState !== "ended") {
+          store.updateSessionState(sessionId, "disconnected");
+        }
       }
     }
   });
@@ -84,13 +94,16 @@ function registerSession(message, socket, send) {
     args: message.args ?? [],
     cwd: message.cwd,
     pid: message.pid,
+    providerThreadId: message.providerThreadId,
     runState: "running",
     createdAt: now,
     updatedAt: now,
+    currentRoomId: store.defaultRoomId,
     socket
   };
 
   sessions.set(message.sessionId, session);
+  store.upsertSession(session);
   appendTranscript({
     sessionId: message.sessionId,
     stream: "system",
@@ -103,6 +116,7 @@ function appendTranscript(message) {
   const filePath = path.join(sessionsDir, `${message.sessionId}.log`);
   const prefix = message.stream === "stdout" || message.stream === "stderr" ? "" : "";
   fs.appendFileSync(filePath, `${prefix}${message.chunk}`);
+  store.appendTranscript(message);
 }
 
 function updateState(message) {
@@ -115,6 +129,7 @@ function updateState(message) {
     exitCode: message.exitCode,
     updatedAt: new Date().toISOString()
   });
+  store.updateSessionState(message.sessionId, message.runState, message.exitCode ?? null);
 }
 
 function routeInstruction(message, send) {
@@ -130,6 +145,11 @@ function routeInstruction(message, send) {
   }
 
   const instructionId = randomUUID();
+  store.createInstruction({
+    id: instructionId,
+    sessionId: message.sessionId,
+    text: message.text
+  });
   session.socket.write(encodeMessage({
     type: "instruction",
     instructionId,
@@ -148,6 +168,7 @@ function shutdown() {
     try {
       fs.unlinkSync(socketPath);
     } catch {}
+    store.close();
     process.exit(0);
   });
 }

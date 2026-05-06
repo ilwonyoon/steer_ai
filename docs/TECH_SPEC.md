@@ -98,7 +98,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Provides local API to wrapper and Mac app.
 - Prototype may use TypeScript/Node; production should evaluate Swift or Rust plus XPC.
 
-Current spike: Node `SteerAgent` listens on `~/.steer/steer.sock`, keeps session registry in memory, writes transcripts to `~/.steer/sessions/<sessionId>.log`, and routes `send` requests to the wrapper's persistent socket. This validates the local report/instruct loop before SQLite and provider-native adapters are added.
+Current spike: Node `SteerAgent` listens on `~/.steer/steer.sock`, keeps active sockets in memory, writes transcripts to `~/.steer/sessions/<sessionId>.log`, persists rooms/sessions/messages/instructions/transcript entries/metric events to `~/.steer/steer.sqlite`, and routes `send` requests to the wrapper's persistent socket. This validates the local report/instruct loop before classification and Mac app ingestion are added.
 
 Claude smoke test: `steer claude --max-budget-usd 0.02` plus `steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."` successfully returned `STEER_CLAUDE_OK` through Claude Code stream-json. The adapter currently marks state `running` on instruction injection and `waiting` when a Claude `result` event arrives.
 

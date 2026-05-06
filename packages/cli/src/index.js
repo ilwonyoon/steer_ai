@@ -68,7 +68,7 @@ async function wrapProvider(provider, childCommand, childArgs) {
   process.stderr.write(`[steer] send with: node packages/cli/src/index.js send ${sessionId} \"your instruction\"\n`);
 
   process.stdin.setRawMode?.(false);
-  process.stdin.pipe(child.stdin);
+  process.stdin.pipe(child.stdin, { end: false });
 
   child.stdout.on("data", (chunk) => {
     process.stdout.write(chunk);
@@ -286,7 +286,8 @@ async function runCodexAdapter(args) {
     command: "codex",
     args: ["app-server", "--listen", "stdio://"],
     cwd: process.cwd(),
-    pid: codex.pid
+    pid: codex.pid,
+    providerThreadId: threadId
   });
   setState("waiting");
 

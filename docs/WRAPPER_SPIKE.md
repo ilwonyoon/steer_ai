@@ -92,7 +92,7 @@ Codex returned `STEER_CODEX_WAIT_OK` through `codex app-server` JSON-RPC. The ad
 - The generic `steer wrap -- <command>` path uses child stdin/stdout pipes, not a pty.
 - Some interactive CLIs may still require TTY behavior when no provider-native adapter exists.
 - No prompt-ready detection yet; instructions are sent immediately.
-- No SQLite persistence yet; session registry is in memory, transcript logs are file-backed.
+- Active sockets are still in memory, but durable session, message, instruction, transcript, and metric rows are persisted in SQLite.
 - No multiline injection policy yet.
 - Claude uses CLI headless stream-json, not the TypeScript SDK package yet.
 - Codex uses app-server, but same-turn steering and approval flows need real dogfood testing.
@@ -100,6 +100,6 @@ Codex returned `STEER_CODEX_WAIT_OK` through `codex app-server` JSON-RPC. The ad
 ## Next
 
 1. Add prompt-ready/waiting detection hardening for Claude and Codex.
-2. Persist sessions, messages, instructions, and transcript excerpts in SQLite.
-3. Add provider-native approval/request handling for Codex app-server events.
+2. Add provider-native approval/request handling for Codex app-server events.
+3. Add transcript excerpt extraction and classifier-generated action card rows.
 4. Add pty fallback only if provider-native control is not enough.
