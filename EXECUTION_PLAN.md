@@ -22,7 +22,7 @@ Keep this document focused on execution. Durable product or architecture changes
 - Steer is an AI action queue, not a full chat mirror.
 - The default UX is an action card stack, not a chat timeline.
 - Opening a card shows a Claude/Codex-style session detail with full context and reply controls.
-- The Mac app should start as a focused mobile-width utility window, roughly 430-520px wide, so the core stack ports cleanly to iOS.
+- The Mac app should start as a focused mobile-width utility window, 375px wide x 812px tall, so the core stack ports cleanly to iOS.
 - The UI should feel iOS-native and use Liquid Glass where available, especially around chips, input, and focused reply surfaces.
 - The main card bottom should be a reply input with suggested chips above it, not Skip/Snooze/Done buttons.
 - Rooms are grouping/filtering constructs, and users may later create multiple rooms.
@@ -175,7 +175,7 @@ The default UI is a Tinder-style action card stack for stuck, waiting, decision,
 
 ### 2026-05-06: Focused Mac Window
 
-The Mac app should default to a mobile-like focused utility window, roughly 430-520px wide. This keeps the card stack and detail flow portable to iOS while still allowing Mac-only affordances like menu bar entry, keyboard shortcuts, and a wider optional split view later.
+The Mac app should default to a mobile-like focused utility window, 375px wide x 812px tall. This keeps the card stack and detail flow portable to iOS while still allowing Mac-only affordances like menu bar entry, keyboard shortcuts, and a wider optional split view later.
 
 ### 2026-05-06: iOS-Native Reply Surface
 

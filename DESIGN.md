@@ -90,8 +90,8 @@ Avoid large marketing headings inside the product. This is a working surface.
 
 ### Action Card
 - Shows one AI session that may need user attention.
-- Recommended desktop size: 520-680px wide, 560-720px tall.
-- Recommended mobile size: 92vw wide, 68-76vh tall.
+- Mac window baseline: 375px wide x 812px tall.
+- Card sits inside that window with 14px outer padding.
 - Radius: 18-24pt.
 - Elevation: subtle shadow plus hairline border.
 - Background cards: offset 8-14px, scaled 96-98%, muted opacity.
@@ -236,7 +236,7 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 - Touch targets must be at least 44x44pt.
 
 ### Desktop / Mac
-- Default to a focused mobile-width utility window: 430-520px wide, centered on the display.
+- Default to a focused mobile-width utility window: 375px wide x 812px tall, centered on the display.
 - Keep the main card stack portable to iOS by using the same single-column viewport and interaction model.
 - Allow resizing into a wider desktop mode later, with optional side rail and split detail.
 - Detail can open as a split view or separate focused pane.
