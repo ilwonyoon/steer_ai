@@ -10,6 +10,7 @@ Reference mix:
 - Primary interaction: Tinder-style card stack for one-at-a-time triage.
 - Triage workflow: Gmail inbox plus Smart Reply for fast decision handling.
 - Detail view: Claude/Codex-style assistant session for full context and response.
+- Platform feel: iOS-native surfaces with Liquid Glass where available.
 - Visual tone: Instagram DM for immediacy, lightness, and approachable messaging surfaces.
 - Technical layer: Linear for status, priority, metadata, and calm precision.
 
@@ -101,9 +102,8 @@ Required content:
 - Category: `question`, `decision`, `blocker`, `completion`, `idle`.
 - AI-generated summary in 3-6 lines.
 - Why it needs attention.
-- Suggested response chips.
-- Primary action: `Reply`.
-- Secondary actions: `Open`, `Skip`, `Snooze`, `Done`.
+- Suggested response chips above the input field.
+- Bottom reply input for direct instruction.
 
 The active card should communicate enough context to answer simple cases without opening detail. It should not attempt to display the full transcript.
 
@@ -112,8 +112,6 @@ The active card should communicate enough context to answer simple cases without
 - Arrow keys or swipe/trackpad: move through cards.
 - `Enter`: reply to active card.
 - `Space`: preview/open detail.
-- `S`: snooze.
-- `D`: mark done when no response is needed.
 - `Cmd+K`: switch session, room, or command.
 
 Use rotation and stack movement subtly. The interaction should feel fast and precise, not game-like.
@@ -143,12 +141,19 @@ Opening a card shows the full session context in a Claude/Codex-style view.
 - Supports proactive instructions, not only replies to the active card.
 
 ### Quick Chips
-- Horizontal chips above the composer.
+- Horizontal chips above the input field.
 - Height: 32-36pt.
 - Radius: 16-18pt.
 - Default fill: quick chip fill.
 - Keep text short: `Proceed`, `Test first`, `Use option A`, `Explain more`, `Stop here`.
 - Recommended option may use blue text or subtle blue tint.
+
+### Liquid Glass Treatment
+- Use native iOS/macOS Liquid Glass APIs in SwiftUI where available.
+- Group chips and input inside one glass reply dock.
+- Use interactive glass only for tappable chips, send buttons, and focusable input surfaces.
+- Keep card glass subtle; content legibility is more important than translucency.
+- Provide material-style fallback for OS versions without Liquid Glass.
 
 ## 6. Rooms, Filters, And Routing
 
@@ -180,7 +185,7 @@ The default screen should optimize for the next action, not for seeing every mes
 Use mostly flat surfaces with a clear stack layer.
 
 - Level 0: canvas.
-- Level 1: detail surfaces, composer, side rail.
+- Level 1: detail surfaces, glass reply dock, side rail.
 - Level 2: active action card.
 - Level 3: background stack cards.
 - Level 4: sheet/modal shadow only.
@@ -192,6 +197,7 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 ### Do
 - Make the default screen a stuck-AI action queue.
 - Let the active card answer: what is waiting, why it matters, and what I can do.
+- Put suggested chips directly above the reply input.
 - Preserve Instagram DM's lightness in message surfaces and replies.
 - Use Claude/Codex-style session detail for full context.
 - Use Linear-like labels for technical state.
@@ -204,6 +210,7 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 - Do not build a Slack clone.
 - Do not make the default UI a chat timeline.
 - Do not build a terminal dashboard as the primary surface.
+- Do not put Skip/Snooze/Done as dominant bottom actions on the main card.
 - Do not use Tinder's dating language, social gestures, or playful match feedback.
 - Do not use Instagram feed, story, reel, profile, or social engagement patterns.
 - Do not use large hero text inside the app.
@@ -236,7 +243,7 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 
 When generating Steer UI, use this prompt:
 
-Build Steer as a stuck-AI action queue. The primary screen is a large Tinder-style card stack, with one waiting/blocker/decision card in front and the backlog visible behind it. Use Gmail-like triage and Smart Reply chips for fast responses. Opening a card shows a Claude/Codex-style session detail with full context, transcript, metadata, quick chips, and a bottom composer. Preserve Instagram DM's light, immediate feel in message surfaces, but do not make the app chat-first. Add Linear-style technical state with small pills for running, waiting, blocked, done, and idle. Keep chrome monochrome, reserve color for actions and status, and make the next user action obvious.
+Build Steer as a stuck-AI action queue with an iOS-native Liquid Glass feel. The primary screen is a large Tinder-style card stack, with one waiting/blocker/decision card in front and the backlog visible behind it. Each card has suggested reply chips directly above a bottom input field; do not use Skip/Snooze/Done as the dominant bottom controls. Opening a card shows a Claude/Codex-style session detail with full context, transcript, metadata, chips above the composer, and a bottom input. Preserve Instagram DM's light, immediate feel in message surfaces, but do not make the app chat-first. Add Linear-style technical state with small pills for running, waiting, blocked, done, and idle. Keep chrome monochrome, reserve color for actions and status, and make the next user reply obvious.
 
 Quick color reference:
 - Canvas light/dark: `#FFFFFF` / `#000000`

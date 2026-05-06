@@ -57,11 +57,14 @@ Claude Code, Codex, Gemini CLI 등 에이전트 CLI가 mainstream화 (25-26). "V
 
 **Mac window model**: v1 Mac 앱은 데스크톱 전체를 채우는 dashboard가 아니라 430-520px 폭의 focused utility window로 시작한다. 이렇게 하면 card stack과 detail flow가 iOS로 거의 그대로 porting되고, Mac에서는 menu bar, keyboard shortcut, notification 같은 platform affordance를 추가로 얹을 수 있다. 넓은 화면에서는 후속으로 side rail/split detail을 제공한다.
 
+**Reply surface**: 카드 하단의 기본 행동은 Skip/Snooze/Done 버튼이 아니라 input field다. 추천 chip은 input 바로 위에 두고, 사용자는 chip을 탭해 입력을 채우거나 직접 짧게 답한다. 전체 UI는 iOS native 스타일을 우선하고, 가능한 OS에서는 Liquid Glass를 reply dock, chip, input surface에 활용한다.
+
 ## Design Direction
 
 - **Primary interaction**: Tinder-style card stack. 한 번에 하나의 stuck/waiting card를 보고 빠르게 처리.
-- **Triage workflow**: Gmail + Smart Reply. 빠른 분류, quick chip, snooze/done/skip.
+- **Triage workflow**: Gmail + Smart Reply. 빠른 분류, input 위 quick chip, 짧은 답변 입력.
 - **Detail view**: Claude/Codex-style session. 전체 transcript/context, metadata, composer.
+- **Platform feel**: iOS native + Liquid Glass. Glass reply dock, chip, input surface 중심.
 - **Visual tone**: Instagram DM. 가볍고 즉각적인 reply surface, compact bubbles, approachable interaction.
 - **Technical layer**: Linear. `running`, `waiting`, `blocked`, `done` 같은 세션 상태, priority, project grouping, dense-but-clean metadata.
 - **Optional Mac interaction**: Raycast. command palette, `@session` routing, 빠른 card/session 전환.

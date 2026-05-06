@@ -27,7 +27,7 @@
     - prioritized action card stack
     - Claude/Codex-style session detail
     - Linear-style session status
-    - quick reply buttons
+    - quick reply chips above input
     - proactive detail composer with target routing
     - notifications
 ```
@@ -97,13 +97,16 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - SwiftUI/AppKit shell.
 - Menu bar status item.
 - Default window size: focused mobile-width utility window, roughly 430-520px wide.
+- iOS-native visual system; use Liquid Glass APIs where available, with material fallback.
 - Action card stack as the default surface.
 - Session filter and optional room list as secondary surfaces.
 - Claude/Codex-style session detail opened from a card.
 - Cards for progress, completion, decision, blocker, question, and idle.
-- Quick reply / quick instruction chips.
+- Quick reply / quick instruction chips above the card/detail input field.
 - Detail composer with target session selection or `@session` mention routing.
 - Agent badges and Linear-style state pills.
+
+SwiftUI implementation note: use native Liquid Glass APIs for grouped reply surfaces when available. Wrap chips/input/send controls in one glass container; apply interactive glass only to tappable or focusable elements. Provide `.ultraThinMaterial` or equivalent fallback for earlier macOS/iOS versions.
 
 ## Classification
 

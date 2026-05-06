@@ -23,6 +23,8 @@ Keep this document focused on execution. Durable product or architecture changes
 - The default UX is an action card stack, not a chat timeline.
 - Opening a card shows a Claude/Codex-style session detail with full context and reply controls.
 - The Mac app should start as a focused mobile-width utility window, roughly 430-520px wide, so the core stack ports cleanly to iOS.
+- The UI should feel iOS-native and use Liquid Glass where available, especially around chips, input, and focused reply surfaces.
+- The main card bottom should be a reply input with suggested chips above it, not Skip/Snooze/Done buttons.
 - Rooms are grouping/filtering constructs, and users may later create multiple rooms.
 - Room membership and session invitation/routing are follow-up specs.
 - v1 is Mac-first and local-first.
@@ -114,7 +116,7 @@ Goal: make the core loop usable from a native Mac UI.
 - [ ] Open card into Claude/Codex-style session detail.
 - [ ] Show session badges and state pills.
 - [ ] Render report, decision, blocker, completion, and idle cards.
-- [ ] Add quick reply / quick instruction chips.
+- [ ] Add quick reply / quick instruction chips above the input field.
 - [ ] Add detail composer with target session selection.
 - [ ] Add macOS notifications for waiting/blocker states.
 
@@ -174,6 +176,10 @@ The default UI is a Tinder-style action card stack for stuck, waiting, decision,
 ### 2026-05-06: Focused Mac Window
 
 The Mac app should default to a mobile-like focused utility window, roughly 430-520px wide. This keeps the card stack and detail flow portable to iOS while still allowing Mac-only affordances like menu bar entry, keyboard shortcuts, and a wider optional split view later.
+
+### 2026-05-06: iOS-Native Reply Surface
+
+The card stack should use an iOS-native visual model with Liquid Glass where available. The dominant bottom surface is a glass reply dock: suggested chips above an input field. Skip/Snooze/Done should not be primary bottom buttons; secondary queue movement can live in gestures, keyboard shortcuts, or less prominent controls.
 
 ### 2026-05-06: Room Model
 

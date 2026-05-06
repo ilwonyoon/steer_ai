@@ -23,9 +23,9 @@ Steer is not a full chat mirror. It is an AI action queue:
 
 - Waiting, blocked, decision, completion, and idle states appear as prioritized cards.
 - Opening a card shows full Claude/Codex-style session context and transcript.
-- Users can answer questions or send proactive instructions.
+- Users answer through an input field with suggested chips directly above it.
 - The system tracks session states such as `running`, `waiting`, `blocked`, `idle`, and `done`.
-- The design uses a Tinder-style stack for one-at-a-time triage, Claude/Codex-style detail for context, Instagram DM-like reply lightness, and Linear-style technical status clarity.
+- The design uses a Tinder-style stack for one-at-a-time triage, iOS-native Liquid Glass reply surfaces, Claude/Codex-style detail for context, Instagram DM-like reply lightness, and Linear-style technical status clarity.
 
 ## Technical Direction
 

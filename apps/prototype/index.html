@@ -18,6 +18,8 @@
         --green: #34c759;
         --amber: #ffb020;
         --red: #ff453a;
+        --glass: rgba(255, 255, 255, 0.72);
+        --glass-strong: rgba(255, 255, 255, 0.86);
         --shadow: 0 24px 70px rgba(0, 0, 0, 0.12);
       }
 
@@ -30,6 +32,8 @@
           --muted: #a1a1a8;
           --tertiary: #6f6f76;
           --line: #2a2a2d;
+          --glass: rgba(28, 28, 31, 0.66);
+          --glass-strong: rgba(28, 28, 31, 0.82);
           --shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
         }
       }
@@ -48,6 +52,7 @@
       }
 
       button,
+      input,
       textarea {
         font: inherit;
       }
@@ -96,7 +101,9 @@
         height: 36px;
         border: 1px solid var(--line);
         border-radius: 18px;
-        background: var(--surface);
+        background: var(--glass);
+        backdrop-filter: blur(24px) saturate(1.45);
+        -webkit-backdrop-filter: blur(24px) saturate(1.45);
         color: var(--text);
         display: grid;
         place-items: center;
@@ -105,6 +112,7 @@
 
       .stack-stage {
         position: relative;
+        width: 100%;
         min-height: 620px;
         display: grid;
         place-items: center;
@@ -113,10 +121,12 @@
 
       .card-shadow {
         position: absolute;
-        width: min(100%, 460px);
+        width: min(calc(100vw - 28px), 460px);
         height: min(72vh, 590px);
         border-radius: 24px;
-        background: var(--surface);
+        background: var(--glass);
+        backdrop-filter: blur(26px) saturate(1.55);
+        -webkit-backdrop-filter: blur(26px) saturate(1.55);
         border: 1px solid var(--line);
       }
 
@@ -133,16 +143,20 @@
       .action-card {
         position: relative;
         z-index: 2;
-        width: min(100%, 460px);
+        width: min(calc(100vw - 28px), 460px);
+        min-width: 0;
         height: min(72vh, 590px);
         min-height: 540px;
         display: flex;
         flex-direction: column;
         border: 1px solid var(--line);
         border-radius: 24px;
-        background: var(--surface);
+        background: linear-gradient(180deg, var(--glass-strong), var(--glass));
+        backdrop-filter: blur(30px) saturate(1.55);
+        -webkit-backdrop-filter: blur(30px) saturate(1.55);
         box-shadow: var(--shadow);
         padding: 22px;
+        cursor: pointer;
       }
 
       .card-meta,
@@ -210,6 +224,8 @@
 
       .chips {
         display: flex;
+        max-width: 100%;
+        min-width: 0;
         flex-wrap: wrap;
         gap: 8px;
         margin-top: 18px;
@@ -236,27 +252,38 @@
         flex: 1;
       }
 
-      .card-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 9px;
+      .reply-dock {
+        min-width: 0;
         margin-top: 18px;
+        border: 1px solid rgba(229, 229, 231, 0.72);
+        border-radius: 28px;
+        background: var(--glass);
+        backdrop-filter: blur(26px) saturate(1.6);
+        -webkit-backdrop-filter: blur(26px) saturate(1.6);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+        padding: 10px;
       }
 
-      .action {
-        height: 42px;
-        border-radius: 21px;
-        border: 1px solid var(--line);
-        background: var(--surface);
-        color: var(--text);
-        font-weight: 650;
-        cursor: pointer;
+      .reply-dock .chips {
+        margin: 0 0 9px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        padding-bottom: 1px;
       }
 
-      .action.reply {
-        background: var(--blue);
-        color: white;
-        border-color: var(--blue);
+      .reply-dock .chip {
+        white-space: nowrap;
+        background: rgba(255, 255, 255, 0.55);
+      }
+
+      .card-composer,
+      .composer {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: end;
       }
 
       .queue {
@@ -353,24 +380,37 @@
         line-height: 1.45;
       }
 
-      .composer {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px;
-        padding-top: 10px;
-        border-top: 1px solid var(--line);
+      .detail-reply {
+        border: 1px solid rgba(229, 229, 231, 0.72);
+        border-radius: 28px;
+        background: var(--glass);
+        backdrop-filter: blur(26px) saturate(1.6);
+        -webkit-backdrop-filter: blur(26px) saturate(1.6);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+        padding: 10px;
       }
 
+      .detail-reply .chips {
+        margin: 0 0 9px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+      }
+
+      input,
       textarea {
+        min-width: 0;
         min-height: 44px;
         max-height: 120px;
         resize: none;
-        border: 1px solid var(--line);
+        border: 1px solid rgba(229, 229, 231, 0.7);
         border-radius: 22px;
-        background: var(--surface);
+        background: var(--glass-strong);
+        backdrop-filter: blur(18px) saturate(1.35);
+        -webkit-backdrop-filter: blur(18px) saturate(1.35);
         color: var(--text);
         padding: 12px 14px;
         outline: none;
+        cursor: text;
       }
 
       .send {
@@ -386,9 +426,7 @@
 
       @media (min-width: 900px) {
         body {
-          background:
-            linear-gradient(90deg, rgba(229, 229, 231, 0.55) 1px, transparent 1px) 0 0 / 72px 72px,
-            var(--canvas);
+          background: var(--canvas);
         }
 
         .shell,
@@ -446,12 +484,13 @@
           <div class="reason" id="card-reason">
             Workspace-level RLS supports future collaboration, but user-level RLS is simpler for the first dogfood build.
           </div>
-          <div class="chips" id="chips"></div>
           <div class="spacer"></div>
-          <div class="card-actions">
-            <button class="action" type="button" id="skip">Skip</button>
-            <button class="action" type="button" id="snooze">Snooze</button>
-            <button class="action reply" type="button" id="open-detail">Reply</button>
+          <div class="reply-dock" aria-label="Quick reply">
+            <div class="chips" id="chips"></div>
+            <div class="card-composer">
+              <input id="card-reply" type="text" aria-label="Quick reply" placeholder="Reply to this AI session" />
+              <button class="send" type="button" id="card-send">↑</button>
+            </div>
           </div>
         </article>
       </section>
@@ -469,7 +508,7 @@
           </div>
         </header>
         <div class="thread" id="thread"></div>
-        <footer>
+        <footer class="detail-reply">
           <div class="chips" id="detail-chips"></div>
           <div class="composer">
             <textarea id="reply" aria-label="Reply" placeholder="Send instruction to this session"></textarea>
@@ -576,11 +615,27 @@
 
       byId("next").addEventListener("click", () => move(1));
       byId("prev").addEventListener("click", () => move(-1));
-      byId("skip").addEventListener("click", () => move(1));
-      byId("snooze").addEventListener("click", () => move(1));
-      byId("open-detail").addEventListener("click", () => byId("detail").classList.add("open"));
-      byId("card").addEventListener("dblclick", () => byId("detail").classList.add("open"));
+      byId("card").addEventListener("click", (event) => {
+        if (event.target.closest(".reply-dock, button, input")) return;
+        byId("detail").classList.add("open");
+      });
       byId("close-detail").addEventListener("click", () => byId("detail").classList.remove("open"));
+      byId("chips").addEventListener("click", (event) => {
+        if (event.target.matches(".chip")) byId("card-reply").value = event.target.textContent;
+      });
+      byId("detail-chips").addEventListener("click", (event) => {
+        if (event.target.matches(".chip")) byId("reply").value = event.target.textContent;
+      });
+      byId("card-send").addEventListener("click", () => {
+        const reply = byId("card-reply");
+        if (!reply.value.trim()) {
+          byId("detail").classList.add("open");
+          return;
+        }
+        cards[index].thread.push(["user", reply.value.trim()]);
+        reply.value = "";
+        move(1);
+      });
       byId("send").addEventListener("click", () => {
         const reply = byId("reply");
         if (!reply.value.trim()) return;
