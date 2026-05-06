@@ -1,0 +1,141 @@
+# Tech Spec: Steer
+
+> **Goal**: Mac 앱이 여러 AI CLI 세션의 output을 보고로 캡처하고, 사용자의 답변/지시를 정확한 target session에 주입한다. v1은 Mac 단독으로 bidirectional report/instruct loop를 검증하고, v2에 iOS 동기화를 추가한다.
+
+## High-Level Architecture
+
+```text
+[Mac]
+  Claude/Codex/Gemini sessions (spawned through Steer wrapper/control adapter)
+       ↓ stdout/stderr + state signals
+  Steer Control Adapters
+    - provider-native control when available
+    - pty fallback when needed
+    - transcript capture
+    - stdin injection
+    - session heartbeat/status
+       ↓ SQLite / local socket
+  SteerAgent
+    - session registry
+    - room/message/instruction store
+    - stop/waiting/block detection
+    - report/decision/blocker/completion classification
+    - quick reply / quick instruction generation
+    - pending instruction delivery to target session
+       ↓
+  Steer Mac App
+    - room list / default unified room
+    - DM-like message stream
+    - Linear-style session status
+    - quick reply buttons
+    - proactive composer with target routing
+    - notifications
+```
+
+v1의 core loop는 bidirectional이다: provider output을 보고로 캡처하고, 사용자 답변/지시를 같은 target session에 주입한다. Hook-only는 이 core loop를 만족하지 못하므로 read-only reporting fallback일 뿐이다.
+
+## v1 Core Decisions
+
+### Control Adapter vs Hook
+
+Steer의 core loop는 보고 받기 + 지시하기다. Hook은 output/event 감지에는 유용하지만, 사용자의 답변/지시를 해당 session에 안정적으로 주입하는 bidirectional channel이 아니다. 따라서 v1은 Steer-owned bidirectional control channel이 필수다.
+
+사용자는 `claude` 대신 `steer claude`, `codex` 대신 `steer codex` 같은 명령어를 실행한다. Steer control adapter가 provider process/protocol을 시작하고, report stream과 instruction delivery를 소유한다.
+
+Happy는 provider control reference로 연구하되, Steer의 product architecture를 통째로 fork하지 않는다. 최신 Happy는 Claude에 Agent SDK/hook/session scanner를, Codex에 `codex app-server` JSON-RPC를 사용한다. Steer도 raw pty만 고집하지 않고 provider-native protocol을 우선 검토한다.
+
+### Room Model
+
+v1은 기본 unified room을 제공한다. 사용자는 모든 session 보고를 한 화면에서 본다. room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본 room + session filter만 구현해도 된다.
+
+### Synchronization
+
+**v1: 로컬만.** App ↔ Agent는 Unix domain socket, local IPC, 또는 XPC. 데이터는 SQLite. wrapper process들은 공통 SQLite에 직접 쓰기보다 agent API를 통해 단일 write path를 사용하는 것이 안전하다.
+
+**v2: CloudKit 또는 Supabase.** iOS 동기화와 push 알림이 검증된 뒤 도입한다.
+
+## Data Model
+
+**Room**: id, name, createdAt, updatedAt, sortOrder, isDefault, notificationPolicy.
+
+**Session**: id, agent (`claude`/`codex`/`gemini`), cwd, projectName, displayName, startedAt, endedAt, runState (`running`/`waiting`/`blocked`/`idle`/`done`/`ended`), pid, wrapperProcessId, lastActivityAt, currentRoomId.
+
+**RoomSession**: roomId, sessionId, joinedAt, muted, pinned. v1은 default room에 모든 session을 자동 포함해도 된다.
+
+**Message**: id, roomId, sessionId, timestamp, direction (`agent_to_user`/`user_to_agent`/`system`), rawContent, displayContent, summary, category, priority, requiresAction, needsInput, options, suggestedInstructions, replyToMessageId, answeredAt, source.
+
+**Instruction**: id, roomId, targetSessionId, sourceMessageId nullable, text, isQuickReply, status (`pending`/`injecting`/`injected`/`failed`), createdAt, injectedAt, failureReason.
+
+**MetricEvent**: id, sessionId, roomId, type, timestamp, metadataJson.
+
+## Components
+
+### Steer Control Adapters
+
+- CLI wrapper mode: `steer claude [args]`, `steer codex [args]`.
+- Claude adapter: evaluate Agent SDK + hooks/session scanner before raw pty.
+- Codex adapter: evaluate `codex app-server` JSON-RPC before raw pty.
+- Fallback adapter: use pty ownership when no provider-native protocol is viable.
+- Streams transcript/event chunks and heartbeat/state to SteerAgent.
+- Receives delivery commands and injects/sends `Instruction` to the target session.
+- Updates session state on child/protocol exit.
+
+### SteerAgent
+
+- Per-user background agent / Login Item.
+- Manages session registry, local store, classifier orchestration, notification policy, and instruction delivery.
+- Owns SQLite writes.
+- Provides local API to wrapper and Mac app.
+- Prototype may use TypeScript/Node; production should evaluate Swift or Rust plus XPC.
+
+### Steer Mac App
+
+- SwiftUI/AppKit shell.
+- Menu bar status item.
+- Room list / session filter.
+- DM-like message stream.
+- Message cards for progress, completion, decision, blocker, question, idle.
+- Quick reply / quick instruction chips.
+- Composer with target session selection or `@session` mention routing.
+- Agent badges and Linear-style state pills.
+
+## Classification
+
+Classifier input: recent transcript window + session metadata + recent user instruction.
+
+Classifier output JSON:
+
+- `requiresAction`
+- `needsInput`
+- `category`: `progress`, `completion`, `decision`, `blocker`, `question`, `idle`
+- `priority`: `silent`, `normal`, `urgent`
+- `summary`
+- `options`
+- `suggestedInstructions`
+
+`requiresAction=false` should be the default. Precision matters more than recall for urgent notifications.
+
+## Security And Privacy
+
+- v1 is local-only.
+- Do not send raw transcripts to a remote service without explicit user control.
+- Treat transcripts as sensitive: they may contain secrets, paths, customer data, or local environment details.
+- Avoid Accessibility/Input Monitoring by owning pty through the wrapper.
+- v1 should target notarized direct distribution, not Mac App Store sandboxing.
+
+## Key Risks
+
+1. **Instruction injection stability**: provider protocol limits, raw pty handling, prompt focus, multiline input, interrupted generation.
+2. **State detection accuracy**: false waiting/blocker states create noisy UX.
+3. **Classifier quality**: bad summaries or bad quick actions reduce trust.
+4. **macOS packaging**: helper registration, signing, notarization, and update flow.
+5. **Scope creep**: full remote chat mirror and team collaboration are not v1.
+
+## Week 1 Milestones
+
+- Day 1: Happy wrapper research and wrapper/injection smoke test.
+- Day 2: Minimal `steer claude` wrapper and transcript stream.
+- Day 3: SQLite model and classification contract.
+- Day 4: Mac app room UI skeleton.
+- Day 5: Composer, target routing, notification, and instruction delivery.
+- Day 6-7: Dogfooding and metrics.
