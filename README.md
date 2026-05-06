@@ -44,10 +44,17 @@ Hook-only mode is not sufficient because it cannot deliver user instructions. v1
 
 No build system is committed yet. Do not invent local commands until the implementation stack is chosen.
 
+The first clickable UX preview is a static prototype:
+
+```text
+apps/prototype/index.html
+```
+
 Expected future structure:
 
 ```text
 apps/mac/
+apps/prototype/
 packages/agent/
 packages/cli/
 docs/

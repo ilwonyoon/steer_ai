@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Steer Prototype</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: #f7f7f8;
+        --surface: #ffffff;
+        --surface-2: #f1f1f3;
+        --text: #111111;
+        --muted: #6b6b70;
+        --tertiary: #9b9ba1;
+        --line: #e5e5e7;
+        --blue: #0a84ff;
+        --green: #34c759;
+        --amber: #ffb020;
+        --red: #ff453a;
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.12);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: #000000;
+          --surface: #1c1c1f;
+          --surface-2: #1f1f23;
+          --text: #f5f5f7;
+          --muted: #a1a1a8;
+          --tertiary: #6f6f76;
+          --line: #2a2a2d;
+          --shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--canvas);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      textarea {
+        font: inherit;
+      }
+
+      .shell {
+        width: min(100vw, 520px);
+        min-height: 100vh;
+        margin: 0 auto;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        padding: 14px;
+        gap: 12px;
+      }
+
+      .topbar {
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .brand strong {
+        font-size: 17px;
+        line-height: 1.2;
+        font-weight: 650;
+      }
+
+      .brand span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .icon-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      .icon-btn {
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--surface);
+        color: var(--text);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .stack-stage {
+        position: relative;
+        min-height: 620px;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+      }
+
+      .card-shadow {
+        position: absolute;
+        width: min(100%, 460px);
+        height: min(72vh, 590px);
+        border-radius: 24px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+      }
+
+      .card-shadow.one {
+        transform: translateY(18px) scale(0.96);
+        opacity: 0.46;
+      }
+
+      .card-shadow.two {
+        transform: translateY(34px) scale(0.92);
+        opacity: 0.22;
+      }
+
+      .action-card {
+        position: relative;
+        z-index: 2;
+        width: min(100%, 460px);
+        height: min(72vh, 590px);
+        min-height: 540px;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        padding: 22px;
+      }
+
+      .card-meta,
+      .detail-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .session {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--amber);
+        flex: 0 0 auto;
+      }
+
+      .dot.blocked {
+        background: var(--red);
+      }
+
+      .dot.running {
+        background: var(--green);
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 5px 8px;
+        white-space: nowrap;
+      }
+
+      h1 {
+        margin: 42px 0 12px;
+        font-size: 28px;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+
+      .summary {
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.45;
+        margin: 0 0 18px;
+      }
+
+      .reason {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--surface-2);
+        padding: 14px;
+        font-size: 14px;
+        line-height: 1.38;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .chip {
+        min-height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 17px;
+        padding: 0 13px;
+        background: var(--surface-2);
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .chip.primary {
+        border-color: rgba(10, 132, 255, 0.34);
+        color: var(--blue);
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      .card-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 9px;
+        margin-top: 18px;
+      }
+
+      .action {
+        height: 42px;
+        border-radius: 21px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--text);
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .action.reply {
+        background: var(--blue);
+        color: white;
+        border-color: var(--blue);
+      }
+
+      .queue {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        min-height: 38px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .queue span {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--line);
+      }
+
+      .queue span.active {
+        width: 20px;
+        border-radius: 8px;
+        background: var(--blue);
+      }
+
+      .detail {
+        position: fixed;
+        inset: 0;
+        display: none;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.2);
+        z-index: 10;
+      }
+
+      .detail.open {
+        display: flex;
+      }
+
+      .detail-panel {
+        width: min(100vw, 520px);
+        min-height: 100vh;
+        background: var(--canvas);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        padding: 14px;
+      }
+
+      .detail-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 48px;
+      }
+
+      .back {
+        border: 0;
+        background: transparent;
+        color: var(--blue);
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .thread {
+        overflow: auto;
+        padding: 12px 0 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .message {
+        max-width: 86%;
+        border-radius: 18px;
+        padding: 12px 14px;
+        font-size: 15px;
+        line-height: 1.42;
+        background: var(--surface);
+        border: 1px solid var(--line);
+      }
+
+      .message.user {
+        align-self: flex-end;
+        background: var(--blue);
+        border-color: var(--blue);
+        color: white;
+      }
+
+      .message pre {
+        margin: 8px 0 0;
+        white-space: pre-wrap;
+        font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line);
+      }
+
+      textarea {
+        min-height: 44px;
+        max-height: 120px;
+        resize: none;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--surface);
+        color: var(--text);
+        padding: 12px 14px;
+        outline: none;
+      }
+
+      .send {
+        width: 44px;
+        height: 44px;
+        border: 0;
+        border-radius: 22px;
+        background: var(--blue);
+        color: white;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      @media (min-width: 900px) {
+        body {
+          background:
+            linear-gradient(90deg, rgba(229, 229, 231, 0.55) 1px, transparent 1px) 0 0 / 72px 72px,
+            var(--canvas);
+        }
+
+        .shell,
+        .detail-panel {
+          min-height: 760px;
+        }
+      }
+
+      @media (max-height: 680px) {
+        .stack-stage {
+          min-height: 530px;
+        }
+
+        .action-card,
+        .card-shadow {
+          height: 500px;
+          min-height: 500px;
+        }
+
+        h1 {
+          margin-top: 24px;
+          font-size: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell" aria-label="Steer action queue prototype">
+      <header class="topbar">
+        <div class="brand">
+          <strong>Steer</strong>
+          <span id="queue-count">3 waiting actions</span>
+        </div>
+        <div class="icon-row">
+          <button class="icon-btn" type="button" aria-label="Previous card" id="prev">‹</button>
+          <button class="icon-btn" type="button" aria-label="Next card" id="next">›</button>
+        </div>
+      </header>
+
+      <section class="stack-stage">
+        <div class="card-shadow two"></div>
+        <div class="card-shadow one"></div>
+        <article class="action-card" id="card">
+          <div class="card-meta">
+            <div class="session">
+              <span class="dot" id="status-dot"></span>
+              <strong id="session-name">brief-app · claude</strong>
+            </div>
+            <span class="pill" id="wait-age">waiting 12m</span>
+          </div>
+          <h1 id="card-title">Supabase RLS decision needed</h1>
+          <p class="summary" id="card-summary">
+            Claude finished the schema pass and is blocked on choosing row isolation. It can continue once you choose user-level or workspace-level policies.
+          </p>
+          <div class="reason" id="card-reason">
+            Workspace-level RLS supports future collaboration, but user-level RLS is simpler for the first dogfood build.
+          </div>
+          <div class="chips" id="chips"></div>
+          <div class="spacer"></div>
+          <div class="card-actions">
+            <button class="action" type="button" id="skip">Skip</button>
+            <button class="action" type="button" id="snooze">Snooze</button>
+            <button class="action reply" type="button" id="open-detail">Reply</button>
+          </div>
+        </article>
+      </section>
+
+      <footer class="queue" id="queue-dots" aria-label="Queue position"></footer>
+    </main>
+
+    <section class="detail" id="detail" aria-label="Session detail">
+      <div class="detail-panel">
+        <header class="detail-header">
+          <button class="back" type="button" id="close-detail">Back</button>
+          <div class="detail-meta">
+            <span id="detail-session">brief-app · claude</span>
+            <span class="pill" id="detail-status">waiting</span>
+          </div>
+        </header>
+        <div class="thread" id="thread"></div>
+        <footer>
+          <div class="chips" id="detail-chips"></div>
+          <div class="composer">
+            <textarea id="reply" aria-label="Reply" placeholder="Send instruction to this session"></textarea>
+            <button class="send" type="button" id="send">↑</button>
+          </div>
+        </footer>
+      </div>
+    </section>
+
+    <script>
+      const cards = [
+        {
+          session: "brief-app · claude",
+          state: "waiting",
+          statusClass: "",
+          age: "waiting 12m",
+          title: "Supabase RLS decision needed",
+          summary:
+            "Claude finished the schema pass and is blocked on choosing row isolation. It can continue once you choose user-level or workspace-level policies.",
+          reason:
+            "Workspace-level RLS supports future collaboration, but user-level RLS is simpler for the first dogfood build.",
+          chips: ["Use user-level", "Use workspace-level", "Explain tradeoffs"],
+          thread: [
+            ["agent", "I finished the table sketch and found one decision before writing policies."],
+            ["agent", "Option A: user-level RLS. It is faster and safer for single-player dogfooding.\n\nOption B: workspace-level RLS. It fits collaboration later but adds membership joins now."],
+            ["user", "Keep v1 scoped. Which option reduces launch risk?"],
+            ["agent", "User-level RLS reduces launch risk. I need approval before applying migrations."]
+          ]
+        },
+        {
+          session: "steer-docs · codex",
+          state: "blocked",
+          statusClass: "blocked",
+          age: "blocked 4m",
+          title: "Mac app window model is unresolved",
+          summary:
+            "Codex is ready to update the app shell spec, but needs a default window size decision before creating SwiftUI layout constraints.",
+          reason:
+            "A mobile-sized Mac window makes iOS porting easier, but the desktop version still needs optional side rails at wider sizes.",
+          chips: ["Use 430px default", "Allow resize", "Add side rail later"],
+          thread: [
+            ["agent", "I recommend a focused utility window: 430-520px wide by default, resizable to desktop split view."],
+            ["agent", "This keeps the primary card stack portable to iOS while preserving Mac keyboard and menu bar affordances."]
+          ]
+        },
+        {
+          session: "happy-research · claude",
+          state: "running",
+          statusClass: "running",
+          age: "running",
+          title: "Happy adapter notes are ready",
+          summary:
+            "Claude summarized the provider-control approach and can now turn it into a first adapter spike plan.",
+          reason:
+            "No answer is required, but you can send a proactive next instruction while the context is fresh.",
+          chips: ["Start Codex adapter", "Start Claude adapter", "Write spike tasks"],
+          thread: [
+            ["agent", "Happy is not a raw pty wrapper anymore. Claude and Codex use provider-native control paths where available."],
+            ["agent", "Recommended next step: pick one provider adapter and prove bidirectional instruction delivery."]
+          ]
+        }
+      ];
+
+      let index = 0;
+      const byId = (id) => document.getElementById(id);
+
+      function render() {
+        const item = cards[index];
+        byId("queue-count").textContent = `${cards.length} waiting actions`;
+        byId("session-name").textContent = item.session;
+        byId("status-dot").className = `dot ${item.statusClass}`;
+        byId("wait-age").textContent = item.age;
+        byId("card-title").textContent = item.title;
+        byId("card-summary").textContent = item.summary;
+        byId("card-reason").textContent = item.reason;
+        byId("chips").innerHTML = item.chips
+          .map((chip, chipIndex) => `<button class="chip ${chipIndex === 0 ? "primary" : ""}" type="button">${chip}</button>`)
+          .join("");
+        byId("queue-dots").innerHTML = cards
+          .map((_, dotIndex) => `<span class="${dotIndex === index ? "active" : ""}"></span>`)
+          .join("");
+        renderDetail();
+      }
+
+      function renderDetail() {
+        const item = cards[index];
+        byId("detail-session").textContent = item.session;
+        byId("detail-status").textContent = item.state;
+        byId("detail-chips").innerHTML = item.chips
+          .map((chip, chipIndex) => `<button class="chip ${chipIndex === 0 ? "primary" : ""}" type="button">${chip}</button>`)
+          .join("");
+        byId("thread").innerHTML = item.thread
+          .map(([who, text]) => {
+            const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            return `<div class="message ${who === "user" ? "user" : ""}">${safe.replace(/\n/g, "<br>")}</div>`;
+          })
+          .join("");
+      }
+
+      function move(delta) {
+        index = (index + delta + cards.length) % cards.length;
+        render();
+      }
+
+      byId("next").addEventListener("click", () => move(1));
+      byId("prev").addEventListener("click", () => move(-1));
+      byId("skip").addEventListener("click", () => move(1));
+      byId("snooze").addEventListener("click", () => move(1));
+      byId("open-detail").addEventListener("click", () => byId("detail").classList.add("open"));
+      byId("card").addEventListener("dblclick", () => byId("detail").classList.add("open"));
+      byId("close-detail").addEventListener("click", () => byId("detail").classList.remove("open"));
+      byId("send").addEventListener("click", () => {
+        const reply = byId("reply");
+        if (!reply.value.trim()) return;
+        cards[index].thread.push(["user", reply.value.trim()]);
+        reply.value = "";
+        renderDetail();
+        byId("thread").scrollTop = byId("thread").scrollHeight;
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight") move(1);
+        if (event.key === "ArrowLeft") move(-1);
+        if (event.key === "Enter" && !byId("detail").classList.contains("open")) {
+          byId("detail").classList.add("open");
+        }
+        if (event.key === "Escape") byId("detail").classList.remove("open");
+      });
+
+      render();
+    </script>
+  </body>
+</html>

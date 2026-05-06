@@ -221,7 +221,9 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 - Touch targets must be at least 44x44pt.
 
 ### Desktop / Mac
-- Center the card stack with optional side rail.
+- Default to a focused mobile-width utility window: 430-520px wide, centered on the display.
+- Keep the main card stack portable to iOS by using the same single-column viewport and interaction model.
+- Allow resizing into a wider desktop mode later, with optional side rail and split detail.
 - Detail can open as a split view or separate focused pane.
 - Keyboard-first navigation is important:
   - `Cmd+K` for session/room/command switcher.

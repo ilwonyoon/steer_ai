@@ -55,6 +55,8 @@ Claude Code, Codex, Gemini CLI 등 에이전트 CLI가 mainstream화 (25-26). "V
 6. 답변 또는 지시가 해당 CLI session에 주입되고, 세션은 즉시 작업을 계속한다.
 7. 사용자는 기존 질문에 답하는 것뿐 아니라, 상세 composer에서 먼저 특정 session에 새 지시를 보낼 수 있다.
 
+**Mac window model**: v1 Mac 앱은 데스크톱 전체를 채우는 dashboard가 아니라 430-520px 폭의 focused utility window로 시작한다. 이렇게 하면 card stack과 detail flow가 iOS로 거의 그대로 porting되고, Mac에서는 menu bar, keyboard shortcut, notification 같은 platform affordance를 추가로 얹을 수 있다. 넓은 화면에서는 후속으로 side rail/split detail을 제공한다.
+
 ## Design Direction
 
 - **Primary interaction**: Tinder-style card stack. 한 번에 하나의 stuck/waiting card를 보고 빠르게 처리.

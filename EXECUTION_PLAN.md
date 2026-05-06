@@ -22,6 +22,7 @@ Keep this document focused on execution. Durable product or architecture changes
 - Steer is an AI action queue, not a full chat mirror.
 - The default UX is an action card stack, not a chat timeline.
 - Opening a card shows a Claude/Codex-style session detail with full context and reply controls.
+- The Mac app should start as a focused mobile-width utility window, roughly 430-520px wide, so the core stack ports cleanly to iOS.
 - Rooms are grouping/filtering constructs, and users may later create multiple rooms.
 - Room membership and session invitation/routing are follow-up specs.
 - v1 is Mac-first and local-first.
@@ -68,6 +69,7 @@ Goal: make the repository useful for future implementation.
 - [x] Add `README.md` with product summary and local setup notes.
 - [x] Add `docs/` directory for PRD, tech spec exports, and research notes.
 - [x] Decide initial source layout: `apps/mac`, `packages/agent`, `packages/cli`, `docs`.
+- [x] Add static card-stack UX prototype in `apps/prototype`.
 
 ### Phase 1: Wrapper Spike
 
@@ -168,6 +170,10 @@ Steer is framed as an AI action queue / operations room, not just a decision tri
 ### 2026-05-06: Card Stack Primary UX
 
 The default UI is a Tinder-style action card stack for stuck, waiting, decision, completion, and idle AI sessions. Chat/message views are secondary detail surfaces opened from a card. The detail should feel closer to Claude/Codex session context than a pure DM thread, while reply surfaces can keep Instagram DM-like lightness.
+
+### 2026-05-06: Focused Mac Window
+
+The Mac app should default to a mobile-like focused utility window, roughly 430-520px wide. This keeps the card stack and detail flow portable to iOS while still allowing Mac-only affordances like menu bar entry, keyboard shortcuts, and a wider optional split view later.
 
 ### 2026-05-06: Room Model
 

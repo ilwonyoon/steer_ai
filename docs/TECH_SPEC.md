@@ -96,6 +96,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 
 - SwiftUI/AppKit shell.
 - Menu bar status item.
+- Default window size: focused mobile-width utility window, roughly 430-520px wide.
 - Action card stack as the default surface.
 - Session filter and optional room list as secondary surfaces.
 - Claude/Codex-style session detail opened from a card.
