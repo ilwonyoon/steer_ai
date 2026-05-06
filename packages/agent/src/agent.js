@@ -79,6 +79,7 @@ function registerSession(message, socket, send) {
   const session = {
     id: message.sessionId,
     provider: message.provider,
+    adapterKind: message.adapterKind,
     command: message.command,
     args: message.args ?? [],
     cwd: message.cwd,

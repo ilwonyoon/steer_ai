@@ -83,7 +83,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 ### Steer Control Adapters
 
 - CLI wrapper mode: `steer claude [args]`, `steer codex [args]`.
-- Claude adapter: evaluate Agent SDK + hooks/session scanner before raw pty.
+- Claude adapter: use Claude Code headless stream-json first (`claude -p --input-format stream-json --output-format stream-json --replay-user-messages`), then evaluate TypeScript SDK if the CLI stream is insufficient.
 - Codex adapter: evaluate `codex app-server` JSON-RPC before raw pty.
 - Fallback adapter: use pty ownership when no provider-native protocol is viable.
 - Streams transcript/event chunks and heartbeat/state to SteerAgent.
@@ -99,6 +99,8 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Prototype may use TypeScript/Node; production should evaluate Swift or Rust plus XPC.
 
 Current spike: Node `SteerAgent` listens on `~/.steer/steer.sock`, keeps session registry in memory, writes transcripts to `~/.steer/sessions/<sessionId>.log`, and routes `send` requests to the wrapper's persistent socket. This validates the local report/instruct loop before SQLite and provider-native adapters are added.
+
+Claude smoke test: `steer claude --max-budget-usd 0.02` plus `steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."` successfully returned `STEER_CLAUDE_OK` through Claude Code stream-json. The adapter currently marks state `running` on instruction injection and `waiting` when a Claude `result` event arrives.
 
 ### Steer Mac App
 

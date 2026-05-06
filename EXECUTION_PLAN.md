@@ -82,7 +82,7 @@ Goal: prove we can own a CLI session and safely inject input.
 - [x] Build minimal `steer claude` wrapper.
 - [x] Build minimal `steer codex` wrapper.
 - [x] Capture stdout/stderr transcript chunks.
-- [ ] Detect prompt-ready / waiting states.
+- [x] Detect prompt-ready / waiting states for Claude stream-json result events.
 - [x] Inject single-line instruction into a wrapped process.
 - [ ] Test multiline injection behavior.
 - [ ] Document failure cases and edge cases.
@@ -207,6 +207,10 @@ Happy research showed that current Happy is not simply a raw pty wrapper. Claude
 
 The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. This proved bidirectional delivery with a wrapped `node -i` REPL. It is not the final provider adapter because it uses stdin/stdout pipes, not provider-native control or pty behavior.
 
+### 2026-05-06: Claude Stream JSON Adapter
+
+Claude should be the first real provider target. `steer claude` now uses Claude Code headless stream-json mode by default and sends user instructions as JSON lines. `steer claude --raw` remains as a generic fallback. A low-budget smoke test returned `STEER_CLAUDE_OK`, proving that SteerAgent can inject an instruction into Claude Code and receive output back through the stream.
+
 ### 2026-05-06: macOS Strategy
 
 v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid Accessibility/Input Monitoring by owning the pty through the wrapper.
@@ -270,10 +274,11 @@ Learned:
 - A working clone now exists at `/Users/ilwonyoon/Developer/steer_ai`.
 - A wrapped `node -i` session can receive an instruction from another local process through SteerAgent and execute it.
 - Pipe-based stdin injection proves the local loop but does not yet prove Claude/Codex TTY behavior.
+- Claude Code stream-json mode can receive a Steer instruction and return output without pty wrapping.
 
 Next:
-- Pick the first real provider target: Codex app-server or Claude Agent SDK.
-- Add prompt-ready/waiting detection before injecting into AI sessions.
+- Harden Claude adapter event parsing and waiting/action detection.
+- Then add Codex app-server adapter.
 - Define SQLite schema for session, message, instruction, and transcript records.
 - Add menu bar status item and notification shell.
 - Decide prototype stack, IPC approach, and first provider adapter target.

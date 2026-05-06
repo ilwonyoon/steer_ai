@@ -76,6 +76,13 @@ node packages/cli/src/index.js sessions
 node packages/cli/src/index.js send <sessionId> "console.log('steer injection ok')"
 ```
 
+Claude Code is the first real provider target:
+
+```sh
+node packages/cli/src/index.js claude --max-budget-usd 0.02
+node packages/cli/src/index.js send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."
+```
+
 See `docs/WRAPPER_SPIKE.md` for scope and limitations.
 
 See `EXECUTION_PLAN.md` for the current backlog and implementation phases.

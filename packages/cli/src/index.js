@@ -16,7 +16,7 @@ switch (command) {
     await wrapCommand(args);
     break;
   case "claude":
-    await wrapProvider("claude", "claude", args);
+    await runClaudeAdapter(args);
     break;
   case "codex":
     await wrapProvider("codex", "codex", args);
@@ -57,6 +57,7 @@ async function wrapProvider(provider, childCommand, childArgs) {
     type: "register",
     sessionId,
     provider,
+    adapterKind: "stdio-pipe",
     command: childCommand,
     args: childArgs,
     cwd: process.cwd(),
@@ -83,6 +84,83 @@ async function wrapProvider(provider, childCommand, childArgs) {
     if (message.type !== "instruction") return;
 
     child.stdin.write(`${message.text}\n`);
+    agent.write(encodeMessage({
+      type: "ack",
+      sessionId,
+      instructionId: message.instructionId,
+      status: "injected"
+    }));
+  }));
+
+  child.on("exit", (exitCode) => {
+    agent.write(encodeMessage({ type: "state", sessionId, runState: "ended", exitCode }));
+    agent.end();
+    process.exit(exitCode ?? 0);
+  });
+}
+
+async function runClaudeAdapter(args) {
+  if (args[0] === "--raw") {
+    await wrapProvider("claude", "claude", args.slice(1));
+    return;
+  }
+
+  const sessionId = `claude-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const agent = connectToAgent();
+  const claudeArgs = [
+    "-p",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--replay-user-messages",
+    "--verbose",
+    "--include-partial-messages",
+    ...args
+  ];
+  const child = spawn("claude", claudeArgs, {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+
+  agent.write(encodeMessage({
+    type: "register",
+    sessionId,
+    provider: "claude",
+    adapterKind: "claude-stream-json",
+    command: "claude",
+    args: claudeArgs,
+    cwd: process.cwd(),
+    pid: child.pid
+  }));
+
+  process.stderr.write(`[steer] claude session ${sessionId}\n`);
+  process.stderr.write(`[steer] send with: node packages/cli/src/index.js send ${sessionId} "your instruction"\n`);
+
+  child.stdout.on("data", (chunk) => {
+    const raw = chunk.toString("utf8");
+    agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: raw }));
+    handleClaudeStream(raw, agent, sessionId);
+  });
+
+  child.stderr.on("data", (chunk) => {
+    const raw = chunk.toString("utf8");
+    process.stderr.write(raw);
+    agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: raw }));
+  });
+
+  agent.on("data", createLineDecoder((message) => {
+    if (message.type !== "instruction") return;
+
+    agent.write(encodeMessage({ type: "state", sessionId, runState: "running" }));
+    child.stdin.write(`${JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: message.text }]
+      }
+    })}\n`);
     agent.write(encodeMessage({
       type: "ack",
       sessionId,
@@ -140,9 +218,36 @@ function printUsage() {
   console.log(`Usage:
   steer agent
   steer wrap -- <command> [...args]
-  steer claude [...args]
+  steer claude [...claude print-mode args]
+  steer claude --raw [...claude interactive args]
   steer codex [...args]
   steer sessions
   steer send <sessionId> <instruction>
 `);
+}
+
+function handleClaudeStream(raw, agent, sessionId) {
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+
+    try {
+      const event = JSON.parse(line);
+      const textDelta = event?.event?.delta?.type === "text_delta"
+        ? event.event.delta.text
+        : null;
+      const result = typeof event?.result === "string" ? event.result : null;
+      const userText = event?.type === "user"
+        ? event.message?.content?.find?.((item) => item.type === "text")?.text
+        : null;
+
+      if (textDelta) process.stdout.write(textDelta);
+      else if (result) {
+        process.stdout.write(`${result}\n`);
+        agent.write(encodeMessage({ type: "state", sessionId, runState: "waiting" }));
+      }
+      else if (userText) process.stderr.write(`[user] ${userText}\n`);
+    } catch {
+      process.stdout.write(line);
+    }
+  }
 }
