@@ -11,36 +11,79 @@ struct ActionCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             SessionHeader(card: card)
 
-            Text(card.title)
-                .font(.system(size: 18, weight: .bold))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 22)
+            Divider()
+                .padding(.top, 14)
 
-            Text(card.summary)
-                .font(.system(size: 13))
-                .lineSpacing(3)
-                .foregroundStyle(.secondary)
-                .padding(.top, 8)
+            TerminalMetaView(card: card)
+                .padding(.top, 12)
+
+            Divider()
+                .padding(.vertical, 12)
 
             TerminalExcerptView(lines: card.terminalLines)
-                .frame(height: 268)
-                .padding(.top, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .layoutPriority(1)
 
-            Spacer(minLength: 24)
+            Divider()
+                .padding(.bottom, 12)
 
             ReplyDock(chips: card.chips, reply: $reply, onSend: onSend)
         }
-        .padding(22)
-        .frame(maxWidth: .infinity, maxHeight: 590)
-        .background(.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .frame(height: 590)
+        .background(Color(red: 0.985, green: 0.985, blue: 0.975), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.black.opacity(0.09), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.black.opacity(0.10), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.12), radius: 34, y: 22)
-        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 24, y: 16)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .onTapGesture(perform: onOpenDetail)
+    }
+}
+
+private struct TerminalMetaView: View {
+    let card: ActionCard
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TerminalMetaLine(label: "title", value: card.title, color: .primary, weight: .semibold)
+            TerminalMetaLine(label: "status", value: statusValue, color: card.state.color, weight: .semibold)
+            TerminalMetaLine(label: "reason", value: card.summary, color: .secondary, weight: .regular)
+        }
+    }
+
+    private var statusValue: String {
+        switch card.state {
+        case .waiting:
+            "waiting_for_decision"
+        case .blocked:
+            "blocked"
+        case .running:
+            "running"
+        }
+    }
+}
+
+private struct TerminalMetaLine: View {
+    let label: String
+    let value: String
+    let color: Color
+    let weight: Font.Weight
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("\(label):")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 56, alignment: .leading)
+            Text(value)
+                .foregroundStyle(color)
+                .fontWeight(weight)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 12, design: .monospaced))
     }
 }
 
@@ -54,14 +97,14 @@ struct SessionHeader: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(card.project)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
                         .lineLimit(1)
                     HStack(spacing: 5) {
                         Circle()
                             .fill(card.state.color)
                             .frame(width: 6, height: 6)
                         Text(card.provider.displayName)
-                            .font(.system(size: 13))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -70,14 +113,14 @@ struct SessionHeader: View {
             Spacer()
 
             Text(card.age)
-                .font(.system(size: 12))
+                .font(.system(size: 11.5, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(.white.opacity(0.52), in: Capsule())
+                .background(Color.black.opacity(0.035), in: Capsule())
                 .overlay {
                     Capsule()
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.black.opacity(0.07), lineWidth: 1)
                 }
         }
     }

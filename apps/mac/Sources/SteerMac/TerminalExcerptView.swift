@@ -5,39 +5,44 @@ struct TerminalExcerptView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 4) {
+            LazyVStack(alignment: .leading, spacing: 5) {
                 ForEach(lines) { line in
                     Text(line.text.isEmpty ? " " : line.text)
-                        .font(.system(size: 11.5, weight: line.kind == .accent ? .semibold : .regular, design: .monospaced))
+                        .font(.system(size: 11.5, weight: weight(for: line.kind), design: .monospaced))
                         .foregroundStyle(color(for: line.kind))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(14)
+            .padding(.vertical, 2)
         }
         .frame(maxWidth: .infinity)
-        .background(Color(red: 0.10, green: 0.10, blue: 0.11), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.12), radius: 18, y: 10)
         .accessibilityLabel("Terminal excerpt")
     }
 
     private func color(for kind: TerminalLineKind) -> Color {
         switch kind {
         case .standard:
-            Color(red: 0.92, green: 0.92, blue: 0.93)
+            Color(red: 0.13, green: 0.13, blue: 0.14)
         case .muted:
-            Color(red: 0.62, green: 0.63, blue: 0.66)
+            Color(red: 0.46, green: 0.46, blue: 0.50)
         case .accent:
-            Color(red: 0.53, green: 0.80, blue: 0.81)
+            Color(red: 0.02, green: 0.44, blue: 0.48)
         case .success:
-            Color(red: 0.62, green: 0.88, blue: 0.66)
+            Color(red: 0.02, green: 0.48, blue: 0.23)
         case .warning:
-            Color(red: 1.00, green: 0.78, blue: 0.42)
+            Color(red: 0.72, green: 0.35, blue: 0.00)
+        }
+    }
+
+    private func weight(for kind: TerminalLineKind) -> Font.Weight {
+        switch kind {
+        case .accent, .success, .warning:
+            .semibold
+        case .standard:
+            .medium
+        case .muted:
+            .regular
         }
     }
 }

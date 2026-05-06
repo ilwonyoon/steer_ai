@@ -105,7 +105,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Default window size: focused mobile-width utility window, 375px wide x 812px tall.
 - iOS-native visual system; use Liquid Glass APIs where available, with material fallback.
 - Action card stack as the default surface.
-- Card body renders a terminal tail excerpt as the primary context, with AI summary as secondary text.
+- Card body renders a light terminal report surface as the primary context, with AI summary as secondary text.
 - Session filter and optional room list as secondary surfaces.
 - Claude/Codex-style session detail opened from a card.
 - Cards for progress, completion, decision, blocker, question, and idle.
@@ -135,7 +135,7 @@ Classifier output JSON:
 
 `requiresAction=false` should be the default. Precision matters more than recall for urgent notifications.
 
-The classifier should not invent terminal output. `terminalExcerpt` must be copied or losslessly trimmed from captured transcript data. The summary can explain the excerpt, but the excerpt is the user's primary source of truth.
+The classifier should not invent terminal output. `terminalExcerpt` must be copied or losslessly trimmed from captured transcript data. The summary can explain the excerpt, but the excerpt is the user's primary source of truth. Terminal styling is structural, not necessarily dark-themed; dark terminal rendering is optional and should be driven by source theme, dense error/log mode, or user preference.
 
 ## Security And Privacy
 

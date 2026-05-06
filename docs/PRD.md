@@ -61,12 +61,12 @@ Claude Code, Codex, Gemini CLI 등 에이전트 CLI가 mainstream화 (25-26). "V
 
 **Provider identity**: 각 카드는 해당 CLI session이 Claude Code, Codex CLI, Gemini CLI 등 어디서 왔는지 보여줘야 한다. provider icon과 텍스트를 함께 표시해 빠르게 식별하게 하고, 아이콘이 없는 provider는 글자 fallback badge를 쓴다.
 
-**Terminal tail card**: 기본 action card의 본문은 큰 마케팅식 제목/요약 카드가 아니라, 터미널 마지막 actionable block이다. AI 요약은 보조 역할만 하고, 사용자가 실제로 판단해야 하는 근거는 CLI tail, 검증 결과, 에러, 질문, 완료 보고를 SF Mono 기반 terminal panel로 보여준다. 이렇게 해야 Steer가 "챗 앱"보다 "터미널의 운영 연장선"으로 느껴지고, 사용자가 AI 요약을 신뢰하지 못하는 순간에도 원문 근거를 바로 볼 수 있다.
+**Terminal report card**: 기본 action card의 본문은 큰 마케팅식 제목/요약 카드가 아니라, 터미널 마지막 actionable block이다. AI 요약은 보조 역할만 하고, 사용자가 실제로 판단해야 하는 근거는 CLI tail, 검증 결과, 에러, 질문, 완료 보고를 SF Mono 기반 report surface로 보여준다. 터미널 스타일은 dark theme을 뜻하지 않는다. 기본은 iOS-native light surface 위에 terminal report typography와 구조를 적용하고, 다크 터미널 블록은 실제 다크 터미널 캡처/에러 로그/사용자 선택 테마일 때만 쓴다.
 
 ## Design Direction
 
 - **Primary interaction**: Tinder-style card stack. 한 번에 하나의 stuck/waiting card를 보고 빠르게 처리.
-- **Primary content**: Warp-style terminal tail. 카드 본문은 마지막 actionable CLI block을 우선하고, 요약은 보조.
+- **Primary content**: light terminal report. 카드 본문은 마지막 actionable CLI block을 우선하고, 요약은 보조.
 - **Triage workflow**: Gmail + Smart Reply. 빠른 분류, input 위 quick chip, 짧은 답변 입력.
 - **Detail view**: Claude/Codex-style session. 전체 transcript/context, metadata, composer.
 - **Platform feel**: iOS native + restrained Liquid Glass. Reply chips/input은 minimal white pills, Liquid Glass는 app chrome/sheets/floating surfaces에 제한.

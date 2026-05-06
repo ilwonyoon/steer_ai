@@ -32,7 +32,7 @@ Keep this document focused on execution. Durable product or architecture changes
 - The core loop requires bidirectional control: report capture plus instruction injection.
 - Hook-only mode is not sufficient for the product. It can only be a read-only fallback.
 - Happy is a reference implementation and possible source for wrapper/pty learnings, not the product architecture to fork wholesale.
-- Design direction: Tinder-style card stack for primary triage, Warp-style terminal tail for card content, Claude/Codex-style session detail, Instagram DM for reply lightness, Gmail/Smart Reply for quick responses, and Linear for technical status and metadata.
+- Design direction: Tinder-style card stack for primary triage, light terminal report cards for card content, Claude/Codex-style session detail, Instagram DM for reply lightness, Gmail/Smart Reply for quick responses, and Linear for technical status and metadata.
 
 ## Target v1 Architecture
 
@@ -185,7 +185,7 @@ The card stack should use an iOS-native visual model with restrained Liquid Glas
 
 ### 2026-05-06: Terminal Tail Card
 
-The card stack remains the primary triage interaction, but the card body should not be a large AI-generated summary. Since Steer is an extension of CLI work, the default card content should be the last actionable terminal block: report tail, error, validation result, prompt-ready question, or decision point. AI summary and quick chips help speed up response, but the terminal excerpt is the primary source of trust.
+The card stack remains the primary triage interaction, but the card body should not be a large AI-generated summary. Since Steer is an extension of CLI work, the default card content should be the last actionable terminal block: report tail, error, validation result, prompt-ready question, or decision point. AI summary and quick chips help speed up response, but the terminal excerpt is the primary source of trust. The default visual treatment should be a light terminal report card, not a dark terminal rectangle embedded inside a prose card.
 
 ### 2026-05-06: Room Model
 

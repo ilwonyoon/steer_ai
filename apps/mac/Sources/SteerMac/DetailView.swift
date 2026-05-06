@@ -37,9 +37,15 @@ struct DetailView: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Terminal tail")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.secondary)
                         TerminalExcerptView(lines: card.terminalLines)
+                            .padding(14)
+                            .background(Color(red: 0.985, green: 0.985, blue: 0.975), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(Color.black.opacity(0.09), lineWidth: 1)
+                            }
                             .frame(height: 240)
                     }
                     .padding(.bottom, 8)

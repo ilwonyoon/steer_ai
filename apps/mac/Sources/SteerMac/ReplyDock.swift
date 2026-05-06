@@ -6,7 +6,7 @@ struct ReplyDock: View {
     let onSend: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             chipScroller
             inputField
         }
@@ -20,17 +20,17 @@ struct ReplyDock: View {
                         reply = chip
                     } label: {
                         Text(chip)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                            .padding(.horizontal, 13)
-                            .frame(height: 34)
+                            .padding(.horizontal, 12)
+                            .frame(height: 32)
                     }
                     .buttonStyle(.plain)
-                    .background(.white.opacity(0.78), in: Capsule())
+                    .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .overlay {
-                        Capsule()
-                            .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(Color.black.opacity(0.075), lineWidth: 1)
                     }
                 }
             }
@@ -40,8 +40,8 @@ struct ReplyDock: View {
         .overlay(alignment: .trailing) {
             LinearGradient(
                 colors: [
-                    Color(red: 0.97, green: 0.97, blue: 0.98).opacity(0),
-                    Color(red: 0.97, green: 0.97, blue: 0.98).opacity(0.92)
+                    Color(red: 0.985, green: 0.985, blue: 0.975).opacity(0),
+                    Color(red: 0.985, green: 0.985, blue: 0.975).opacity(0.94)
                 ],
                 startPoint: .leading,
                 endPoint: .trailing
@@ -53,16 +53,16 @@ struct ReplyDock: View {
 
     private var inputField: some View {
         ZStack(alignment: .trailing) {
-            TextField("Reply to this AI session", text: $reply)
+            TextField("reply to this session", text: $reply)
                 .textFieldStyle(.plain)
-                .font(.system(size: 16))
+                .font(.system(size: 13, design: .monospaced))
                 .padding(.leading, 14)
-                .padding(.trailing, 50)
-                .frame(height: 44)
-                .background(.white.opacity(0.74), in: Capsule())
+                .padding(.trailing, 46)
+                .frame(height: 42)
+                .background(Color.black.opacity(0.026), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
-                    Capsule()
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.black.opacity(0.075), lineWidth: 1)
                 }
 
             if !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -71,13 +71,13 @@ struct ReplyDock: View {
                     reply = ""
                 } label: {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(Color.accentColor, in: Circle())
+                        .frame(width: 31, height: 31)
+                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 5)
+                .padding(.trailing, 6)
                 .transition(.scale.combined(with: .opacity))
                 .accessibilityLabel("Send reply")
             }

@@ -9,7 +9,7 @@ The primary interaction is a large card stack: one active AI request in front, w
 Reference mix:
 - Primary interaction: Tinder-style card stack for one-at-a-time triage.
 - Triage workflow: Gmail inbox plus Smart Reply for fast decision handling.
-- Card content: Warp-style terminal blocks for readable CLI tail context.
+- Card content: terminal report cards for readable CLI tail context.
 - Detail view: Claude/Codex-style assistant session for full context and response.
 - Platform feel: iOS-native surfaces with Liquid Glass where available.
 - Visual tone: Claude warmth plus Instagram DM immediacy in reply surfaces.
@@ -109,15 +109,17 @@ Required content:
 
 The active card should communicate enough context to answer simple cases without opening detail. The terminal excerpt is the primary trust surface; AI summary is secondary. Do not turn the card into a full terminal dashboard or transcript viewer.
 
-### Terminal Tail Card
+### Terminal Report Card
 
 Use terminal-tail cards when a CLI session has just reported, paused, errored, or asked for a decision.
 
 - Show the latest 20-40 relevant lines, trimmed to the last actionable block.
-- Use SF Mono in a compact terminal panel.
+- Use SF Mono for the whole report body, including title/status/reason metadata.
+- Default to a light terminal report surface. Terminal styling does not imply a dark theme.
 - Preserve useful terminal semantics: bullets, headings, code tokens, command names, validation output, and failure lines.
 - Use subtle syntax-like color only for meaning: muted context, success, warning, error, and actionable prompts.
-- Keep the surrounding card iOS-native and calm. Only the inner excerpt should feel terminal-like.
+- Keep the surrounding card iOS-native and calm, but do not create a dark terminal rectangle inside an otherwise editorial card.
+- Use dark terminal treatment only when matching a captured dark user terminal, showing dense logs/errors, or when the user chooses a dark theme.
 - Avoid fake shell chrome, decorative window controls, or noisy ANSI art.
 
 ### Stack Navigation
@@ -234,6 +236,7 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 - Do not make the default UI a chat timeline.
 - Do not build a terminal dashboard as the primary surface.
 - Do not use AI-written summary as the only card body when terminal context is available.
+- Do not place a dark terminal block inside a prose-heavy card as the default.
 - Do not put Skip/Snooze/Done as dominant bottom actions on the main card.
 - Do not use Tinder's dating language, social gestures, or playful match feedback.
 - Do not use Instagram feed, story, reel, profile, or social engagement patterns.
