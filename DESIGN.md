@@ -151,8 +151,9 @@ Opening a card shows the full session context in a Claude/Codex-style view.
 
 ### Liquid Glass Treatment
 - Use native iOS/macOS Liquid Glass APIs in SwiftUI where available.
+- Do not use Liquid Glass for the card reply chips or input field; keep them as minimal white pill controls inside the card.
 - Keep chips visually separate from the input field while preserving shared vertical grouping.
-- Use interactive glass only for tappable chips, send buttons, and focusable input surfaces.
+- Use interactive glass only for app chrome, navigation controls, sheets, and larger floating surfaces where distortion will not affect typing.
 - Keep card glass subtle; content legibility is more important than translucency.
 - Provide material-style fallback for OS versions without Liquid Glass.
 
@@ -193,7 +194,7 @@ The default screen should optimize for the next action, not for seeing every mes
 Use mostly flat surfaces with a clear stack layer.
 
 - Level 0: canvas.
-- Level 1: detail surfaces, glass reply dock, side rail.
+- Level 1: detail surfaces, minimal reply controls, side rail.
 - Level 2: active action card.
 - Level 3: background stack cards.
 - Level 4: sheet/modal shadow only.
@@ -251,7 +252,7 @@ Avoid decorative gradients, glow effects, bokeh, and oversized dashboard panels.
 
 When generating Steer UI, use this prompt:
 
-Build Steer as a stuck-AI action queue with an iOS-native Liquid Glass feel. The primary screen is a large Tinder-style card stack, with one waiting/blocker/decision card in front and the backlog visible behind it. Each card has suggested reply chips directly above a bottom input field; do not use Skip/Snooze/Done as the dominant bottom controls. Opening a card shows a Claude/Codex-style session detail with full context, transcript, metadata, chips above the composer, and a bottom input. Preserve Instagram DM's light, immediate feel in message surfaces, but do not make the app chat-first. Add Linear-style technical state with small pills for running, waiting, blocked, done, and idle. Keep chrome monochrome, reserve color for actions and status, and make the next user reply obvious.
+Build Steer as a stuck-AI action queue with an iOS-native feel and restrained Liquid Glass. The primary screen is a large Tinder-style card stack, with one waiting/blocker/decision card in front and the backlog visible behind it. Each card has suggested reply chips directly above a bottom input field; these reply controls should be minimal white pills, not Liquid Glass. Do not use Skip/Snooze/Done as dominant bottom controls. Opening a card shows a Claude/Codex-style session detail with full context, transcript, metadata, chips above the composer, and a bottom input. Preserve Instagram DM's light, immediate feel in message surfaces, but do not make the app chat-first. Add Linear-style technical state with small pills for running, waiting, blocked, done, and idle. Keep chrome monochrome, reserve color for actions and status, and make the next user reply obvious.
 
 Quick color reference:
 - Canvas light/dark: `#FFFFFF` / `#000000`

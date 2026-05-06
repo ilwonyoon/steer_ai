@@ -23,7 +23,7 @@ Keep this document focused on execution. Durable product or architecture changes
 - The default UX is an action card stack, not a chat timeline.
 - Opening a card shows a Claude/Codex-style session detail with full context and reply controls.
 - The Mac app should start as a focused mobile-width utility window, 375px wide x 812px tall, so the core stack ports cleanly to iOS.
-- The UI should feel iOS-native and use Liquid Glass where available, especially around chips, input, and focused reply surfaces.
+- The UI should feel iOS-native and use Liquid Glass sparingly for app chrome, navigation controls, sheets, and larger floating surfaces. Do not use it for card reply chips/input.
 - The main card bottom should be a reply input with suggested chips above it, not Skip/Snooze/Done buttons.
 - Rooms are grouping/filtering constructs, and users may later create multiple rooms.
 - Room membership and session invitation/routing are follow-up specs.
@@ -179,7 +179,7 @@ The Mac app should default to a mobile-like focused utility window, 375px wide x
 
 ### 2026-05-06: iOS-Native Reply Surface
 
-The card stack should use an iOS-native visual model with Liquid Glass where available. The dominant bottom surface is a glass reply dock: suggested chips above an input field. Skip/Snooze/Done should not be primary bottom buttons; secondary queue movement can live in gestures, keyboard shortcuts, or less prominent controls.
+The card stack should use an iOS-native visual model with restrained Liquid Glass where appropriate. The dominant bottom surface is a minimal reply area: suggested chips above an input field. Skip/Snooze/Done should not be primary bottom buttons; secondary queue movement can live in gestures, keyboard shortcuts, or less prominent controls.
 
 ### 2026-05-06: Room Model
 

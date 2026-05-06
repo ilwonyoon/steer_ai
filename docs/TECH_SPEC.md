@@ -108,7 +108,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Detail composer with target session selection or `@session` mention routing.
 - Provider icons, agent badges, and Linear-style state pills.
 
-SwiftUI implementation note: use native Liquid Glass APIs for grouped reply surfaces when available. Wrap chips/input/send controls in one glass container; apply interactive glass only to tappable or focusable elements. Provide `.ultraThinMaterial` or equivalent fallback for earlier macOS/iOS versions.
+SwiftUI implementation note: use native Liquid Glass APIs for app chrome, navigation controls, sheets, and larger floating surfaces where distortion will not affect typing. Do not apply Liquid Glass to the card reply chips or input field; keep those as minimal white pill controls to avoid stretching during card swipe.
 
 ## Classification
 

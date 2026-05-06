@@ -78,7 +78,7 @@ extension ActionCard {
             title: "Supabase RLS decision needed",
             summary: "Claude finished the schema pass and is blocked on choosing row isolation. It can continue once you choose user-level or workspace-level policies.",
             reason: "Workspace-level RLS supports future collaboration, but user-level RLS is simpler for the first dogfood build.",
-            chips: ["Use user-level", "Use workspace-level", "Explain tradeoffs"],
+            chips: ["Use user-level", "Use workspace-level", "Explain"],
             thread: [
                 ThreadMessage(sender: .agent, text: "I finished the table sketch and found one decision before writing policies."),
                 ThreadMessage(sender: .agent, text: "Option A: user-level RLS. It is faster and safer for single-player dogfooding.\n\nOption B: workspace-level RLS. It fits collaboration later but adds membership joins now."),

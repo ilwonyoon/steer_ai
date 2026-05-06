@@ -4,6 +4,7 @@ struct SteerRootView: View {
     @State private var cards = ActionCard.samples
     @State private var currentIndex = 0
     @State private var isShowingDetail = false
+    @State private var cardDragOffset: CGFloat = 0
 
     private var currentCard: ActionCard {
         cards[currentIndex]
@@ -26,9 +27,12 @@ struct SteerRootView: View {
                         onOpenDetail: { isShowingDetail = true },
                         onSend: { text in sendFromCard(text) }
                     )
+                    .id(currentCard.id)
+                    .offset(x: cardDragOffset)
+                    .rotationEffect(.degrees(cardDragOffset / 34))
+                    .gesture(cardSwipeGesture)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
 
                 PageDots(count: cards.count, index: currentIndex)
                     .padding(.bottom, 8)
@@ -77,6 +81,38 @@ struct SteerRootView: View {
         currentIndex = (currentIndex + delta + cards.count) % cards.count
     }
 
+    private var cardSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { value in
+                cardDragOffset = value.translation.width
+            }
+            .onEnded { value in
+                let horizontal = value.translation.width
+                let vertical = abs(value.translation.height)
+                guard abs(horizontal) > 82, abs(horizontal) > vertical else {
+                    withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.08)) {
+                        cardDragOffset = 0
+                    }
+                    return
+                }
+
+                let direction = horizontal < 0 ? 1 : -1
+                let exitOffset: CGFloat = horizontal < 0 ? -460 : 460
+                withAnimation(.easeIn(duration: 0.16)) {
+                    cardDragOffset = exitOffset
+                }
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
+                    move(direction)
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        cardDragOffset = 0
+                    }
+                }
+            }
+    }
+
     private func sendFromCard(_ text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         cards[currentIndex].thread.append(ThreadMessage(sender: .user, text: text))
@@ -121,6 +157,7 @@ private struct CardBackplate: View {
             .scaleEffect(scale)
             .offset(y: offset)
             .opacity(opacity)
+            .allowsHitTesting(false)
     }
 }
 
