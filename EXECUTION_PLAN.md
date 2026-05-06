@@ -211,6 +211,10 @@ The first implementation spike uses Node for speed: a Unix domain socket `SteerA
 
 Claude should be the first real provider target. `steer claude` now uses Claude Code headless stream-json mode by default and sends user instructions as JSON lines. `steer claude --raw` remains as a generic fallback. A low-budget smoke test returned `STEER_CLAUDE_OK`, proving that SteerAgent can inject an instruction into Claude Code and receive output back through the stream.
 
+### 2026-05-06: Codex App-Server Adapter
+
+`steer codex` now uses `codex app-server --listen stdio://` by default, initializes JSON-RPC, starts a Codex thread, sends idle instructions with `turn/start`, streams agent deltas back to the terminal and transcript, and returns the session to `waiting` after `turn/completed`. `steer codex --raw` remains as the generic fallback. A smoke test returned `STEER_CODEX_WAIT_OK`, proving the provider-native Codex control path works for the basic report/instruct loop.
+
 ### 2026-05-06: macOS Strategy
 
 v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid Accessibility/Input Monitoring by owning the pty through the wrapper.
@@ -220,7 +224,6 @@ v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid
 - Should the prototype agent be TypeScript/Node for speed or Swift/Rust for production shape?
 - Should app-to-agent communication start with Unix domain sockets or XPC?
 - Should Claude v1 use Agent SDK control first, or raw pty first?
-- Should Codex v1 use `codex app-server` only, with pty fallback later?
 - How should prompt-ready detection work for Claude Code and Codex?
 - What is the minimum safe injection policy for multiline instructions?
 - How much transcript should be stored locally by default?
@@ -275,10 +278,11 @@ Learned:
 - A wrapped `node -i` session can receive an instruction from another local process through SteerAgent and execute it.
 - Pipe-based stdin injection proves the local loop but does not yet prove Claude/Codex TTY behavior.
 - Claude Code stream-json mode can receive a Steer instruction and return output without pty wrapping.
+- Codex app-server can receive a Steer instruction through JSON-RPC and return output without pty wrapping.
 
 Next:
 - Harden Claude adapter event parsing and waiting/action detection.
-- Then add Codex app-server adapter.
-- Define SQLite schema for session, message, instruction, and transcript records.
+- Harden Codex same-turn steering, approval events, and waiting/action detection.
+- Define SQLite schema for session, message, instruction, transcript records, and provider thread ids.
 - Add menu bar status item and notification shell.
 - Decide prototype stack, IPC approach, and first provider adapter target.

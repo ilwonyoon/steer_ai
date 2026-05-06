@@ -78,19 +78,28 @@ steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."
 
 Claude Code returned `STEER_CLAUDE_OK`, confirming the stream-json adapter can receive a Steer instruction and return output.
 
+Codex smoke test result:
+
+```text
+steer codex
+steer send <sessionId> "Reply exactly STEER_CODEX_WAIT_OK and nothing else."
+```
+
+Codex returned `STEER_CODEX_WAIT_OK` through `codex app-server` JSON-RPC. The adapter starts a thread, sends instructions through `turn/start`, streams `item/agentMessage/delta`, and marks the session `waiting` after `turn/completed`.
+
 ## Known Limits
 
-- This spike uses child stdin/stdout pipes, not a pty.
-- Some interactive CLIs, including AI coding tools, may require TTY behavior.
+- The generic `steer wrap -- <command>` path uses child stdin/stdout pipes, not a pty.
+- Some interactive CLIs may still require TTY behavior when no provider-native adapter exists.
 - No prompt-ready detection yet; instructions are sent immediately.
 - No SQLite persistence yet; session registry is in memory, transcript logs are file-backed.
 - No multiline injection policy yet.
 - Claude uses CLI headless stream-json, not the TypeScript SDK package yet.
-- No Codex app-server integration yet.
+- Codex uses app-server, but same-turn steering and approval flows need real dogfood testing.
 
 ## Next
 
-1. Smoke test Claude stream-json with a low-cost prompt.
-2. Add prompt-ready/waiting detection for Claude stream-json events.
-3. Add pty fallback only if provider-native control is not enough.
-4. Move session/message/instruction persistence into SQLite.
+1. Add prompt-ready/waiting detection hardening for Claude and Codex.
+2. Persist sessions, messages, instructions, and transcript excerpts in SQLite.
+3. Add provider-native approval/request handling for Codex app-server events.
+4. Add pty fallback only if provider-native control is not enough.

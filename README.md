@@ -83,6 +83,13 @@ node packages/cli/src/index.js claude --max-budget-usd 0.02
 node packages/cli/src/index.js send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."
 ```
 
+Codex uses the provider-native app-server adapter:
+
+```sh
+node packages/cli/src/index.js codex
+node packages/cli/src/index.js send <sessionId> "Reply exactly STEER_CODEX_OK and nothing else."
+```
+
 See `docs/WRAPPER_SPIKE.md` for scope and limitations.
 
 See `EXECUTION_PLAN.md` for the current backlog and implementation phases.

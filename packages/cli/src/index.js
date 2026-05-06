@@ -19,7 +19,7 @@ switch (command) {
     await runClaudeAdapter(args);
     break;
   case "codex":
-    await wrapProvider("codex", "codex", args);
+    await runCodexAdapter(args);
     break;
   case "send":
     await sendInstruction(args);
@@ -176,6 +176,162 @@ async function runClaudeAdapter(args) {
   });
 }
 
+async function runCodexAdapter(args) {
+  if (args[0] === "--raw") {
+    await wrapProvider("codex", "codex", args.slice(1));
+    return;
+  }
+
+  const sessionId = `codex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const agent = connectToAgent();
+  const codex = createCodexRpcClient();
+  let threadId = null;
+  let activeTurnId = null;
+  let runState = "starting";
+  let printedDelta = false;
+
+  const writeAgent = (message) => agent.write(encodeMessage(message));
+  const writeOutput = (stream, chunk) => {
+    writeAgent({ type: "output", sessionId, stream, chunk });
+  };
+  const setState = (nextState) => {
+    runState = nextState;
+    writeAgent({ type: "state", sessionId, runState });
+  };
+
+  codex.onNotification = (message) => {
+    switch (message.method) {
+      case "thread/status/changed": {
+        const statusType = message.params?.status?.type;
+        if (statusType === "active") setState("running");
+        if (statusType === "idle") setState("waiting");
+        break;
+      }
+      case "turn/started":
+        activeTurnId = message.params?.turn?.id ?? activeTurnId;
+        printedDelta = false;
+        setState("running");
+        break;
+      case "turn/completed":
+        activeTurnId = null;
+        if (printedDelta) {
+          process.stdout.write("\n");
+          writeOutput("stdout", "\n");
+        }
+        setState("waiting");
+        break;
+      case "item/agentMessage/delta": {
+        const delta = message.params?.delta ?? "";
+        if (!delta) break;
+        printedDelta = true;
+        process.stdout.write(delta);
+        writeOutput("stdout", delta);
+        break;
+      }
+      case "item/commandExecution/outputDelta": {
+        const delta = message.params?.delta ?? "";
+        if (!delta) break;
+        process.stdout.write(delta);
+        writeOutput("stdout", delta);
+        break;
+      }
+      case "item/plan/delta": {
+        const delta = message.params?.delta ?? "";
+        if (!delta) break;
+        writeOutput("system", `[plan] ${delta}`);
+        break;
+      }
+      case "warning": {
+        const warning = message.params?.message;
+        if (warning) writeOutput("system", `[codex warning] ${warning}\n`);
+        break;
+      }
+      case "error": {
+        const error = message.params?.error?.message ?? JSON.stringify(message.params?.error ?? message.params);
+        process.stderr.write(`[codex error] ${error}\n`);
+        writeOutput("stderr", `[codex error] ${error}\n`);
+        setState("blocked");
+        break;
+      }
+    }
+  };
+  codex.onStderr = (chunk) => {
+    process.stderr.write(chunk);
+    writeOutput("stderr", chunk);
+  };
+  codex.onExit = (exitCode) => {
+    writeAgent({ type: "state", sessionId, runState: "ended", exitCode });
+    agent.end();
+    process.exit(exitCode ?? 0);
+  };
+
+  const threadOptions = parseCodexThreadOptions(args);
+  await codex.request("initialize", {
+    clientInfo: { name: "steer", version: "0.0.0" },
+    capabilities: { experimental: true }
+  });
+  codex.notify("initialized");
+  const thread = await codex.request("thread/start", {
+    cwd: process.cwd(),
+    sessionStartSource: "startup",
+    ...threadOptions
+  });
+  threadId = thread.thread.id;
+
+  writeAgent({
+    type: "register",
+    sessionId,
+    provider: "codex",
+    adapterKind: "codex-app-server",
+    command: "codex",
+    args: ["app-server", "--listen", "stdio://"],
+    cwd: process.cwd(),
+    pid: codex.pid
+  });
+  setState("waiting");
+
+  process.stderr.write(`[steer] codex session ${sessionId}\n`);
+  process.stderr.write(`[steer] codex thread ${threadId}\n`);
+  process.stderr.write(`[steer] send with: node packages/cli/src/index.js send ${sessionId} "your instruction"\n`);
+
+  agent.on("data", createLineDecoder(async (message) => {
+    if (message.type !== "instruction") return;
+
+    try {
+      setState("running");
+      const input = [{ type: "text", text: message.text, text_elements: [] }];
+      if (activeTurnId && runState === "running") {
+        const response = await codex.request("turn/steer", {
+          threadId,
+          input,
+          expectedTurnId: activeTurnId
+        });
+        activeTurnId = response.turnId ?? activeTurnId;
+      } else {
+        const response = await codex.request("turn/start", { threadId, input });
+        activeTurnId = response.turn.id;
+      }
+      writeAgent({
+        type: "ack",
+        sessionId,
+        instructionId: message.instructionId,
+        status: "injected"
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`[steer] codex injection failed: ${detail}\n`);
+      writeOutput("stderr", `[steer] codex injection failed: ${detail}\n`);
+      writeAgent({
+        type: "ack",
+        sessionId,
+        instructionId: message.instructionId,
+        status: "failed"
+      });
+      setState("blocked");
+    }
+  }));
+}
+
 async function sendInstruction(args) {
   const [sessionId, ...textParts] = args;
   const text = textParts.join(" ").trim();
@@ -220,10 +376,132 @@ function printUsage() {
   steer wrap -- <command> [...args]
   steer claude [...claude print-mode args]
   steer claude --raw [...claude interactive args]
-  steer codex [...args]
+  steer codex [--model <model>] [--approval-policy <policy>] [--sandbox <mode>]
+  steer codex --raw [...codex interactive args]
   steer sessions
   steer send <sessionId> <instruction>
 `);
+}
+
+function parseCodexThreadOptions(args) {
+  const options = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const next = args[index + 1];
+
+    if (arg === "--model" && next) {
+      options.model = next;
+      index += 1;
+    } else if (arg === "--approval-policy" && next) {
+      options.approvalPolicy = next;
+      index += 1;
+    } else if (arg === "--sandbox" && next) {
+      options.sandbox = next;
+      index += 1;
+    } else {
+      throw new Error(`unsupported steer codex option: ${arg}`);
+    }
+  }
+
+  return options;
+}
+
+function createCodexRpcClient() {
+  const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+  let nextId = 1;
+  let stdoutBuffer = "";
+  const pending = new Map();
+  const client = {
+    pid: child.pid,
+    onNotification: null,
+    onStderr: null,
+    onExit: null,
+    request(method, params) {
+      const id = nextId;
+      nextId += 1;
+      const payload = { jsonrpc: "2.0", id, method, params };
+
+      return new Promise((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+        child.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
+          if (!error) return;
+          pending.delete(id);
+          reject(error);
+        });
+      });
+    },
+    notify(method, params) {
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        method,
+        ...(params ? { params } : {})
+      })}\n`);
+    }
+  };
+
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer += chunk.toString("utf8");
+
+    for (;;) {
+      const newlineIndex = stdoutBuffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      const line = stdoutBuffer.slice(0, newlineIndex);
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+      if (!line.trim()) continue;
+
+      handleCodexRpcLine(line, pending, client);
+    }
+  });
+
+  child.stderr.on("data", (chunk) => {
+    client.onStderr?.(chunk.toString("utf8"));
+  });
+
+  child.on("exit", (exitCode) => {
+    for (const { reject } of pending.values()) {
+      reject(new Error(`codex app-server exited with code ${exitCode}`));
+    }
+    pending.clear();
+    client.onExit?.(exitCode);
+  });
+  child.on("error", (error) => {
+    for (const { reject } of pending.values()) {
+      reject(error);
+    }
+    pending.clear();
+    client.onStderr?.(`[codex app-server] ${error.message}\n`);
+  });
+
+  return client;
+}
+
+function handleCodexRpcLine(line, pending, client) {
+  let message;
+
+  try {
+    message = JSON.parse(line);
+  } catch {
+    client.onStderr?.(`[codex rpc] non-json line: ${line}\n`);
+    return;
+  }
+
+  if (message.id !== undefined) {
+    const request = pending.get(message.id);
+    if (!request) return;
+    pending.delete(message.id);
+
+    if (message.error) request.reject(new Error(JSON.stringify(message.error)));
+    else request.resolve(message.result);
+    return;
+  }
+
+  client.onNotification?.(message);
 }
 
 function handleClaudeStream(raw, agent, sessionId) {

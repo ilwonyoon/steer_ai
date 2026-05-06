@@ -84,7 +84,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 
 - CLI wrapper mode: `steer claude [args]`, `steer codex [args]`.
 - Claude adapter: use Claude Code headless stream-json first (`claude -p --input-format stream-json --output-format stream-json --replay-user-messages`), then evaluate TypeScript SDK if the CLI stream is insufficient.
-- Codex adapter: evaluate `codex app-server` JSON-RPC before raw pty.
+- Codex adapter: use `codex app-server --listen stdio://` JSON-RPC first. Start a thread with `thread/start`, submit user instructions with `turn/start`, stream `item/agentMessage/delta`, and use `turn/steer` when a turn is already active.
 - Fallback adapter: use pty ownership when no provider-native protocol is viable.
 - Streams transcript/event chunks and heartbeat/state to SteerAgent.
 - Receives delivery commands and injects/sends `Instruction` to the target session.
@@ -101,6 +101,8 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 Current spike: Node `SteerAgent` listens on `~/.steer/steer.sock`, keeps session registry in memory, writes transcripts to `~/.steer/sessions/<sessionId>.log`, and routes `send` requests to the wrapper's persistent socket. This validates the local report/instruct loop before SQLite and provider-native adapters are added.
 
 Claude smoke test: `steer claude --max-budget-usd 0.02` plus `steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."` successfully returned `STEER_CLAUDE_OK` through Claude Code stream-json. The adapter currently marks state `running` on instruction injection and `waiting` when a Claude `result` event arrives.
+
+Codex smoke test: `steer codex` plus `steer send <sessionId> "Reply exactly STEER_CODEX_WAIT_OK and nothing else."` successfully returned `STEER_CODEX_WAIT_OK` through Codex app-server JSON-RPC. The adapter marks state `running` on `thread/status/changed` active or `turn/started`, and `waiting` after `turn/completed`.
 
 ### Steer Mac App
 
@@ -161,7 +163,7 @@ The classifier should not invent terminal output. `terminalExcerpt` must be copi
 
 - Day 1: Happy wrapper research and wrapper/injection smoke test.
 - Day 2: Minimal `steer claude` wrapper and transcript stream.
-- Day 3: SQLite model and classification contract.
+- Day 3: Minimal `steer codex` app-server adapter, SQLite model, and classification contract.
 - Day 4: Mac app action card stack skeleton.
 - Day 5: Composer, target routing, notification, and instruction delivery.
 - Day 6-7: Dogfooding and metrics.
