@@ -327,10 +327,6 @@
       .card-composer,
       .composer {
         min-width: 0;
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px;
-        align-items: end;
       }
 
       .queue {
@@ -437,6 +433,7 @@
 
       input,
       textarea {
+        width: 100%;
         min-width: 0;
         min-height: 44px;
         max-height: 120px;
@@ -447,7 +444,7 @@
         backdrop-filter: blur(20px) saturate(1.4);
         -webkit-backdrop-filter: blur(20px) saturate(1.4);
         color: var(--text);
-        padding: 12px 14px;
+        padding: 12px 50px 12px 14px;
         outline: none;
         cursor: text;
       }
@@ -460,14 +457,32 @@
       }
 
       .send {
-        width: 44px;
-        height: 44px;
+        position: absolute;
+        right: 5px;
+        bottom: 5px;
+        width: 34px;
+        height: 34px;
         border: 0;
-        border-radius: 22px;
+        border-radius: 17px;
         background: var(--blue);
         color: white;
         font-weight: 800;
         cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.86);
+        transition: opacity 140ms ease, transform 140ms ease;
+      }
+
+      .input-shell {
+        position: relative;
+        min-width: 0;
+      }
+
+      .input-shell.has-text .send {
+        opacity: 1;
+        pointer-events: auto;
+        transform: scale(1);
       }
 
       @media (min-width: 900px) {
@@ -537,8 +552,10 @@
           <div class="reply-dock" aria-label="Quick reply">
             <div class="chips" id="chips"></div>
             <div class="card-composer">
-              <input id="card-reply" type="text" aria-label="Quick reply" placeholder="Reply to this AI session" />
-              <button class="send" type="button" id="card-send">↑</button>
+              <div class="input-shell" id="card-input-shell">
+                <input id="card-reply" type="text" aria-label="Quick reply" placeholder="Reply to this AI session" />
+                <button class="send" type="button" id="card-send" aria-label="Send reply">↑</button>
+              </div>
             </div>
           </div>
         </article>
@@ -560,8 +577,10 @@
         <footer class="detail-reply">
           <div class="chips" id="detail-chips"></div>
           <div class="composer">
-            <textarea id="reply" aria-label="Reply" placeholder="Send instruction to this session"></textarea>
-            <button class="send" type="button" id="send">↑</button>
+            <div class="input-shell" id="detail-input-shell">
+              <textarea id="reply" aria-label="Reply" placeholder="Send instruction to this session"></textarea>
+              <button class="send" type="button" id="send" aria-label="Send instruction">↑</button>
+            </div>
           </div>
         </footer>
       </div>
@@ -675,6 +694,15 @@
         render();
       }
 
+      function syncSendState(input, shell) {
+        shell.classList.toggle("has-text", Boolean(input.value.trim()));
+      }
+
+      const cardReply = byId("card-reply");
+      const detailReply = byId("reply");
+      const cardInputShell = byId("card-input-shell");
+      const detailInputShell = byId("detail-input-shell");
+
       byId("next").addEventListener("click", () => move(1));
       byId("prev").addEventListener("click", () => move(-1));
       byId("card").addEventListener("click", (event) => {
@@ -683,26 +711,33 @@
       });
       byId("close-detail").addEventListener("click", () => byId("detail").classList.remove("open"));
       byId("chips").addEventListener("click", (event) => {
-        if (event.target.matches(".chip")) byId("card-reply").value = event.target.textContent;
+        if (event.target.matches(".chip")) {
+          cardReply.value = event.target.textContent;
+          syncSendState(cardReply, cardInputShell);
+          cardReply.focus();
+        }
       });
       byId("detail-chips").addEventListener("click", (event) => {
-        if (event.target.matches(".chip")) byId("reply").value = event.target.textContent;
-      });
-      byId("card-send").addEventListener("click", () => {
-        const reply = byId("card-reply");
-        if (!reply.value.trim()) {
-          byId("detail").classList.add("open");
-          return;
+        if (event.target.matches(".chip")) {
+          detailReply.value = event.target.textContent;
+          syncSendState(detailReply, detailInputShell);
+          detailReply.focus();
         }
-        cards[index].thread.push(["user", reply.value.trim()]);
-        reply.value = "";
+      });
+      cardReply.addEventListener("input", () => syncSendState(cardReply, cardInputShell));
+      detailReply.addEventListener("input", () => syncSendState(detailReply, detailInputShell));
+      byId("card-send").addEventListener("click", () => {
+        if (!cardReply.value.trim()) return;
+        cards[index].thread.push(["user", cardReply.value.trim()]);
+        cardReply.value = "";
+        syncSendState(cardReply, cardInputShell);
         move(1);
       });
       byId("send").addEventListener("click", () => {
-        const reply = byId("reply");
-        if (!reply.value.trim()) return;
-        cards[index].thread.push(["user", reply.value.trim()]);
-        reply.value = "";
+        if (!detailReply.value.trim()) return;
+        cards[index].thread.push(["user", detailReply.value.trim()]);
+        detailReply.value = "";
+        syncSendState(detailReply, detailInputShell);
         renderDetail();
         byId("thread").scrollTop = byId("thread").scrollHeight;
       });

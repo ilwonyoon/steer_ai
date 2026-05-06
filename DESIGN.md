@@ -137,7 +137,7 @@ Opening a card shows the full session context in a Claude/Codex-style view.
 - Bottom-pinned input bar.
 - Min height: 40pt; grows to 120pt before scrolling.
 - Leading target control: selected session or `@session` mention.
-- Trailing send button: circular blue button when text exists.
+- Trailing send button lives inside the input field and appears only when text exists.
 - Supports proactive instructions, not only replies to the active card.
 
 ### Quick Chips
