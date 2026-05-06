@@ -132,8 +132,8 @@ Exit criteria:
 Goal: make reports actionable without becoming noisy.
 
 - [ ] Define classifier JSON contract.
-- [ ] Add categories: `progress`, `completion`, `decision`, `blocker`, `question`, `idle`.
-- [ ] Add `requiresAction`, `needsInput`, `priority`, `summary`, `options`, `suggestedInstructions`.
+- [x] Add first heuristic categories: `progress`, `completion`, `decision`, `blocker`, `question`.
+- [x] Generate first `ActionCard` rows with `priority`, `summary`, `actionPrompt`, and `options`.
 - [ ] Run classifier against real transcript samples.
 - [ ] Track false positive and false negative notifications.
 - [ ] Tune prompts for high precision on `requiresAction`.

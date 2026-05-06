@@ -91,6 +91,8 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Receives delivery commands and injects/sends `Instruction` to the target session.
 - Updates session state on child/protocol exit.
 
+Current heuristic card generator: after transcript/state updates, SteerAgent stores a latest `TerminalExcerpt` and one active `ActionCard` per session. It classifies transcript tails into `blocker`, `decision`, `question`, `completion`, or `progress` using local keyword/state rules. This is a pre-LLM classifier scaffold for dogfooding and will be replaced or augmented by the classifier JSON contract.
+
 ### SteerAgent
 
 - Per-user background agent / Login Item.

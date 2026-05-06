@@ -71,6 +71,48 @@ export function createStore(filePath = databasePath) {
     insertMetricEvent: db.prepare(`
       INSERT INTO metric_events (id, session_id, room_id, type, timestamp, metadata_json)
       VALUES (?, ?, ?, ?, ?, ?)
+    `),
+    selectSession: db.prepare(`
+      SELECT id, provider, command, cwd, run_state
+      FROM sessions
+      WHERE id = ?
+    `),
+    selectRecentTranscriptEntries: db.prepare(`
+      SELECT stream, chunk
+      FROM transcript_entries
+      WHERE session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT 24
+    `),
+    upsertTerminalExcerpt: db.prepare(`
+      INSERT INTO terminal_excerpts (
+        id, session_id, source_message_id, start_offset, end_offset,
+        raw_text, display_lines_json, highlighted_line_indexes_json, created_at
+      )
+      VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        raw_text = excluded.raw_text,
+        display_lines_json = excluded.display_lines_json,
+        highlighted_line_indexes_json = excluded.highlighted_line_indexes_json,
+        created_at = excluded.created_at
+    `),
+    upsertActionCard: db.prepare(`
+      INSERT INTO action_cards (
+        id, room_id, source_message_id, session_id, terminal_excerpt_id,
+        category, priority, title, summary, action_prompt, options_json,
+        state, created_at, updated_at, snoozed_until
+      )
+      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(id) DO UPDATE SET
+        terminal_excerpt_id = excluded.terminal_excerpt_id,
+        category = excluded.category,
+        priority = excluded.priority,
+        title = excluded.title,
+        summary = excluded.summary,
+        action_prompt = excluded.action_prompt,
+        options_json = excluded.options_json,
+        state = excluded.state,
+        updated_at = excluded.updated_at
     `)
   };
 
@@ -123,6 +165,7 @@ export function createStore(filePath = databasePath) {
         type: "state_changed",
         metadata: { runState, exitCode }
       });
+      refreshActionCard(sessionId);
     },
     appendTranscript({ sessionId, stream, chunk }) {
       const timestamp = new Date().toISOString();
@@ -142,6 +185,7 @@ export function createStore(filePath = databasePath) {
         "normal",
         message.source
       );
+      refreshActionCard(sessionId);
     },
     createInstruction({ id, sessionId, text }) {
       statements.insertInstruction.run(
@@ -172,6 +216,42 @@ export function createStore(filePath = databasePath) {
       });
     }
   };
+
+  function refreshActionCard(sessionId) {
+    const session = statements.selectSession.get(sessionId);
+    if (!session) return;
+
+    const entries = statements.selectRecentTranscriptEntries.all(sessionId).reverse();
+    const rawText = entries.map((entry) => entry.chunk).join("");
+    const displayLines = transcriptDisplayLines(rawText);
+    const card = classifyActionCard(session, displayLines);
+    const now = new Date().toISOString();
+    const excerptId = `excerpt-${sessionId}`;
+
+    statements.upsertTerminalExcerpt.run(
+      excerptId,
+      sessionId,
+      rawText,
+      JSON.stringify(displayLines),
+      JSON.stringify(card.highlightedLineIndexes),
+      now
+    );
+    statements.upsertActionCard.run(
+      `card-${sessionId}`,
+      DEFAULT_ROOM_ID,
+      sessionId,
+      excerptId,
+      card.category,
+      card.priority,
+      card.title,
+      card.summary,
+      card.actionPrompt,
+      JSON.stringify(card.options),
+      card.state,
+      now,
+      now
+    );
+  }
 }
 
 function transcriptMessageForStream(stream, chunk) {
@@ -179,6 +259,124 @@ function transcriptMessageForStream(stream, chunk) {
   if (stream === "user") return { direction: "user_to_agent", source: "user" };
   if (stream === "system") return { direction: "system", source: "wrapper" };
   return { direction: "agent_to_user", source: "wrapper" };
+}
+
+function transcriptDisplayLines(rawText) {
+  const lines = cleanTerminalText(rawText)
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .slice(-32);
+
+  return lines.length > 0 ? lines : ["[no transcript yet]"];
+}
+
+function classifyActionCard(session, displayLines) {
+  const provider = providerDisplayName(session.provider);
+  const command = session.command || session.provider;
+  const body = displayLines.join("\n");
+  const lower = body.toLowerCase();
+  const summary = displayLines.at(-1) || "No transcript captured yet.";
+  const titlePrefix = `${provider} · ${command}`;
+
+  if (session.run_state === "blocked" || session.run_state === "disconnected" || hasAny(lower, [
+    "blocked",
+    "permission denied",
+    "approval",
+    "error:",
+    "failed",
+    "exception",
+    "cannot",
+    "can't",
+    "fatal"
+  ])) {
+    return {
+      category: "blocker",
+      priority: "urgent",
+      title: `${titlePrefix} needs unblock`,
+      summary,
+      actionPrompt: "Review the blocker and send the next instruction.",
+      options: ["Use simplest fix", "Explain blocker", "Continue"],
+      state: "active",
+      highlightedLineIndexes: highlightIndexes(displayLines, ["blocked", "error", "failed", "permission", "approval"])
+    };
+  }
+
+  if (hasAny(lower, ["decision", "choose", "option a", "option b", "which option", "confirm"])) {
+    return {
+      category: "decision",
+      priority: "normal",
+      title: `${titlePrefix} needs a decision`,
+      summary,
+      actionPrompt: "Choose a direction so the session can continue.",
+      options: ["Use your recommendation", "Pick simpler option", "Explain options"],
+      state: "active",
+      highlightedLineIndexes: highlightIndexes(displayLines, ["decision", "choose", "option", "confirm"])
+    };
+  }
+
+  if (body.includes("?") || hasAny(lower, ["should i", "do you want", "would you like", "need your input"])) {
+    return {
+      category: "question",
+      priority: "normal",
+      title: `${titlePrefix} has a question`,
+      summary,
+      actionPrompt: "Answer the question or give a direct next instruction.",
+      options: ["Yes, continue", "Use your judgment", "Explain first"],
+      state: "active",
+      highlightedLineIndexes: highlightIndexes(displayLines, ["?", "should", "want", "input"])
+    };
+  }
+
+  if (session.run_state === "ended" || hasAny(lower, ["complete", "completed", "done", "success", "passed"])) {
+    return {
+      category: "completion",
+      priority: "silent",
+      title: `${titlePrefix} completed`,
+      summary,
+      actionPrompt: "Review the result or send a follow-up instruction.",
+      options: ["Summarize result", "Next task", "Archive"],
+      state: session.run_state === "ended" ? "done" : "active",
+      highlightedLineIndexes: highlightIndexes(displayLines, ["complete", "done", "success", "passed"])
+    };
+  }
+
+  return {
+    category: "progress",
+    priority: "silent",
+    title: `${titlePrefix} is running`,
+    summary,
+    actionPrompt: "Send a proactive instruction if needed.",
+    options: ["Continue", "Summarize progress", "Pause after current step"],
+    state: "active",
+    highlightedLineIndexes: []
+  };
+}
+
+function providerDisplayName(provider) {
+  if (provider === "claude") return "Claude Code";
+  if (provider === "codex") return "Codex CLI";
+  if (provider === "gemini") return "Gemini CLI";
+  return "CLI Session";
+}
+
+function hasAny(value, needles) {
+  return needles.some((needle) => value.includes(needle));
+}
+
+function highlightIndexes(lines, needles) {
+  return lines
+    .map((line, index) => {
+      const lower = line.toLowerCase();
+      return needles.some((needle) => lower.includes(needle)) ? index : -1;
+    })
+    .filter((index) => index >= 0);
+}
+
+function cleanTerminalText(value) {
+  return value
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\r/g, "");
 }
 
 const schemaSql = `
@@ -261,6 +459,28 @@ CREATE TABLE IF NOT EXISTS terminal_excerpts (
   FOREIGN KEY(source_message_id) REFERENCES messages(id)
 );
 
+CREATE TABLE IF NOT EXISTS action_cards (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
+  source_message_id TEXT,
+  session_id TEXT NOT NULL,
+  terminal_excerpt_id TEXT,
+  category TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'normal',
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  action_prompt TEXT,
+  options_json TEXT,
+  state TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  snoozed_until TEXT,
+  FOREIGN KEY(room_id) REFERENCES rooms(id),
+  FOREIGN KEY(source_message_id) REFERENCES messages(id),
+  FOREIGN KEY(session_id) REFERENCES sessions(id),
+  FOREIGN KEY(terminal_excerpt_id) REFERENCES terminal_excerpts(id)
+);
+
 CREATE TABLE IF NOT EXISTS transcript_entries (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
@@ -286,4 +506,5 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_time ON messages(session_id, tim
 CREATE INDEX IF NOT EXISTS idx_instructions_session_status ON instructions(target_session_id, status);
 CREATE INDEX IF NOT EXISTS idx_transcript_entries_session_time ON transcript_entries(session_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_metric_events_session_time ON metric_events(session_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_action_cards_state_priority ON action_cards(state, priority, updated_at);
 `;

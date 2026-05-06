@@ -14,6 +14,11 @@ struct LocalSteerStore {
             }
 
             do {
+                let actionCards = (try? loadActionCards(databaseURL: databaseURL)) ?? []
+                if !actionCards.isEmpty {
+                    return actionCards
+                }
+
                 let sessions: [SessionRow] = try runSQLiteJSON(
                     databaseURL: databaseURL,
                     sql: """
@@ -108,6 +113,77 @@ private struct TranscriptEntryRow: Decodable {
     let timestamp: String
 }
 
+private struct ActionCardRow: Decodable {
+    let id: String
+    let sessionId: String
+    let provider: String
+    let command: String?
+    let cwd: String?
+    let runState: String
+    let category: String
+    let priority: String
+    let title: String
+    let summary: String
+    let actionPrompt: String?
+    let optionsJSON: String?
+    let displayLinesJSON: String?
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionId = "session_id"
+        case provider
+        case command
+        case cwd
+        case runState = "run_state"
+        case category
+        case priority
+        case title
+        case summary
+        case actionPrompt = "action_prompt"
+        case optionsJSON = "options_json"
+        case displayLinesJSON = "display_lines_json"
+        case updatedAt = "updated_at"
+    }
+}
+
+private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
+    let rows: [ActionCardRow] = try runSQLiteJSON(
+        databaseURL: databaseURL,
+        sql: """
+        SELECT
+          ac.id,
+          ac.session_id,
+          s.provider,
+          s.command,
+          s.cwd,
+          s.run_state,
+          ac.category,
+          ac.priority,
+          ac.title,
+          ac.summary,
+          ac.action_prompt,
+          ac.options_json,
+          te.display_lines_json,
+          ac.updated_at
+        FROM action_cards ac
+        JOIN sessions s ON s.id = ac.session_id
+        LEFT JOIN terminal_excerpts te ON te.id = ac.terminal_excerpt_id
+        WHERE ac.state IN ('active', 'done')
+        ORDER BY
+          CASE ac.priority
+            WHEN 'urgent' THEN 0
+            WHEN 'normal' THEN 1
+            ELSE 2
+          END,
+          ac.updated_at DESC
+        LIMIT 12;
+        """
+    )
+
+    return rows.map(makeCard(row:))
+}
+
 private func recentTranscriptEntries(for sessionId: String, databaseURL: URL) throws -> [TranscriptEntryRow] {
     let quotedSessionId = sessionId.replacingOccurrences(of: "'", with: "''")
     let rows: [TranscriptEntryRow] = try runSQLiteJSON(
@@ -174,6 +250,29 @@ private func makeCard(session: SessionRow, entries: [TranscriptEntryRow]) -> Act
     )
 }
 
+private func makeCard(row: ActionCardRow) -> ActionCard {
+    let provider = ProviderKind(rawValue: row.provider) ?? .custom
+    let state = mapState(row.runState)
+    let project = projectName(from: row.cwd)
+    let displayLines = decodeStringArray(row.displayLinesJSON)
+    let terminalLines = makeTerminalLines(from: displayLines, category: row.category)
+
+    return ActionCard(
+        id: row.id,
+        sessionId: row.sessionId,
+        project: project,
+        provider: provider,
+        state: state,
+        age: state.rawValue,
+        title: row.title,
+        summary: row.summary,
+        reason: row.actionPrompt ?? row.cwd ?? "No working directory recorded.",
+        terminalLines: terminalLines,
+        chips: decodeStringArray(row.optionsJSON).ifEmpty(defaultChips(for: state)),
+        thread: []
+    )
+}
+
 private func mapState(_ value: String) -> SessionState {
     switch value {
     case "waiting": .waiting
@@ -224,6 +323,20 @@ private func makeTerminalLines(from entries: [TranscriptEntryRow]) -> [TerminalL
     return Array(lines)
 }
 
+private func makeTerminalLines(from displayLines: [String], category: String) -> [TerminalLine] {
+    let kind: TerminalLineKind = switch category {
+    case "blocker": .warning
+    case "decision", "question": .accent
+    case "completion": .success
+    default: .standard
+    }
+    let lines = displayLines
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .map { TerminalLine($0, kind: kind) }
+
+    return lines.ifEmpty([TerminalLine("[no transcript yet]", kind: .muted)])
+}
+
 private func makeThread(from entries: [TranscriptEntryRow]) -> [ThreadMessage] {
     entries
         .suffix(12)
@@ -254,6 +367,19 @@ private func cleanTerminalText(_ value: String) -> String {
         options: .regularExpression
     )
     return withoutANSI.replacingOccurrences(of: "\r", with: "")
+}
+
+private func decodeStringArray(_ value: String?) -> [String] {
+    guard let value, let data = value.data(using: .utf8) else {
+        return []
+    }
+    return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+}
+
+private extension Array {
+    func ifEmpty(_ fallback: [Element]) -> [Element] {
+        isEmpty ? fallback : self
+    }
 }
 
 private func steerExecutablePath() -> String {

@@ -57,7 +57,7 @@ swift build
 swift run SteerMac
 ```
 
-The Mac app reads live sessions from `~/.steer/steer.sqlite` and sends replies through `steer send`.
+The Mac app reads live action cards from `~/.steer/steer.sqlite` and sends replies through `steer send`. The current card generator is heuristic: it watches transcript tails for blockers, questions, decisions, completions, and progress.
 
 Current structure:
 
