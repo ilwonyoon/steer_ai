@@ -1,0 +1,87 @@
+import SwiftUI
+
+struct DetailView: View {
+    let card: ActionCard
+    let onClose: () -> Void
+    let onSend: (String) -> Void
+
+    @State private var reply = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("Back", action: onClose)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Text("\(card.project) · \(card.provider.displayName)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(card.state.rawValue)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(.white.opacity(0.52), in: Capsule())
+                }
+            }
+            .frame(height: 48)
+            .padding(.horizontal, 14)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(card.thread) { message in
+                        ThreadBubble(message: message)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+
+            ReplyDock(chips: card.chips, reply: $reply, onSend: { text in
+                onSend(text)
+                reply = ""
+            })
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+        }
+        .frame(width: 375, height: 812)
+        .background(Color(red: 0.97, green: 0.97, blue: 0.98))
+    }
+}
+
+private struct ThreadBubble: View {
+    let message: ThreadMessage
+
+    var body: some View {
+        Text(message.text)
+            .font(.system(size: 15))
+            .lineSpacing(4)
+            .foregroundStyle(message.sender == .user ? .white : .primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(background)
+            .frame(maxWidth: .infinity, alignment: message.sender == .user ? .trailing : .leading)
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if message.sender == .user {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.accentColor)
+        } else {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.white.opacity(0.82))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                }
+        }
+    }
+}

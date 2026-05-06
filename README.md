@@ -6,7 +6,7 @@ The goal is to keep multiple AI coding sessions moving: capture reports from Cla
 
 ## Current Status
 
-This repository is in the planning and early execution stage. It currently contains product, technical, design, and contributor guidance documents. Implementation has not started yet.
+This repository is in the planning and early execution stage. It contains product, technical, design, and contributor guidance documents plus an initial SwiftUI Mac app shell and static UX prototype.
 
 ## Core Documents
 
@@ -43,15 +43,21 @@ Hook-only mode is not sufficient because it cannot deliver user instructions. v1
 
 ## Development
 
-No build system is committed yet. Do not invent local commands until the implementation stack is chosen.
-
 The first clickable UX preview is a static prototype:
 
 ```text
 apps/prototype/index.html
 ```
 
-Expected future structure:
+The first native Mac shell is a Swift Package:
+
+```sh
+cd apps/mac
+swift build
+swift run SteerMac
+```
+
+Current structure:
 
 ```text
 apps/mac/

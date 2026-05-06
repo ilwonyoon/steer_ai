@@ -110,14 +110,14 @@ Exit criteria:
 
 Goal: make the core loop usable from a native Mac UI.
 
-- [ ] Create SwiftUI macOS app shell.
+- [x] Create SwiftUI macOS app shell.
 - [ ] Add menu bar status item.
-- [ ] Build default action card stack view.
-- [ ] Open card into Claude/Codex-style session detail.
-- [ ] Show session badges and state pills.
-- [ ] Render report, decision, blocker, completion, and idle cards.
-- [ ] Add quick reply / quick instruction chips above the input field.
-- [ ] Add detail composer with target session selection.
+- [x] Build default action card stack view.
+- [x] Open card into Claude/Codex-style session detail.
+- [x] Show session badges and state pills.
+- [x] Render report, decision, blocker, completion, and idle cards.
+- [x] Add quick reply / quick instruction chips above the input field.
+- [x] Add detail composer with target session selection.
 - [ ] Add macOS notifications for waiting/blocker states.
 
 Exit criteria:
@@ -251,11 +251,12 @@ Completed:
 - Added `README.md`.
 - Exported PRD and Tech Spec into `docs/`.
 - Created initial source layout placeholders: `apps/mac`, `packages/agent`, `packages/cli`.
+- Added SwiftUI Mac shell in `apps/mac` with 375 x 812 card stack, session detail, provider badges, chips, and reply input.
 
 Learned:
 - The original `Documents/Steer_ai` folder had macOS privacy restrictions that blocked normal git operations.
 - A working clone now exists at `/Users/ilwonyoon/Developer/steer_ai`.
 
 Next:
-- Start Happy wrapper research.
+- Add menu bar status item and notification shell.
 - Decide prototype stack, IPC approach, and first provider adapter target.
