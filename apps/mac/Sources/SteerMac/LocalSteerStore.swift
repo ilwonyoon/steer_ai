@@ -14,34 +14,33 @@ struct LocalSteerStore {
             }
 
             do {
-                let actionCards = (try? loadActionCards(databaseURL: databaseURL)) ?? []
-                if !actionCards.isEmpty {
-                    return actionCards
-                }
-
-                let sessions: [SessionRow] = try runSQLiteJSON(
-                    databaseURL: databaseURL,
-                    sql: """
-                    SELECT id, provider, adapter_kind, command, cwd, run_state, created_at, updated_at
-                    FROM sessions
-                    ORDER BY
-                      CASE run_state
-                        WHEN 'waiting' THEN 0
-                        WHEN 'blocked' THEN 1
-                        WHEN 'running' THEN 2
-                        ELSE 3
-                      END,
-                      updated_at DESC
-                    LIMIT 12;
-                    """
-                )
-
-                return sessions.map { session in
-                    let entries = (try? recentTranscriptEntries(for: session.id, databaseURL: databaseURL)) ?? []
-                    return makeCard(session: session, entries: entries)
-                }
+                return try loadActionCards(databaseURL: databaseURL)
             } catch {
-                return []
+                do {
+                    let sessions: [SessionRow] = try runSQLiteJSON(
+                        databaseURL: databaseURL,
+                        sql: """
+                        SELECT id, provider, adapter_kind, command, cwd, run_state, created_at, updated_at
+                        FROM sessions
+                        ORDER BY
+                          CASE run_state
+                            WHEN 'waiting' THEN 0
+                            WHEN 'blocked' THEN 1
+                            WHEN 'running' THEN 2
+                            ELSE 3
+                          END,
+                          updated_at DESC
+                        LIMIT 12;
+                        """
+                    )
+
+                    return sessions.map { session in
+                        let entries = (try? recentTranscriptEntries(for: session.id, databaseURL: databaseURL)) ?? []
+                        return makeCard(session: session, entries: entries)
+                    }
+                } catch {
+                    return []
+                }
             }
         }.value
     }
@@ -441,10 +440,55 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     guard line.range(of: "[A-Za-z0-9가-힣⚠✖✔›>]", options: .regularExpression) != nil else {
         return false
     }
+    if line.range(of: "^\\s*(?:\\[user\\]|\\[steer\\])", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "^\\s*›", options: .regularExpression) != nil {
+        return false
+    }
+    if line.range(of: "^gpt-[\\w.-]+.*·", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "^\\s*[A-Za-z]{1,2}\\s*$", options: .regularExpression) != nil {
+        return false
+    }
     if line.range(of: "^\\]1[01];\\?\\\\?$", options: .regularExpression) != nil {
         return false
     }
+    if line.range(of: "^Tip: Try the Codex App", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "^https://chatgpt.com/codex", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "Under-development features enabled", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "features are incomplete", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "suppress_unstable_features_warning", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "config.toml", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "MCP client for `?pencil`? failed", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "No such file or directory", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "MCP startup incomplete", options: .caseInsensitive) != nil {
+        return false
+    }
     if line.localizedCaseInsensitiveContains("esc to interr") {
+        return false
+    }
+    if line.localizedCaseInsensitiveContains("esc again to edit previous message") {
+        return false
+    }
+    if line.localizedCaseInsensitiveContains("tab to queue message") {
         return false
     }
     if line.range(of: "Starting MCP servers", options: .caseInsensitive) != nil {

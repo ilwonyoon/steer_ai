@@ -78,7 +78,7 @@ export function createStore(filePath = databasePath) {
       WHERE id = ?
     `),
     selectRecentTranscriptEntries: db.prepare(`
-      SELECT stream, chunk
+      SELECT stream, chunk, timestamp
       FROM transcript_entries
       WHERE session_id = ?
       ORDER BY timestamp DESC
@@ -230,9 +230,13 @@ export function createStore(filePath = databasePath) {
     if (!session) return;
 
     const entries = statements.selectRecentTranscriptEntries.all(sessionId).reverse();
-    const rawText = entries.map((entry) => entry.chunk).join("");
+    const timing = transcriptTiming(entries);
+    const cardEntries = timing.latestUserAt
+      ? entries.filter((entry) => entry.stream !== "user" && entry.timestamp > timing.latestUserAt)
+      : entries;
+    const rawText = cardEntries.map((entry) => entry.chunk).join("");
     const displayLines = transcriptDisplayLines(rawText);
-    const card = classifyActionCard(session, displayLines);
+    const card = classifyActionCard(session, displayLines, timing);
     const now = new Date().toISOString();
     const excerptId = `excerpt-${sessionId}`;
 
@@ -284,13 +288,51 @@ function transcriptDisplayLines(rawText) {
   return lines.length > 0 ? lines : ["[no transcript yet]"];
 }
 
-function classifyActionCard(session, displayLines) {
+function transcriptTiming(entries) {
+  let latestUserAt = null;
+  let latestOutputAt = null;
+
+  for (const entry of entries) {
+    if (entry.stream === "user") {
+      latestUserAt = maxTimestamp(latestUserAt, entry.timestamp);
+      continue;
+    }
+
+    if ((entry.stream === "stdout" || entry.stream === "stderr") && transcriptDisplayLines(entry.chunk).some(isContentLineForAction)) {
+      latestOutputAt = maxTimestamp(latestOutputAt, entry.timestamp);
+    }
+  }
+
+  return { latestUserAt, latestOutputAt };
+}
+
+function maxTimestamp(current, next) {
+  if (!next) return current;
+  if (!current) return next;
+  return next > current ? next : current;
+}
+
+function classifyActionCard(session, displayLines, timing = {}) {
   const provider = providerDisplayName(session.provider);
   const command = session.command || session.provider;
   const body = displayLines.join("\n");
   const lower = body.toLowerCase();
   const summary = displayLines.at(-1) || "No transcript captured yet.";
   const titlePrefix = `${provider} · ${command}`;
+  const answered = timing.latestUserAt && (!timing.latestOutputAt || timing.latestUserAt >= timing.latestOutputAt);
+
+  if (answered) {
+    return {
+      category: "answered",
+      priority: "silent",
+      title: `${titlePrefix} answered`,
+      summary,
+      actionPrompt: "Waiting for the session to produce a new actionable response.",
+      options: [],
+      state: "done",
+      highlightedLineIndexes: []
+    };
+  }
 
   if (session.run_state === "blocked" || session.run_state === "disconnected" || hasAny(lower, [
     "blocked",
@@ -405,8 +447,29 @@ function splitTerminalDisplayLine(line) {
 function isMeaningfulTerminalLine(line) {
   if (!line) return false;
   if (!/[A-Za-z0-9가-힣⚠✖✔›>]/.test(line)) return false;
+  if (!isContentLineForAction(line)) return false;
+  return true;
+}
+
+function isContentLineForAction(line) {
+  if (!line) return false;
+  if (/^\s*(?:\[user\]|\[steer\])/.test(line)) return false;
+  if (/^\s*›/.test(line)) return false;
+  if (/^gpt-[\w.-]+.*·/i.test(line)) return false;
+  if (/^\s*[A-Za-z]{1,2}\s*$/.test(line)) return false;
   if (/^\]1[01];\?\\?$/.test(line)) return false;
+  if (/^Tip: Try the Codex App/i.test(line)) return false;
+  if (/^https:\/\/chatgpt\.com\/codex/i.test(line)) return false;
+  if (/Under-development features enabled/i.test(line)) return false;
+  if (/features are incomplete/i.test(line)) return false;
+  if (/suppress_unstable_features_warning/i.test(line)) return false;
+  if (/config\.toml/i.test(line)) return false;
+  if (/MCP client for `?pencil`? failed/i.test(line)) return false;
+  if (/No such file or directory/i.test(line)) return false;
+  if (/MCP startup incomplete/i.test(line)) return false;
   if (/esc to interr/i.test(line)) return false;
+  if (/esc again to edit previous message/i.test(line)) return false;
+  if (/tab to queue message/i.test(line)) return false;
   if (/Starting MCP servers/i.test(line)) return false;
   if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(line)) return false;
   if (/\/model\s+choose what model/i.test(line) && /\/permissions/i.test(line)) return false;
