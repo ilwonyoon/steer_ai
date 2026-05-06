@@ -19,33 +19,33 @@ node packages/agent/src/agent.js
 Wrap any command:
 
 ```sh
-node packages/cli/src/index.js wrap -- node -i
+steer wrap -- node -i
 ```
 
 List sessions:
 
 ```sh
-node packages/cli/src/index.js sessions
+steer sessions
 ```
 
 Inject one instruction:
 
 ```sh
-node packages/cli/src/index.js send <sessionId> "console.log('steer injection ok')"
+steer send <sessionId> "console.log('steer injection ok')"
 ```
 
 Provider shims exist for the next smoke tests:
 
 ```sh
-node packages/cli/src/index.js claude
-node packages/cli/src/index.js claude --raw
-node packages/cli/src/index.js codex
+steer claude
+steer claude --raw
+steer codex --headless
 ```
 
-`steer claude` uses Claude Code's headless stream-json path by default:
+`steer claude` uses the interactive PTY bridge by default. The previous Claude Code headless stream-json path is still available:
 
 ```sh
-claude -p --input-format stream-json --output-format stream-json --replay-user-messages
+steer claude --headless
 ```
 
 Use `steer claude --raw` only as the generic stdin/stdout fallback.
@@ -58,7 +58,8 @@ Use `steer claude --raw` only as the generic stdin/stdout fallback.
 - `steer send <sessionId> <instruction>` routes text to the active wrapper.
 - The wrapper writes the instruction to child stdin with a trailing newline.
 - The wrapper reports injected status and exit state back to the agent.
-- `steer claude` starts Claude Code through stream-json headless mode and sends user messages as JSON lines.
+- `steer claude` and `steer codex` start provider CLIs through a PTY bridge so they look like normal terminal sessions.
+- `steer claude --headless` starts Claude Code through stream-json headless mode and sends user messages as JSON lines.
 - Claude adapter marks the session `running` when an instruction is injected and `waiting` when Claude emits a `result`.
 
 Smoke test result:
@@ -72,7 +73,7 @@ The wrapped REPL printed `steer injection ok`, confirming the bidirectional loca
 Claude smoke test result:
 
 ```text
-steer claude --max-budget-usd 0.02
+steer claude --headless --max-budget-usd 0.02
 steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."
 ```
 
@@ -81,25 +82,25 @@ Claude Code returned `STEER_CLAUDE_OK`, confirming the stream-json adapter can r
 Codex smoke test result:
 
 ```text
-steer codex
+steer codex --headless
 steer send <sessionId> "Reply exactly STEER_CODEX_WAIT_OK and nothing else."
 ```
 
-Codex returned `STEER_CODEX_WAIT_OK` through `codex app-server` JSON-RPC. The adapter starts a thread, sends instructions through `turn/start`, streams `item/agentMessage/delta`, and marks the session `waiting` after `turn/completed`.
+Codex returned `STEER_CODEX_WAIT_OK` through `codex app-server` JSON-RPC. The headless adapter starts a thread, sends instructions through `turn/start`, streams `item/agentMessage/delta`, and marks the session `waiting` after `turn/completed`.
 
 ## Known Limits
 
-- The generic `steer wrap -- <command>` path uses child stdin/stdout pipes, not a pty.
-- Some interactive CLIs may still require TTY behavior when no provider-native adapter exists.
+- The generic `steer wrap -- <command>` path now uses the PTY bridge, but resize handling is still basic.
+- `--raw` provider paths still use child stdin/stdout pipes and are only fallback/debug modes.
 - No prompt-ready detection yet; instructions are sent immediately.
 - Active sockets are still in memory, but durable session, message, instruction, transcript, and metric rows are persisted in SQLite.
 - No multiline injection policy yet.
-- Claude uses CLI headless stream-json, not the TypeScript SDK package yet.
-- Codex uses app-server, but same-turn steering and approval flows need real dogfood testing.
+- Claude headless uses CLI stream-json, not the TypeScript SDK package yet.
+- Codex headless uses app-server, but same-turn steering and approval flows need real dogfood testing.
 
 ## Next
 
 1. Add prompt-ready/waiting detection hardening for Claude and Codex.
 2. Add provider-native approval/request handling for Codex app-server events.
 3. Add transcript excerpt extraction and classifier-generated action card rows.
-4. Add pty fallback only if provider-native control is not enough.
+4. Replace the Python PTY bridge with a packaged Swift/Rust helper if dogfooding shows bridge limits.

@@ -70,27 +70,41 @@ docs/
 The first wrapper/control-loop spike is Node-based:
 
 ```sh
-node packages/cli/src/index.js wrap -- node -i
-node packages/cli/src/index.js sessions
-node packages/cli/src/index.js send <sessionId> "console.log('steer injection ok')"
+steer wrap -- node -i
+steer sessions
+steer send <sessionId> "console.log('steer injection ok')"
 ```
 
 The CLI auto-starts `SteerAgent` in the background when needed. Use `steer agent` only when you want to run the agent manually for debugging.
 
 The agent writes local state to `~/.steer/steer.sqlite` and transcript logs to `~/.steer/sessions/`. Set `STEER_HOME` for isolated local tests.
 
-Claude Code is the first real provider target:
+Claude Code can run in the normal interactive terminal wrapper:
 
 ```sh
-node packages/cli/src/index.js claude --max-budget-usd 0.02
-node packages/cli/src/index.js send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."
+steer claude
+steer send <sessionId> "your instruction"
 ```
 
-Codex uses the provider-native app-server adapter:
+The Claude headless stream-json adapter remains available for controlled smoke tests:
 
 ```sh
-node packages/cli/src/index.js codex
-node packages/cli/src/index.js send <sessionId> "Reply exactly STEER_CODEX_OK and nothing else."
+steer claude --headless --max-budget-usd 0.02
+steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."
+```
+
+Codex can also run in the normal interactive terminal wrapper:
+
+```sh
+steer codex
+steer send <sessionId> "your instruction"
+```
+
+The Codex provider-native app-server adapter remains available in headless mode:
+
+```sh
+steer codex --headless
+steer send <sessionId> "Reply exactly STEER_CODEX_OK and nothing else."
 ```
 
 See `docs/WRAPPER_SPIKE.md` for scope and limitations.

@@ -205,15 +205,15 @@ Happy research showed that current Happy is not simply a raw pty wrapper. Claude
 
 ### 2026-05-06: Node Wrapper Spike
 
-The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. This proved bidirectional delivery with a wrapped `node -i` REPL. It is not the final provider adapter because it uses stdin/stdout pipes, not provider-native control or pty behavior.
+The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. It first proved bidirectional delivery with a wrapped `node -i` REPL, then moved default local launches onto a Python PTY bridge so `steer claude` and `steer codex` behave like normal terminal CLIs.
 
 ### 2026-05-06: Claude Stream JSON Adapter
 
-Claude should be the first real provider target. `steer claude` now uses Claude Code headless stream-json mode by default and sends user instructions as JSON lines. `steer claude --raw` remains as a generic fallback. A low-budget smoke test returned `STEER_CLAUDE_OK`, proving that SteerAgent can inject an instruction into Claude Code and receive output back through the stream.
+Claude should be the first real provider target. `steer claude --headless` uses Claude Code stream-json mode and sends user instructions as JSON lines. `steer claude` now defaults to the interactive PTY bridge so it behaves like a normal terminal Claude session. A low-budget headless smoke test returned `STEER_CLAUDE_OK`, proving that SteerAgent can inject an instruction into Claude Code and receive output back through the stream.
 
 ### 2026-05-06: Codex App-Server Adapter
 
-`steer codex` now uses `codex app-server --listen stdio://` by default, initializes JSON-RPC, starts a Codex thread, sends idle instructions with `turn/start`, streams agent deltas back to the terminal and transcript, and returns the session to `waiting` after `turn/completed`. `steer codex --raw` remains as the generic fallback. A smoke test returned `STEER_CODEX_WAIT_OK`, proving the provider-native Codex control path works for the basic report/instruct loop.
+`steer codex --headless` uses `codex app-server --listen stdio://`, initializes JSON-RPC, starts a Codex thread, sends idle instructions with `turn/start`, streams agent deltas back to the terminal and transcript, and returns the session to `waiting` after `turn/completed`. `steer codex` now defaults to the interactive PTY bridge so it behaves like a normal terminal Codex session. A headless smoke test returned `STEER_CODEX_WAIT_OK`, proving the provider-native Codex control path works for the basic report/instruct loop.
 
 ### 2026-05-06: SQLite Store
 

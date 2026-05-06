@@ -11,6 +11,7 @@ import { socketPath } from "../../agent/src/paths.js";
 
 const [, , command, ...args] = process.argv;
 const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
+const ptyBridgePath = fileURLToPath(new URL("./pty_bridge.py", import.meta.url));
 
 switch (command) {
   case "agent":
@@ -45,7 +46,7 @@ async function wrapCommand(args) {
     throw new Error("usage: steer wrap -- <command> [...args]");
   }
 
-  await wrapProvider("custom", childCommand, childArgs);
+  await wrapPtyProvider("custom", childCommand, childArgs);
 }
 
 async function wrapProvider(provider, childCommand, childArgs) {
@@ -69,7 +70,7 @@ async function wrapProvider(provider, childCommand, childArgs) {
   }));
 
   process.stderr.write(`[steer] session ${sessionId}\n`);
-  process.stderr.write(`[steer] send with: node packages/cli/src/index.js send ${sessionId} \"your instruction\"\n`);
+  process.stderr.write(`[steer] send with: steer send ${sessionId} \"your instruction\"\n`);
 
   process.stdin.setRawMode?.(false);
   process.stdin.pipe(child.stdin, { end: false });
@@ -103,11 +104,93 @@ async function wrapProvider(provider, childCommand, childArgs) {
   });
 }
 
+async function wrapPtyProvider(provider, childCommand, childArgs) {
+  const sessionId = `${provider}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const agent = await connectToAgent();
+  const child = spawn("python3", [ptyBridgePath, childCommand, ...childArgs], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      STEER_PTY_COLS: String(process.stdout.columns || 80),
+      STEER_PTY_ROWS: String(process.stdout.rows || 24)
+    },
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+
+  agent.write(encodeMessage({
+    type: "register",
+    sessionId,
+    provider,
+    adapterKind: "pty-bridge",
+    command: childCommand,
+    args: childArgs,
+    cwd: process.cwd(),
+    pid: child.pid
+  }));
+
+  process.stderr.write(`[steer] ${provider} session ${sessionId}\n`);
+  process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
+
+  process.stdin.setRawMode?.(true);
+  process.stdin.resume();
+  process.stdin.on("data", (chunk) => {
+    child.stdin.write(chunk);
+  });
+
+  const restoreInput = () => {
+    process.stdin.setRawMode?.(false);
+    process.stdin.pause();
+  };
+
+  child.stdout.on("data", (chunk) => {
+    process.stdout.write(chunk);
+    agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: chunk.toString("utf8") }));
+  });
+
+  child.stderr.on("data", (chunk) => {
+    process.stderr.write(chunk);
+    agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: chunk.toString("utf8") }));
+  });
+
+  process.stdout.on("resize", () => {
+    child.kill("SIGWINCH");
+  });
+
+  agent.on("data", createLineDecoder((message) => {
+    if (message.type !== "instruction") return;
+
+    child.stdin.write(`${message.text}\n`);
+    agent.write(encodeMessage({
+      type: "ack",
+      sessionId,
+      instructionId: message.instructionId,
+      status: "injected"
+    }));
+  }));
+
+  child.on("exit", (exitCode) => {
+    restoreInput();
+    agent.write(encodeMessage({ type: "state", sessionId, runState: "ended", exitCode }));
+    agent.end();
+    process.exit(exitCode ?? 0);
+  });
+}
+
 async function runClaudeAdapter(args) {
+  if (args[0] === "--headless") {
+    await runClaudeHeadlessAdapter(args.slice(1));
+    return;
+  }
+
   if (args[0] === "--raw") {
     await wrapProvider("claude", "claude", args.slice(1));
     return;
   }
+
+  await wrapPtyProvider("claude", "claude", args);
+}
+
+async function runClaudeHeadlessAdapter(args) {
 
   const sessionId = `claude-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const agent = await connectToAgent();
@@ -140,7 +223,7 @@ async function runClaudeAdapter(args) {
   }));
 
   process.stderr.write(`[steer] claude session ${sessionId}\n`);
-  process.stderr.write(`[steer] send with: node packages/cli/src/index.js send ${sessionId} "your instruction"\n`);
+  process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
 
   child.stdout.on("data", (chunk) => {
     const raw = chunk.toString("utf8");
@@ -181,10 +264,20 @@ async function runClaudeAdapter(args) {
 }
 
 async function runCodexAdapter(args) {
+  if (args[0] === "--headless") {
+    await runCodexHeadlessAdapter(args.slice(1));
+    return;
+  }
+
   if (args[0] === "--raw") {
     await wrapProvider("codex", "codex", args.slice(1));
     return;
   }
+
+  await wrapPtyProvider("codex", "codex", args);
+}
+
+async function runCodexHeadlessAdapter(args) {
 
   const sessionId = `codex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const agent = await connectToAgent();
@@ -297,7 +390,7 @@ async function runCodexAdapter(args) {
 
   process.stderr.write(`[steer] codex session ${sessionId}\n`);
   process.stderr.write(`[steer] codex thread ${threadId}\n`);
-  process.stderr.write(`[steer] send with: node packages/cli/src/index.js send ${sessionId} "your instruction"\n`);
+  process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
 
   agent.on("data", createLineDecoder(async (message) => {
     if (message.type !== "instruction") return;
@@ -414,9 +507,11 @@ function printUsage() {
   console.log(`Usage:
   steer agent
   steer wrap -- <command> [...args]
-  steer claude [...claude print-mode args]
-  steer claude --raw [...claude interactive args]
-  steer codex [--model <model>] [--approval-policy <policy>] [--sandbox <mode>]
+  steer claude [...claude args]
+  steer claude --headless [...claude print-mode args]
+  steer claude --raw [...claude args]
+  steer codex [...codex args]
+  steer codex --headless [--model <model>] [--approval-policy <policy>] [--sandbox <mode>]
   steer codex --raw [...codex interactive args]
   steer sessions
   steer send <sessionId> <instruction>
