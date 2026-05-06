@@ -1,0 +1,17 @@
+{
+  "name": "steer-ai",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/agent",
+    "packages/cli"
+  ],
+  "scripts": {
+    "agent": "node packages/agent/src/agent.js",
+    "steer": "node packages/cli/src/index.js",
+    "test:wrapper": "node packages/cli/src/index.js wrap -- node -i"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -67,4 +67,15 @@ packages/cli/
 docs/
 ```
 
+The first wrapper/control-loop spike is Node-based:
+
+```sh
+node packages/agent/src/agent.js
+node packages/cli/src/index.js wrap -- node -i
+node packages/cli/src/index.js sessions
+node packages/cli/src/index.js send <sessionId> "console.log('steer injection ok')"
+```
+
+See `docs/WRAPPER_SPIKE.md` for scope and limitations.
+
 See `EXECUTION_PLAN.md` for the current backlog and implementation phases.

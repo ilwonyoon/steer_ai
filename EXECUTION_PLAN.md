@@ -79,11 +79,11 @@ Goal: make the repository useful for future implementation.
 Goal: prove we can own a CLI session and safely inject input.
 
 - [x] Study current `slopus/happy` wrapper/session code.
-- [ ] Build minimal `steer claude` wrapper.
-- [ ] Build minimal `steer codex` wrapper.
-- [ ] Capture stdout/stderr transcript chunks.
+- [x] Build minimal `steer claude` wrapper.
+- [x] Build minimal `steer codex` wrapper.
+- [x] Capture stdout/stderr transcript chunks.
 - [ ] Detect prompt-ready / waiting states.
-- [ ] Inject single-line instruction only when prompt-ready.
+- [x] Inject single-line instruction into a wrapped process.
 - [ ] Test multiline injection behavior.
 - [ ] Document failure cases and edge cases.
 
@@ -159,11 +159,11 @@ Exit criteria:
 - [x] Create `README.md`.
 - [x] Export Backtick PRD and Tech Spec into `docs/`.
 - [x] Write Happy wrapper research note.
-- [ ] Choose prototype stack: Node agent first vs Swift/Rust agent first.
+- [x] Choose prototype stack: Node agent first vs Swift/Rust agent first.
 - [ ] Define v1 SQLite schema.
 - [ ] Define local IPC protocol.
-- [ ] Create first wrapper spike.
-- [ ] Create Mac app skeleton.
+- [x] Create first wrapper spike.
+- [x] Create Mac app skeleton.
 
 ## Decision Log
 
@@ -202,6 +202,10 @@ Happy should be studied and possibly used for wrapper learnings or minimal vendo
 ### 2026-05-06: Provider Control Adapter Strategy
 
 Happy research showed that current Happy is not simply a raw pty wrapper. Claude uses Agent SDK/hooks/session scanning, and Codex uses `codex app-server` JSON-RPC. Steer should define provider control adapters and use provider-native control channels where stable, with raw pty as fallback.
+
+### 2026-05-06: Node Wrapper Spike
+
+The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. This proved bidirectional delivery with a wrapped `node -i` REPL. It is not the final provider adapter because it uses stdin/stdout pipes, not provider-native control or pty behavior.
 
 ### 2026-05-06: macOS Strategy
 
@@ -259,11 +263,17 @@ Completed:
 - Exported PRD and Tech Spec into `docs/`.
 - Created initial source layout placeholders: `apps/mac`, `packages/agent`, `packages/cli`.
 - Added SwiftUI Mac shell in `apps/mac` with 375 x 812 card stack, session detail, provider badges, chips, and reply input.
+- Added Node wrapper spike with Unix socket agent, session registration, transcript capture, session listing, and one-line instruction injection.
 
 Learned:
 - The original `Documents/Steer_ai` folder had macOS privacy restrictions that blocked normal git operations.
 - A working clone now exists at `/Users/ilwonyoon/Developer/steer_ai`.
+- A wrapped `node -i` session can receive an instruction from another local process through SteerAgent and execute it.
+- Pipe-based stdin injection proves the local loop but does not yet prove Claude/Codex TTY behavior.
 
 Next:
+- Pick the first real provider target: Codex app-server or Claude Agent SDK.
+- Add prompt-ready/waiting detection before injecting into AI sessions.
+- Define SQLite schema for session, message, instruction, and transcript records.
 - Add menu bar status item and notification shell.
 - Decide prototype stack, IPC approach, and first provider adapter target.

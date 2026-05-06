@@ -98,6 +98,8 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Provides local API to wrapper and Mac app.
 - Prototype may use TypeScript/Node; production should evaluate Swift or Rust plus XPC.
 
+Current spike: Node `SteerAgent` listens on `~/.steer/steer.sock`, keeps session registry in memory, writes transcripts to `~/.steer/sessions/<sessionId>.log`, and routes `send` requests to the wrapper's persistent socket. This validates the local report/instruct loop before SQLite and provider-native adapters are added.
+
 ### Steer Mac App
 
 - SwiftUI/AppKit shell.

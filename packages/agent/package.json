@@ -1,0 +1,9 @@
+{
+  "name": "@steer/agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "steer-agent": "./src/agent.js"
+  }
+}
