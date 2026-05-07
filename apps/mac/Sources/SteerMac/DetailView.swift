@@ -20,14 +20,14 @@ struct DetailView: View {
                 HStack(spacing: 8) {
                     Text("\(card.project) · \(card.provider.displayName)")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(SteerColors.secondaryInk)
                         .lineLimit(1)
                     Text(card.state.rawValue)
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(SteerColors.secondaryInk)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 6)
-                        .background(.white.opacity(0.52), in: Capsule())
+                        .background(SteerColors.statusFill, in: Capsule())
                 }
             }
             .frame(height: 48)
@@ -38,13 +38,13 @@ struct DetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Terminal tail")
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(SteerColors.secondaryInk)
                         TerminalExcerptView(lines: card.terminalLines)
                             .padding(14)
-                            .background(Color(red: 0.985, green: 0.985, blue: 0.975), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(Color.black.opacity(0.09), lineWidth: 1)
+                                    .stroke(SteerColors.softSeparator, lineWidth: 1)
                             }
                             .frame(height: 240)
                     }
@@ -67,7 +67,7 @@ struct DetailView: View {
             .padding(.bottom, 14)
         }
         .frame(width: 375, height: 812)
-        .background(Color(red: 0.97, green: 0.97, blue: 0.98))
+        .background(SteerColors.appBackground)
     }
 }
 
@@ -78,7 +78,7 @@ private struct ThreadBubble: View {
         Text(message.text)
             .font(.system(size: 15))
             .lineSpacing(4)
-            .foregroundStyle(message.sender == .user ? .white : .primary)
+            .foregroundStyle(message.sender == .user ? SteerColors.userInk : SteerColors.ink)
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(background)
@@ -92,10 +92,10 @@ private struct ThreadBubble: View {
                 .fill(Color.accentColor)
         } else {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.white.opacity(0.82))
+                .fill(SteerColors.agentBubble)
                 .overlay {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(SteerColors.softSeparator, lineWidth: 1)
                 }
         }
     }

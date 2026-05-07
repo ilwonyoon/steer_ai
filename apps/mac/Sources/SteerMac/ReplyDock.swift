@@ -32,16 +32,16 @@ struct ReplyDock: View {
                     } label: {
                         Text(chip)
                             .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(SteerColors.ink)
                             .lineLimit(1)
                             .padding(.horizontal, 12)
                             .frame(height: 32)
                     }
                     .buttonStyle(.plain)
-                    .background(Color.black.opacity(0.035), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .background(SteerColors.subtleFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .stroke(Color.black.opacity(0.075), lineWidth: 1)
+                            .stroke(SteerColors.softSeparator, lineWidth: 1)
                     }
                 }
             }
@@ -51,8 +51,8 @@ struct ReplyDock: View {
         .overlay(alignment: .trailing) {
             LinearGradient(
                 colors: [
-                    Color(red: 0.985, green: 0.985, blue: 0.975).opacity(0),
-                    Color(red: 0.985, green: 0.985, blue: 0.975).opacity(0.94)
+                    SteerColors.cardBackground.opacity(0),
+                    SteerColors.cardBackground.opacity(0.94)
                 ],
                 startPoint: .leading,
                 endPoint: .trailing
@@ -67,15 +67,16 @@ struct ReplyDock: View {
             TextField("reply to this session", text: $reply)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(SteerColors.ink)
                 .onSubmit(submitReply)
                 .accessibilityIdentifier("reply-input")
                 .padding(.leading, 14)
                 .padding(.trailing, 46)
                 .frame(height: 42)
-                .background(Color.black.opacity(0.026), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(SteerColors.inputFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.black.opacity(0.075), lineWidth: 1)
+                        .stroke(SteerColors.softSeparator, lineWidth: 1)
                 }
 
             if !trimmedReply.isEmpty {

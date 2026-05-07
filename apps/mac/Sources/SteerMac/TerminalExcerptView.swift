@@ -25,15 +25,15 @@ struct TerminalExcerptView: View {
     private func color(for kind: TerminalLineKind) -> Color {
         switch kind {
         case .standard:
-            Color(red: 0.13, green: 0.13, blue: 0.14)
+            SteerColors.terminalStandard
         case .muted:
-            Color(red: 0.46, green: 0.46, blue: 0.50)
+            SteerColors.terminalMuted
         case .accent:
-            Color(red: 0.02, green: 0.44, blue: 0.48)
+            SteerColors.terminalAccent
         case .success:
-            Color(red: 0.02, green: 0.48, blue: 0.23)
+            SteerColors.terminalSuccess
         case .warning:
-            Color(red: 0.72, green: 0.35, blue: 0.00)
+            SteerColors.terminalWarning
         }
     }
 

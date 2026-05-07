@@ -31,12 +31,12 @@ struct ActionCardView: View {
         .padding(20)
         .frame(maxWidth: .infinity)
         .frame(height: 590)
-        .background(Color(red: 0.985, green: 0.985, blue: 0.975), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.black.opacity(0.10), lineWidth: 1)
+                .stroke(SteerColors.separator, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.08), radius: 24, y: 16)
+        .shadow(color: SteerColors.cardShadow, radius: 24, y: 16)
     }
 }
 
@@ -45,9 +45,9 @@ private struct TerminalMetaView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TerminalMetaLine(label: "title", value: card.title, color: .primary, weight: .semibold)
+            TerminalMetaLine(label: "title", value: card.title, color: SteerColors.ink, weight: .semibold)
             TerminalMetaLine(label: "status", value: statusValue, color: card.state.color, weight: .semibold)
-            TerminalMetaLine(label: "reason", value: card.summary, color: .secondary, weight: .regular)
+            TerminalMetaLine(label: "reason", value: card.summary, color: SteerColors.secondaryInk, weight: .regular)
         }
     }
 
@@ -76,7 +76,7 @@ private struct TerminalMetaLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("\(label):")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SteerColors.secondaryInk)
                 .lineLimit(1)
                 .frame(width: 56, alignment: .leading)
             Text(value)
@@ -99,6 +99,7 @@ struct SessionHeader: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(card.project)
                         .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(SteerColors.ink)
                         .lineLimit(1)
                     HStack(spacing: 5) {
                         Circle()
@@ -106,7 +107,7 @@ struct SessionHeader: View {
                             .frame(width: 6, height: 6)
                         Text(card.provider.displayName)
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(SteerColors.secondaryInk)
                     }
                 }
             }
@@ -115,13 +116,13 @@ struct SessionHeader: View {
 
             Text(card.age)
                 .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SteerColors.secondaryInk)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Color.black.opacity(0.035), in: Capsule())
+                .background(SteerColors.subtleFill, in: Capsule())
                 .overlay {
                     Capsule()
-                        .stroke(Color.black.opacity(0.07), lineWidth: 1)
+                        .stroke(SteerColors.softSeparator, lineWidth: 1)
                 }
         }
     }

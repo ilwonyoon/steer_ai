@@ -15,12 +15,12 @@ struct GlassSurface: ViewModifier {
             }
         } else {
             content
-                .background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .background(SteerColors.controlFill, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.72), lineWidth: 1)
+                        .stroke(SteerColors.controlStroke, lineWidth: 1)
                 }
-                .shadow(color: .black.opacity(0.05), radius: 14, y: 6)
+                .shadow(color: SteerColors.controlShadow, radius: 14, y: 6)
         }
     }
 }

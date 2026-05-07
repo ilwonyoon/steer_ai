@@ -42,11 +42,11 @@ enum SessionState: String {
 
     var color: Color {
         switch self {
-        case .waiting: Color(red: 1.0, green: 0.69, blue: 0.13)
-        case .blocked: Color(red: 1.0, green: 0.27, blue: 0.23)
-        case .running: Color(red: 0.20, green: 0.78, blue: 0.35)
-        case .ended: Color(red: 0.46, green: 0.46, blue: 0.50)
-        case .disconnected: Color(red: 0.72, green: 0.35, blue: 0.00)
+        case .waiting: SteerColors.waiting
+        case .blocked: SteerColors.blocked
+        case .running: SteerColors.running
+        case .ended: SteerColors.ended
+        case .disconnected: SteerColors.disconnected
         }
     }
 }

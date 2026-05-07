@@ -16,7 +16,7 @@ struct SteerRootView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.97, green: 0.97, blue: 0.98)
+            SteerColors.appBackground
                 .ignoresSafeArea()
 
             VStack(spacing: 12) {
@@ -42,9 +42,10 @@ struct SteerRootView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Steer")
                     .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
                 Text(statusText)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(SteerColors.secondaryInk)
             }
 
             Spacer()
@@ -180,10 +181,16 @@ private struct RoundIconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(SteerColors.ink)
                 .frame(width: 36, height: 36)
         }
         .buttonStyle(.plain)
-        .steerGlass(cornerRadius: 18, interactive: true)
+        .background(SteerColors.controlFill, in: Circle())
+        .overlay {
+            Circle()
+                .stroke(SteerColors.controlStroke, lineWidth: 1)
+        }
+        .shadow(color: SteerColors.controlShadow, radius: 12, y: 5)
         .accessibilityLabel(systemName == "chevron.left" ? "Previous card" : "Next card")
     }
 }
@@ -195,10 +202,10 @@ private struct CardBackplate: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(.regularMaterial)
+            .fill(SteerColors.cardBackplate)
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                    .stroke(SteerColors.softSeparator, lineWidth: 1)
             }
             .frame(maxWidth: .infinity, maxHeight: 590)
             .scaleEffect(scale)
@@ -216,7 +223,7 @@ private struct PageDots: View {
         HStack(spacing: 7) {
             ForEach(0..<count, id: \.self) { item in
                 Capsule()
-                    .fill(item == index ? Color.accentColor : Color.black.opacity(0.08))
+                    .fill(item == index ? Color.accentColor : SteerColors.subtleFill)
                     .frame(width: item == index ? 20 : 7, height: 7)
             }
         }
@@ -231,19 +238,19 @@ private struct EmptyStateView: View {
         VStack(spacing: 10) {
             Image(systemName: "terminal")
                 .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SteerColors.tertiaryInk)
             Text(message)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SteerColors.secondaryInk)
             Text("Run steer claude or steer codex in a terminal.")
                 .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(SteerColors.tertiaryInk)
         }
         .frame(maxWidth: .infinity, maxHeight: 590)
-        .background(Color(red: 0.985, green: 0.985, blue: 0.975), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.black.opacity(0.10), lineWidth: 1)
+                .stroke(SteerColors.separator, lineWidth: 1)
         }
     }
 }
