@@ -61,6 +61,10 @@ test("filters Claude running status repaint lines", () => {
     1
     Cultivating…
     *Worked for 39s
+    +Crunching…85
+    Crunching…5
+    *Crunching…9
+    *Baked for 3s
   `);
 
   assert.deepEqual(lines, ["[no transcript yet]"]);

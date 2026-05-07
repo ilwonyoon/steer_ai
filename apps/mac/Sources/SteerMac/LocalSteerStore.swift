@@ -433,14 +433,26 @@ private func kind(forTerminalLine line: String, fallback: TerminalLineKind) -> T
     if line.contains("⚠") || line.localizedCaseInsensitiveContains("failed") || line.localizedCaseInsensitiveContains("error") {
         return .warning
     }
+    if line.localizedCaseInsensitiveContains("어려워요") || line.localizedCaseInsensitiveContains("blocked") {
+        return .warning
+    }
     if line.localizedCaseInsensitiveContains("complete") || line.localizedCaseInsensitiveContains("success") {
+        return .success
+    }
+    if line.localizedCaseInsensitiveContains("쉬워요") || line.localizedCaseInsensitiveContains("saved") {
         return .success
     }
     if line.hasPrefix("›") || line.hasPrefix(">") {
         return .accent
     }
-    if line.range(of: "^(Decision needed|Next|Question|Blocked):$", options: [.regularExpression, .caseInsensitive]) != nil {
+    if line.hasSuffix("?") || line.hasSuffix("까요?") {
         return .accent
+    }
+    if line.range(of: "^(Decision needed|Next|Question|Blocked|옵션\\s*\\d+):?", options: [.regularExpression, .caseInsensitive]) != nil {
+        return .accent
+    }
+    if line.hasPrefix("•") || line.hasPrefix("- ") || line.hasPrefix("* ") {
+        return .muted
     }
     if line.hasPrefix("gpt-") {
         return .muted
@@ -569,7 +581,13 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     if line.range(of: "Cultivating", options: .caseInsensitive) != nil {
         return false
     }
+    if line.range(of: "Crunching", options: .caseInsensitive) != nil {
+        return false
+    }
     if line.range(of: "\\*?Worked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "\\*?Baked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
     if line.range(of: "^\\d+$", options: .regularExpression) != nil {

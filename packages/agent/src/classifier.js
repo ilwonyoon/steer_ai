@@ -397,7 +397,9 @@ function isContentLineForAction(line) {
   if (/tokens?\)/i.test(line)) return false;
   if (/running stop hooks/i.test(line)) return false;
   if (/Cultivating/i.test(line)) return false;
+  if (/Crunching/i.test(line)) return false;
   if (/\*?Worked for \d+/i.test(line)) return false;
+  if (/\*?Baked for \d+/i.test(line)) return false;
   if (/^\d+$/.test(line)) return false;
   if (/Starting MCP servers/i.test(line)) return false;
   if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(line)) return false;
