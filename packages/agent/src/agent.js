@@ -8,12 +8,10 @@ import { sessionsDir, socketPath } from "./paths.js";
 import { createStore } from "./store.js";
 
 const sessions = new Map();
-const store = createStore();
 
+await prepareSocketPath();
+const store = createStore();
 fs.mkdirSync(sessionsDir, { recursive: true });
-if (fs.existsSync(socketPath)) {
-  fs.unlinkSync(socketPath);
-}
 
 const server = net.createServer((socket) => {
   socket.setEncoding("utf8");
@@ -77,6 +75,12 @@ const server = net.createServer((socket) => {
     }
   });
   socket.on("error", () => {});
+});
+
+server.on("error", (error) => {
+  console.error(`SteerAgent failed to listen on ${socketPath}: ${error.message}`);
+  store.close();
+  process.exit(1);
 });
 
 server.listen(socketPath, () => {
@@ -173,5 +177,40 @@ function shutdown() {
     } catch {}
     store.close();
     process.exit(0);
+  });
+}
+
+async function prepareSocketPath() {
+  fs.mkdirSync(path.dirname(socketPath), { recursive: true });
+  if (!fs.existsSync(socketPath)) return;
+
+  if (await socketAcceptsConnections(socketPath)) {
+    console.error(`SteerAgent is already running at ${socketPath}`);
+    process.exit(1);
+  }
+
+  try {
+    fs.unlinkSync(socketPath);
+  } catch (error) {
+    console.error(`Failed to remove stale SteerAgent socket at ${socketPath}: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+function socketAcceptsConnections(targetPath) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const socket = net.createConnection(targetPath);
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(false), 300);
+
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
   });
 }

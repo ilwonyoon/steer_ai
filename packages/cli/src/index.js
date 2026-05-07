@@ -110,6 +110,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   const agent = await connectToAgent();
   const pendingInstructions = [];
   let ptyReady = provider === "custom";
+  let instructionInFlight = false;
   const child = spawn("python3", [ptyBridgePath, childCommand, ...childArgs], {
     cwd: process.cwd(),
     env: {
@@ -134,17 +135,19 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   process.stderr.write(`[steer] ${provider} session ${sessionId}\n`);
   process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
 
-  const flushPendingInstructions = () => {
-    if (!ptyReady) return;
-    while (pendingInstructions.length > 0) {
-      submitPtyInstruction(pendingInstructions.shift());
-    }
+  const processInstructionQueue = () => {
+    if (!ptyReady || instructionInFlight || pendingInstructions.length === 0) return;
+    instructionInFlight = true;
+    submitPtyInstruction(pendingInstructions.shift(), () => {
+      instructionInFlight = false;
+      processInstructionQueue();
+    });
   };
 
   const markPtyReady = () => {
     if (ptyReady) return;
     ptyReady = true;
-    flushPendingInstructions();
+    processInstructionQueue();
   };
 
   const readinessTimeout = provider === "codex" ? 15000 : 2500;
@@ -181,12 +184,8 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   agent.on("data", createLineDecoder((message) => {
     if (message.type !== "instruction") return;
 
-    if (!ptyReady) {
-      pendingInstructions.push(message);
-      return;
-    }
-
-    submitPtyInstruction(message);
+    pendingInstructions.push(message);
+    processInstructionQueue();
   }));
 
   child.on("exit", (exitCode) => {
@@ -197,7 +196,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     process.exit(exitCode ?? 0);
   });
 
-  function submitPtyInstruction(message) {
+  function submitPtyInstruction(message, done) {
     const input = formatPtyInstructionInput(provider, message.text);
     child.stdin.write(input, (textError) => {
       if (textError) {
@@ -208,6 +207,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
           status: "failed",
           failureReason: textError.message
         }));
+        done();
         return;
       }
 
@@ -220,6 +220,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
             status: submitError ? "failed" : "injected",
             ...(submitError ? { failureReason: submitError.message } : {})
           }));
+          done();
         });
       }, 50);
     });
@@ -512,6 +513,10 @@ async function sendInstruction(args) {
   }
 
   const response = await requestAgent({ type: "send", sessionId, text });
+  if (response.type === "error") {
+    console.error(response.error);
+    process.exit(1);
+  }
   console.log(JSON.stringify(response, null, 2));
 }
 

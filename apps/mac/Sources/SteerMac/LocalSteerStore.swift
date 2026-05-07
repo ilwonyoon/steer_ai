@@ -16,6 +16,10 @@ struct LocalSteerStore {
             do {
                 return try loadActionCards(databaseURL: databaseURL)
             } catch {
+                guard shouldFallbackToSessionCards(error) else {
+                    return []
+                }
+
                 do {
                     let sessions: [SessionRow] = try runSQLiteJSON(
                         databaseURL: databaseURL,
@@ -81,6 +85,14 @@ struct LocalSteerStore {
 
 private enum LocalSteerStoreError: Error {
     case commandFailed(String)
+}
+
+private func shouldFallbackToSessionCards(_ error: Error) -> Bool {
+    guard case LocalSteerStoreError.commandFailed(let message) = error else {
+        return false
+    }
+
+    return message.localizedCaseInsensitiveContains("no such table: action_cards")
 }
 
 private struct SessionRow: Decodable {
