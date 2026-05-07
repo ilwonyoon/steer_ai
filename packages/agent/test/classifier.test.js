@@ -52,6 +52,19 @@ test("renders terminal repaint output from the final screen state", () => {
   assert.deepEqual(lines, ["• Hi. What would you like to work on?"]);
 });
 
+test("filters Claude running status repaint lines", () => {
+  const lines = transcriptDisplayLines(`
+    ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt
+    Cultivating…running stop hooks… 0/3 · 39s · ↓1.4k tokens)
+    Cultivating…
+    1
+    Cultivating…
+    *Worked for 39s
+  `);
+
+  assert.deepEqual(lines, ["[no transcript yet]"]);
+});
+
 test("classifies direct questions as active question cards", () => {
   const result = classifyTranscript({
     session: codexSession,
@@ -136,4 +149,24 @@ test("keeps stopped waiting sessions active even when the output looks complete"
   assert.equal(result.card.category, "waiting");
   assert.equal(result.card.state, "active");
   assert.deepEqual(result.card.options, ["Continue", "Summarize result", "Start next task"]);
+});
+
+test("keeps disconnected sessions out of the active queue", () => {
+  const result = classifyTranscript({
+    session: {
+      provider: "claude",
+      command: "claude",
+      run_state: "disconnected"
+    },
+    entries: [
+      {
+        stream: "stdout",
+        timestamp: "2026-05-06T23:00:00.000Z",
+        chunk: "Need answer?\n"
+      }
+    ]
+  });
+
+  assert.equal(result.card.category, "disconnected");
+  assert.equal(result.card.state, "done");
 });

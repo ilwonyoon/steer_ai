@@ -44,7 +44,8 @@ Steer classification turns recent session output into one action card at most. T
 
 ## Categories
 
-- `blocker`: error, failed command, permission/approval issue, disconnected session, or explicit blocked state. Active, usually urgent.
+- `blocker`: error, failed command, permission/approval issue, or explicit blocked state. Active, usually urgent.
+- `disconnected`: wrapper socket is gone. Done/silent because the user cannot inject an instruction into that session.
 - `decision`: explicit choice, option set, confirmation request, or architectural/product decision. Active.
 - `question`: direct question or request for input. Active.
 - `waiting`: the provider stopped and returned control to the user. Active by default, even when the text looks like completion or progress, because the user must decide the next instruction.

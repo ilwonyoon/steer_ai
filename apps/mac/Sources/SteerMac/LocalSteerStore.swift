@@ -181,6 +181,7 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
         JOIN sessions s ON s.id = ac.session_id
         LEFT JOIN terminal_excerpts te ON te.id = ac.terminal_excerpt_id
         WHERE ac.state = 'active'
+          AND s.run_state != 'disconnected'
         ORDER BY
           CASE ac.priority
             WHEN 'urgent' THEN 0
@@ -267,6 +268,10 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
     let project = projectName(from: row.cwd)
     let displayLines = decodeStringArray(row.displayLinesJSON)
     let terminalLines = makeTerminalLines(from: displayLines, category: row.category)
+    let normalizedSummary = normalizeTerminalDisplayLine(row.summary)
+    let summary = isMeaningfulTerminalLine(normalizedSummary)
+        ? normalizedSummary
+        : terminalLines.last(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.text ?? row.title
 
     return ActionCard(
         id: row.id,
@@ -276,7 +281,7 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
         state: state,
         age: state.rawValue,
         title: row.title,
-        summary: normalizeTerminalDisplayLine(row.summary),
+        summary: summary,
         reason: row.actionPrompt ?? row.cwd ?? "No working directory recorded.",
         terminalLines: terminalLines,
         chips: decodeStringArray(row.optionsJSON).ifEmpty(defaultChips(for: state)),
@@ -525,6 +530,30 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     if line.localizedCaseInsensitiveContains("tab to queue message") {
         return false
     }
+    if line.range(of: "auto mode on", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "shift\\+tab", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "esc to interrupt", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "tokens?\\)", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "running stop hooks", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "Cultivating", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "\\*?Worked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "^\\d+$", options: .regularExpression) != nil {
+        return false
+    }
     if line.range(of: "Starting MCP servers", options: .caseInsensitive) != nil {
         return false
     }
@@ -535,6 +564,9 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
         return false
     }
     if line.range(of: "^Wo•Wor", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "xcodebui.*xcodebuild.*•", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
     if line.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,

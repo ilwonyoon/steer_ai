@@ -72,7 +72,20 @@ function classifyActionCard(session, displayLines, timing = {}) {
     };
   }
 
-  if (session.run_state === "blocked" || session.run_state === "disconnected" || hasAny(lower, [
+  if (session.run_state === "disconnected") {
+    return {
+      category: "disconnected",
+      priority: "silent",
+      title: `${titlePrefix} disconnected`,
+      summary,
+      actionPrompt: "Start a new wrapped session to continue.",
+      options: [],
+      state: "done",
+      highlightedLineIndexes: []
+    };
+  }
+
+  if (session.run_state === "blocked" || hasAny(lower, [
     "blocked",
     "permission denied",
     "approval",
@@ -366,10 +379,19 @@ function isContentLineForAction(line) {
   if (/esc to interr/i.test(line)) return false;
   if (/esc again to edit previous message/i.test(line)) return false;
   if (/tab to queue message/i.test(line)) return false;
+  if (/auto mode on/i.test(line)) return false;
+  if (/shift\+tab/i.test(line)) return false;
+  if (/esc to interrupt/i.test(line)) return false;
+  if (/tokens?\)/i.test(line)) return false;
+  if (/running stop hooks/i.test(line)) return false;
+  if (/Cultivating/i.test(line)) return false;
+  if (/\*?Worked for \d+/i.test(line)) return false;
+  if (/^\d+$/.test(line)) return false;
   if (/Starting MCP servers/i.test(line)) return false;
   if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(line)) return false;
   if (/(Working[•. ]*){2,}/i.test(line)) return false;
   if (/^Wo•Wor/i.test(line)) return false;
+  if (/xcodebui.*xcodebuild.*•/i.test(line)) return false;
   if (/\/model\s+choose what model/i.test(line) && /\/permissions/i.test(line)) return false;
   if (/codex_a|xcodebui|xcodebuildmcp|context left/i.test(line) && line.length > 80) return false;
   return true;
