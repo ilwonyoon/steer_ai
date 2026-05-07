@@ -2,12 +2,15 @@ import SwiftUI
 
 struct SteerRootView: View {
     private let store = LocalSteerStore()
+    private let notificationService = ActionNotificationService.shared
 
     @State private var cards: [ActionCard] = []
     @State private var currentIndex = 0
     @State private var cardDragOffset: CGFloat = 0
     @State private var isLoading = true
     @State private var lastError: String?
+    @State private var didLoadInitialCards = false
+    @State private var notifiedCardFingerprints = Set<String>()
 
     private var currentCard: ActionCard? {
         guard cards.indices.contains(currentIndex) else { return nil }
@@ -162,6 +165,7 @@ struct SteerRootView: View {
 
     private func reload() async {
         let loadedCards = await store.loadCards()
+        await notifyForNewCards(loadedCards)
         cards = loadedCards
         isLoading = false
         if currentIndex >= cards.count {
@@ -170,6 +174,22 @@ struct SteerRootView: View {
         if !loadedCards.isEmpty {
             lastError = nil
         }
+    }
+
+    private func notifyForNewCards(_ loadedCards: [ActionCard]) async {
+        let activeFingerprints = Set(loadedCards.map(notificationFingerprint(for:)))
+
+        guard didLoadInitialCards else {
+            notifiedCardFingerprints = activeFingerprints
+            didLoadInitialCards = true
+            return
+        }
+
+        for card in loadedCards where !notifiedCardFingerprints.contains(notificationFingerprint(for: card)) {
+            await notificationService.notify(card: card)
+        }
+
+        notifiedCardFingerprints = activeFingerprints
     }
 }
 

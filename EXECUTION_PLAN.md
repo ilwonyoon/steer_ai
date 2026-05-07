@@ -126,7 +126,7 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] Read live sessions and transcript entries from local SQLite.
 - [x] Send replies from the card/detail composer through `steer send`.
 - [x] Verify card composer Enter key sends through the real Mac UI path.
-- [ ] Add macOS notifications for waiting/blocker states.
+- [x] Add macOS notifications for new active action cards.
 
 Exit criteria:
 - User can monitor multiple sessions and send a reply/instruction from the Mac UI.
