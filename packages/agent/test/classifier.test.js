@@ -6,7 +6,7 @@ const codexSession = {
   provider: "codex",
   adapter_kind: "codex-app-server",
   command: "codex",
-  run_state: "running"
+  run_state: "waiting"
 };
 
 test("filters Codex startup chrome and MCP boilerplate", () => {
@@ -87,6 +87,28 @@ test("classifies direct questions as active question cards", () => {
   assert.deepEqual(result.displayLines, ["Need answer?"]);
 });
 
+test("does not open an active card while the session is still running", () => {
+  const result = classifyTranscript({
+    session: {
+      provider: "codex",
+      adapter_kind: "codex-app-server",
+      command: "codex",
+      run_state: "running"
+    },
+    entries: [
+      {
+        stream: "stdout",
+        timestamp: "2026-05-06T23:00:00.000Z",
+        chunk: "Need answer?\n"
+      }
+    ]
+  });
+
+  assert.equal(result.card.category, "progress");
+  assert.equal(result.card.state, "done");
+  assert.deepEqual(result.card.options, []);
+});
+
 test("does not classify interactive PTY repaint text as an action source", () => {
   const result = classifyTranscript({
     session: {
@@ -138,7 +160,12 @@ test("prefers provider report events over noisy interactive PTY output", () => {
 
 test("does not resurrect a question after the user answers", () => {
   const result = classifyTranscript({
-    session: codexSession,
+    session: {
+      provider: "codex",
+      adapter_kind: "codex-app-server",
+      command: "codex",
+      run_state: "running"
+    },
     entries: [
       {
         stream: "stdout",

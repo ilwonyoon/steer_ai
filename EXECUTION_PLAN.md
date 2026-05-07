@@ -119,11 +119,11 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] Build default action card stack view.
 - [x] Open card into Claude/Codex-style session detail.
 - [x] Show session badges and state pills.
-- [x] Render report, decision, blocker, completion, and idle cards.
+- [x] Render stopped/actionable report, decision, blocker, completion, and question cards.
 - [x] Add quick reply / quick instruction chips above the input field.
 - [x] Add detail composer with target session selection.
 - [x] Pivot card content from large summary cards to terminal-tail excerpts.
-- [x] Read live sessions and transcript entries from local SQLite.
+- [x] Read stopped/actionable cards from local SQLite without turning running sessions into live terminal mirrors.
 - [x] Send replies from the card/detail composer through `steer send`.
 - [x] Verify card composer Enter key sends through the real Mac UI path.
 - [x] Add macOS notifications for new active action cards.

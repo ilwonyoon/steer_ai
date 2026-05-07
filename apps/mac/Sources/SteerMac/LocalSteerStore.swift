@@ -17,35 +17,7 @@ struct LocalSteerStore {
             do {
                 return try loadDashboardCards(databaseURL: databaseURL)
             } catch {
-                guard shouldFallbackToSessionCards(error) else {
-                    return []
-                }
-
-                do {
-                    let sessions: [SessionRow] = try runSQLiteJSON(
-                        databaseURL: databaseURL,
-                        sql: """
-                        SELECT id, provider, adapter_kind, command, cwd, pid, run_state, created_at, updated_at
-                        FROM sessions
-                        ORDER BY
-                          CASE run_state
-                            WHEN 'waiting' THEN 0
-                            WHEN 'blocked' THEN 1
-                            WHEN 'running' THEN 2
-                            ELSE 3
-                          END,
-                          updated_at DESC
-                        LIMIT 12;
-                        """
-                    )
-
-                    return sessions.map { session in
-                        let entries = (try? recentTranscriptEntries(for: session.id, databaseURL: databaseURL)) ?? []
-                        return makeCard(session: session, entries: entries)
-                    }
-                } catch {
-                    return []
-                }
+                return []
             }
         }.value
     }
@@ -88,45 +60,6 @@ private enum LocalSteerStoreError: Error {
     case commandFailed(String)
 }
 
-private func shouldFallbackToSessionCards(_ error: Error) -> Bool {
-    guard case LocalSteerStoreError.commandFailed(let message) = error else {
-        return false
-    }
-
-    return message.localizedCaseInsensitiveContains("no such table: action_cards")
-}
-
-private struct SessionRow: Decodable {
-    let id: String
-    let provider: String
-    let adapterKind: String?
-    let command: String?
-    let cwd: String?
-    let pid: Int?
-    let runState: String
-    let createdAt: String
-    let updatedAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case provider
-        case adapterKind = "adapter_kind"
-        case command
-        case cwd
-        case pid
-        case runState = "run_state"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-}
-
-private struct TranscriptEntryRow: Decodable {
-    let id: String
-    let stream: String
-    let chunk: String
-    let timestamp: String
-}
-
 private struct ActionCardRow: Decodable {
     let id: String
     let sessionId: String
@@ -164,11 +97,7 @@ private struct ActionCardRow: Decodable {
 }
 
 private func loadDashboardCards(databaseURL: URL) throws -> [ActionCard] {
-    let actionCards = try loadActionCards(databaseURL: databaseURL)
-    let actionSessionIds = Set(actionCards.map(\.sessionId))
-    let sessionCards = try loadSessionCards(databaseURL: databaseURL, excluding: actionSessionIds)
-
-    return Array((actionCards + sessionCards).prefix(12))
+    try loadActionCards(databaseURL: databaseURL)
 }
 
 private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
@@ -196,6 +125,7 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
         LEFT JOIN terminal_excerpts te ON te.id = ac.terminal_excerpt_id
         WHERE ac.state = 'active'
           AND s.run_state != 'disconnected'
+          AND ac.category IN ('blocker', 'decision', 'question', 'waiting')
           AND EXISTS (
             SELECT 1
             FROM transcript_entries trusted
@@ -216,51 +146,11 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
     return rows.filter(isLiveActionCardRow).map(makeCard(row:))
 }
 
-private func loadSessionCards(databaseURL: URL, excluding excludedSessionIds: Set<String>) throws -> [ActionCard] {
-    let exclusionClause: String
-    if excludedSessionIds.isEmpty {
-        exclusionClause = ""
-    } else {
-        let quotedIds = excludedSessionIds
-            .map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
-            .joined(separator: ",")
-        exclusionClause = "AND id NOT IN (\(quotedIds))"
-    }
-
-    let rows: [SessionRow] = try runSQLiteJSON(
-        databaseURL: databaseURL,
-        sql: """
-        SELECT id, provider, adapter_kind, command, cwd, pid, run_state, created_at, updated_at
-        FROM sessions
-        WHERE run_state IN ('running', 'waiting', 'blocked')
-          \(exclusionClause)
-        ORDER BY
-          CASE run_state
-            WHEN 'waiting' THEN 0
-            WHEN 'blocked' THEN 1
-            WHEN 'running' THEN 2
-            ELSE 3
-          END,
-          updated_at DESC
-        LIMIT 12;
-        """
-    )
-
-    return rows.filter(isLiveSessionRow).map { session in
-        let entries = (try? recentTranscriptEntries(for: session.id, databaseURL: databaseURL)) ?? []
-        return makeCard(session: session, entries: entries)
-    }
-}
-
 private func isLiveActionCardRow(_ row: ActionCardRow) -> Bool {
     guard ["running", "waiting", "blocked"].contains(row.runState) else {
         return true
     }
     return isLiveProcess(pid: row.pid)
-}
-
-private func isLiveSessionRow(_ row: SessionRow) -> Bool {
-    isLiveProcess(pid: row.pid)
 }
 
 private func isLiveProcess(pid: Int?) -> Bool {
@@ -270,25 +160,10 @@ private func isLiveProcess(pid: Int?) -> Bool {
     return kill(pid_t(pid), 0) == 0
 }
 
-private func recentTranscriptEntries(for sessionId: String, databaseURL: URL) throws -> [TranscriptEntryRow] {
-    let quotedSessionId = sessionId.replacingOccurrences(of: "'", with: "''")
-    let rows: [TranscriptEntryRow] = try runSQLiteJSON(
-        databaseURL: databaseURL,
-        sql: """
-        SELECT id, stream, chunk, timestamp
-        FROM transcript_entries
-        WHERE session_id = '\(quotedSessionId)'
-        ORDER BY timestamp DESC
-        LIMIT 360;
-        """
-    )
-    return rows.reversed()
-}
-
 private func runSQLiteJSON<T: Decodable>(databaseURL: URL, sql: String) throws -> [T] {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-    process.arguments = ["-json", databaseURL.path, sql]
+    process.arguments = ["-cmd", ".timeout 1000", "-json", databaseURL.path, sql]
 
     let outputPipe = Pipe()
     let errorPipe = Pipe()
@@ -310,30 +185,6 @@ private func runSQLiteJSON<T: Decodable>(databaseURL: URL, sql: String) throws -
 
     let decoder = JSONDecoder()
     return try decoder.decode([T].self, from: output)
-}
-
-private func makeCard(session: SessionRow, entries: [TranscriptEntryRow]) -> ActionCard {
-    let provider = ProviderKind(rawValue: session.provider) ?? .custom
-    let state = mapState(session.runState)
-    let project = projectName(from: session.cwd)
-    let terminalLines = makeTerminalLines(from: entries, allowPtyFallback: true)
-    let lastLine = terminalLines.last(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.text
-    let command = session.command ?? session.provider
-
-    return ActionCard(
-        id: session.id,
-        sessionId: session.id,
-        project: project,
-        provider: provider,
-        state: state,
-        age: state.rawValue,
-        title: "\(provider.displayName) · \(command)",
-        summary: lastLine ?? "No transcript captured yet.",
-        reason: session.cwd ?? "No working directory recorded.",
-        terminalLines: terminalLines,
-        chips: defaultChips(for: state),
-        thread: makeThread(from: entries)
-    )
 }
 
 private func makeCard(row: ActionCardRow) -> ActionCard {
@@ -399,49 +250,6 @@ private func defaultChips(for state: SessionState) -> [String] {
     }
 }
 
-private func makeTerminalLines(from entries: [TranscriptEntryRow], allowPtyFallback: Bool = false) -> [TerminalLine] {
-    let trustedEntries = trustedActionEntries(from: entries)
-    if trustedEntries.isEmpty, allowPtyFallback, let ptyLines = makePtyFallbackTerminalLines(from: entries) {
-        return ptyLines
-    }
-    let rawText = trustedEntries.map(\.chunk).joined()
-    let fallbackKind = trustedEntries.last.map { lineKind(for: $0.stream) } ?? .standard
-    let lines = terminalDisplayLines(from: rawText)
-        .map { line in
-            TerminalLine(line, kind: kind(forTerminalLine: line, fallback: fallbackKind))
-        }
-        .suffix(28)
-
-    if lines.isEmpty {
-        return [TerminalLine("[no transcript yet]", kind: .muted)]
-    }
-
-    return Array(lines)
-}
-
-private func makePtyFallbackTerminalLines(from entries: [TranscriptEntryRow]) -> [TerminalLine]? {
-    let ptyText = entries.filter { $0.stream == "pty" }.map(\.chunk).joined()
-    guard !ptyText.isEmpty else { return nil }
-
-    let oscMessages = extractOSC9Messages(from: ptyText)
-    let oscText = oscMessages.suffix(3).joined(separator: "\n")
-    let sourceText = shouldUseOSC9Preview(oscText) ? oscText : ptyText
-    let lines = terminalDisplayLines(from: sourceText)
-        .map { TerminalLine($0, kind: kind(forTerminalLine: $0, fallback: .standard)) }
-        .suffix(28)
-
-    return lines.isEmpty ? nil : Array(lines)
-}
-
-private func shouldUseOSC9Preview(_ value: String) -> Bool {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return false }
-    if trimmed.contains("...") || trimmed.contains("…") {
-        return false
-    }
-    return trimmed.count >= 80
-}
-
 private func makeTerminalLines(from displayLines: [String], category: String) -> [TerminalLine] {
     let fallbackKind: TerminalLineKind = switch category {
     case "blocker": .warning
@@ -493,46 +301,6 @@ private func terminalDisplayLines(from rawText: String) -> [String] {
     return Array(lines.suffix(28))
 }
 
-private func makeThread(from entries: [TranscriptEntryRow]) -> [ThreadMessage] {
-    entries
-        .filter { $0.stream != "pty" }
-        .suffix(12)
-        .compactMap { entry in
-            let text = cleanTerminalText(entry.chunk).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return nil }
-            return ThreadMessage(
-                id: entry.id,
-                sender: entry.stream == "user" ? .user : .agent,
-                text: text
-            )
-        }
-}
-
-private func lineKind(for stream: String) -> TerminalLineKind {
-    switch stream {
-    case "user": .accent
-    case "stderr": .warning
-    case "system": .muted
-    default: .standard
-    }
-}
-
-private func trustedActionEntries(from entries: [TranscriptEntryRow]) -> [TranscriptEntryRow] {
-    let reportEntries = entries.filter { $0.stream == "report" }
-    if !reportEntries.isEmpty {
-        return reportEntries
-    }
-
-    let semanticEntries = entries.filter { entry in
-        entry.stream != "pty" && entry.stream != "system" && entry.stream != "user"
-    }
-    if !semanticEntries.isEmpty {
-        return semanticEntries
-    }
-
-    return []
-}
-
 private func kind(forTerminalLine line: String, fallback: TerminalLineKind) -> TerminalLineKind {
     if line.contains("⚠") || line.localizedCaseInsensitiveContains("failed") || line.localizedCaseInsensitiveContains("error") {
         return .warning
@@ -579,29 +347,6 @@ private func cleanTerminalText(_ value: String) -> String {
     }
 
     return cleaned.replacingOccurrences(of: "\r", with: "\n")
-}
-
-private func extractOSC9Messages(from value: String) -> [String] {
-    var messages: [String] = []
-    var searchStart = value.startIndex
-
-    while let markerRange = value.range(of: "\u{001B}]9;", range: searchStart..<value.endIndex) {
-        let payloadStart = markerRange.upperBound
-        let terminatorRange = value[payloadStart...].firstIndex { character in
-            character == "\u{0007}" || character == "\u{001B}"
-        }
-        guard let terminatorRange else { break }
-
-        let payload = String(value[payloadStart..<terminatorRange])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !payload.isEmpty {
-            messages.append(payload)
-        }
-
-        searchStart = value.index(after: terminatorRange)
-    }
-
-    return messages
 }
 
 private func splitTerminalDisplayLine(_ line: String) -> [String] {

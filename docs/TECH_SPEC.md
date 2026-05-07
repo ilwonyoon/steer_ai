@@ -101,7 +101,7 @@ Raw interactive PTY output is not a trusted action source. Claude/Codex TUIs rep
 2. Headless/provider-native stdout/stderr where the stream is semantic, not a TUI screen repaint.
 3. Raw PTY only as a debug transcript, not as active-card evidence.
 
-This separation prevents repeated status text, broken line wrapping, and user input echo from becoming Steer cards. If an interactive PTY session has no provider-native report event, Steer may still show session state, but should not infer a question/decision from the raw TUI screen alone.
+This separation prevents repeated status text, broken line wrapping, and user input echo from becoming Steer cards. If an interactive PTY session has no provider-native report event, the Mac app should not show a card. Steer is not a live terminal mirror; it surfaces the last stopped/actionable report and closes that card when the user sends the next instruction.
 
 ### SteerAgent
 
@@ -131,7 +131,7 @@ Codex smoke test: `steer codex --headless` plus `steer send <sessionId> "Reply e
 - Card body renders a light terminal report surface as the primary context, with AI summary as secondary text.
 - Session filter and optional room list as secondary surfaces.
 - Claude/Codex-style session detail opened from a card.
-- Cards for progress, completion, decision, blocker, question, and idle.
+- Cards for stopped/actionable reports: waiting, completion requiring next instruction, decision, blocker, and question. Running progress is silent.
 - Quick reply / quick instruction chips above the card/detail input field.
 - Detail composer with target session selection or `@session` mention routing.
 - Provider icons, agent badges, and Linear-style state pills.

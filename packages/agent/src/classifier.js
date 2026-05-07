@@ -97,6 +97,19 @@ function classifyActionCard(session, displayLines, timing = {}) {
     };
   }
 
+  if (session.run_state === "running") {
+    return {
+      category: "progress",
+      priority: "silent",
+      title: `${titlePrefix} is running`,
+      summary,
+      actionPrompt: "Waiting for the session to stop with an actionable response.",
+      options: [],
+      state: "done",
+      highlightedLineIndexes: []
+    };
+  }
+
   if (session.run_state === "blocked" || hasAny(lower, [
     "blocked",
     "permission denied",

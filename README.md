@@ -64,7 +64,7 @@ For notification testing, run the bundled app build instead of the raw SwiftPM e
 open .build/SteerMac.app
 ```
 
-The Mac app reads live action cards from `~/.steer/steer.sqlite` and sends replies through `steer send`. The current card generator is heuristic: it watches transcript tails for blockers, questions, decisions, completions, and progress.
+The Mac app reads stopped/actionable cards from `~/.steer/steer.sqlite` and sends replies through `steer send`. It is not a live terminal mirror: running sessions stay quiet until the AI stops and reports a blocker, question, decision, or waiting/completion message that needs the user's next instruction.
 
 Current structure:
 
