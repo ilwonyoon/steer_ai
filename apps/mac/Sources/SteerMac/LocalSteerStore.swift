@@ -344,16 +344,15 @@ private func makeTerminalLines(from entries: [TranscriptEntryRow]) -> [TerminalL
 }
 
 private func makeTerminalLines(from displayLines: [String], category: String) -> [TerminalLine] {
-    let kind: TerminalLineKind = switch category {
+    let fallbackKind: TerminalLineKind = switch category {
     case "blocker": .warning
-    case "decision", "question": .accent
     case "completion": .success
     default: .standard
     }
     let lines = displayLines
         .map { normalizeTerminalDisplayLine($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         .filter(isMeaningfulTerminalLine)
-        .map { TerminalLine($0, kind: kind) }
+        .map { TerminalLine($0, kind: kind(forTerminalLine: $0, fallback: fallbackKind)) }
 
     return lines.ifEmpty([TerminalLine("[no transcript yet]", kind: .muted)])
 }
@@ -415,7 +414,6 @@ private func lineKind(for stream: String) -> TerminalLineKind {
     case "user": .accent
     case "stderr": .warning
     case "system": .muted
-    case "report": .accent
     default: .standard
     }
 }
@@ -439,6 +437,9 @@ private func kind(forTerminalLine line: String, fallback: TerminalLineKind) -> T
         return .success
     }
     if line.hasPrefix("›") || line.hasPrefix(">") {
+        return .accent
+    }
+    if line.range(of: "^(Decision needed|Next|Question|Blocked):$", options: [.regularExpression, .caseInsensitive]) != nil {
         return .accent
     }
     if line.hasPrefix("gpt-") {
