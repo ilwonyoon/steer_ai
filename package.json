@@ -9,7 +9,7 @@
   "scripts": {
     "agent": "node packages/agent/src/agent.js",
     "steer": "node packages/cli/src/index.js",
-    "test": "node --test packages/agent/test/*.test.js",
+    "test": "node --test packages/agent/test/*.test.js packages/cli/test/*.test.js",
     "test:wrapper": "node packages/cli/src/index.js wrap -- node -i"
   },
   "engines": {

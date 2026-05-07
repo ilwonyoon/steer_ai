@@ -85,8 +85,8 @@ Goal: prove we can own a CLI session and safely inject input.
 - [x] Capture stdout/stderr transcript chunks.
 - [x] Detect prompt-ready / waiting states for Claude stream-json result events.
 - [x] Inject single-line instruction into a wrapped process.
-- [ ] Test multiline injection behavior.
-- [ ] Document failure cases and edge cases.
+- [x] Test multiline injection behavior.
+- [x] Document failure cases and edge cases.
 
 Exit criteria:
 - A wrapped Claude or Codex session can receive an instruction from another local process.
@@ -211,6 +211,8 @@ Happy research showed that current Happy is not simply a raw pty wrapper. Claude
 
 The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. It first proved bidirectional delivery with a wrapped `node -i` REPL, then moved default local launches onto a Python PTY bridge so `steer claude` and `steer codex` behave like normal terminal CLIs.
 
+Multiline injection now uses provider-specific PTY formatting. Claude/Codex multiline prompts are sent with bracketed paste plus a final submit key; generic custom wrappers preserve raw multiline text. Regression tests cover the input formatter, and an interactive Codex smoke test returned `two` for a multiline prompt.
+
 ### 2026-05-06: Claude Stream JSON Adapter
 
 Claude should be the first real provider target. `steer claude --headless` uses Claude Code stream-json mode and sends user instructions as JSON lines. `steer claude` now defaults to the interactive PTY bridge so it behaves like a normal terminal Claude session. A low-budget headless smoke test returned `STEER_CLAUDE_OK`, proving that SteerAgent can inject an instruction into Claude Code and receive output back through the stream.
@@ -235,7 +237,7 @@ v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid
 - Should app-to-agent communication start with Unix domain sockets or XPC?
 - Should Claude v1 use Agent SDK control first, or raw pty first?
 - How should prompt-ready detection work for Claude Code and Codex?
-- What is the minimum safe injection policy for multiline instructions?
+- How much provider-specific paste/readiness logic should stay in the Node spike versus move into native adapters?
 - How much transcript should be stored locally by default?
 - When should iOS sync begin: after Mac dogfooding or earlier?
 

@@ -23,6 +23,12 @@ test("filters Codex startup chrome and MCP boilerplate", () => {
   assert.deepEqual(lines, ["[no transcript yet]"]);
 });
 
+test("separates Codex prompt chrome appended after content", () => {
+  const lines = transcriptDisplayLines("• two›Improve documentation in @filename  gpt-5.5 high fast · ~/Developer/steer_ai");
+
+  assert.deepEqual(lines, ["• two"]);
+});
+
 test("classifies direct questions as active question cards", () => {
   const result = classifyTranscript({
     session: codexSession,

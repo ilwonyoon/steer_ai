@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
 import { socketPath } from "../../agent/src/paths.js";
+import { formatPtyInstructionInput } from "./pty_input.js";
 
 const [, , command, ...args] = process.argv;
 const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
@@ -197,7 +198,8 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   });
 
   function submitPtyInstruction(message) {
-    child.stdin.write(message.text, (textError) => {
+    const input = formatPtyInstructionInput(provider, message.text);
+    child.stdin.write(input, (textError) => {
       if (textError) {
         agent.write(encodeMessage({
           type: "ack",

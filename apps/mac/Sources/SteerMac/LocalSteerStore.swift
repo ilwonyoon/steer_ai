@@ -346,6 +346,11 @@ private func terminalDisplayLines(from rawText: String) -> [String] {
         options: .regularExpression
     )
     text = text.replacingOccurrences(
+        of: "([^\\n])›(?=\\S)",
+        with: "$1\n›",
+        options: .regularExpression
+    )
+    text = text.replacingOccurrences(
         of: "\\s*(\\[(?:user|steer|codex|claude)\\])",
         with: "\n$1",
         options: [.regularExpression, .caseInsensitive]
@@ -476,7 +481,13 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     if line.range(of: "MCP client for `?pencil`? failed", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
+    if line.range(of: "MCP startup failed", options: .caseInsensitive) != nil {
+        return false
+    }
     if line.range(of: "No such file or directory", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "os error 2", options: .caseInsensitive) != nil {
         return false
     }
     if line.range(of: "MCP startup incomplete", options: .caseInsensitive) != nil {

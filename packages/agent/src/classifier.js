@@ -14,6 +14,7 @@ export function transcriptDisplayLines(rawText) {
   const lines = cleanTerminalText(rawText)
     .replace(/\s+([⚠✖✔])\s*/g, "\n$1 ")
     .replace(/\s+([›>])\s+/g, "\n$1 ")
+    .replace(/([^\n])›(?=\S)/g, "$1\n›")
     .replace(/\s*(\[(?:user|steer|codex|claude)\])/gi, "\n$1")
     .replace(/\s{2,}(gpt-[\w.-]+[^\n]*·[^\n]*)/g, "\n$1")
     .split("\n")
@@ -202,7 +203,9 @@ function isContentLineForAction(line) {
   if (/suppress_unstable_features_warning/i.test(line)) return false;
   if (/config\.toml/i.test(line)) return false;
   if (/MCP client for `?pencil`? failed/i.test(line)) return false;
+  if (/MCP startup failed/i.test(line)) return false;
   if (/No such file or directory/i.test(line)) return false;
+  if (/os error 2/i.test(line)) return false;
   if (/MCP startup incomplete/i.test(line)) return false;
   if (/esc to interr/i.test(line)) return false;
   if (/esc again to edit previous message/i.test(line)) return false;

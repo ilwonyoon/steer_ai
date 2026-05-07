@@ -84,6 +84,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 
 - CLI wrapper mode: `steer claude [args]`, `steer codex [args]`.
 - Interactive adapter: default provider launches use a Python PTY bridge so `steer claude` and `steer codex` look like normal terminal sessions while Steer captures output and can inject `steer send` instructions.
+- Interactive PTY injection: single-line instructions are typed then submitted. Claude/Codex multiline instructions use bracketed paste plus a final submit key so embedded newlines remain inside one prompt. Generic custom wrappers preserve raw multiline text because bracketed paste support is unknown.
 - Claude headless adapter: `steer claude --headless` uses Claude Code stream-json (`claude -p --input-format stream-json --output-format stream-json --replay-user-messages`), then evaluate TypeScript SDK if the CLI stream is insufficient.
 - Codex headless adapter: `steer codex --headless` uses `codex app-server --listen stdio://` JSON-RPC. Start a thread with `thread/start`, submit user instructions with `turn/start`, stream `item/agentMessage/delta`, and use `turn/steer` when a turn is already active.
 - Fallback adapter: use pty ownership when no provider-native protocol is viable.

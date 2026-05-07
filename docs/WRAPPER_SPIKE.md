@@ -56,7 +56,7 @@ Use `steer claude --raw` only as the generic stdin/stdout fallback.
 - A wrapper registers a session with provider, command, cwd, pid, and run state.
 - stdout/stderr are streamed to the terminal and appended to `~/.steer/sessions/<sessionId>.log`.
 - `steer send <sessionId> <instruction>` routes text to the active wrapper.
-- The wrapper writes the instruction to child stdin with a trailing newline.
+- The PTY wrapper writes the instruction text, then sends a submit key. For Claude/Codex multiline text, it uses bracketed paste before submit so embedded newlines do not execute partial prompts.
 - The wrapper reports injected status and exit state back to the agent.
 - `steer claude` and `steer codex` start provider CLIs through a PTY bridge so they look like normal terminal sessions.
 - `steer claude --headless` starts Claude Code through stream-json headless mode and sends user messages as JSON lines.
@@ -88,13 +88,29 @@ steer send <sessionId> "Reply exactly STEER_CODEX_WAIT_OK and nothing else."
 
 Codex returned `STEER_CODEX_WAIT_OK` through `codex app-server` JSON-RPC. The headless adapter starts a thread, sends instructions through `turn/start`, streams `item/agentMessage/delta`, and marks the session `waiting` after `turn/completed`.
 
+Interactive PTY multiline smoke:
+
+```text
+steer codex
+steer send <sessionId> $'Spell the count of non-empty lines below in English lowercase. Answer with only that word.\napple\nbanana'
+```
+
+Codex returned `two`, proving multiline text can be pasted into the interactive TUI and submitted as one prompt.
+
+## Failure Cases And Edge Cases
+
+- Provider TUIs can repaint prompts/status lines into stdout. Card extraction must filter prompt chrome, status lines, and setup warnings before classification.
+- Codex startup can emit prompt-looking lines before MCP startup finishes. The PTY wrapper queues pending instructions until Codex reports MCP startup complete/incomplete, with a timeout fallback.
+- Multiline PTY input must not be written as raw newline-separated keystrokes for Claude/Codex. Use bracketed paste plus a final submit key.
+- Generic `steer wrap -- <command>` cannot assume bracketed paste support, so it preserves raw multiline text.
+- If the agent process restarts, existing wrapper sockets are not durable yet. Active terminal sessions may keep running, but Steer delivery requires launching a new wrapped session.
+- Provider-native headless adapters avoid terminal repaint noise but still need approval/interruption handling.
+
 ## Known Limits
 
 - The generic `steer wrap -- <command>` path now uses the PTY bridge, but resize handling is still basic.
 - `--raw` provider paths still use child stdin/stdout pipes and are only fallback/debug modes.
-- No prompt-ready detection yet; instructions are sent immediately.
 - Active sockets are still in memory, but durable session, message, instruction, transcript, and metric rows are persisted in SQLite.
-- No multiline injection policy yet.
 - Claude headless uses CLI stream-json, not the TypeScript SDK package yet.
 - Codex headless uses app-server, but same-turn steering and approval flows need real dogfood testing.
 
