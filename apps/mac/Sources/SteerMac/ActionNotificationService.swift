@@ -68,7 +68,7 @@ final class ActionNotificationService {
 }
 
 func notificationFingerprint(for card: ActionCard) -> String {
-    "\(card.id)|\(card.summary)"
+    card.id
 }
 
 private func stableNotificationSuffix(for card: ActionCard) -> String {

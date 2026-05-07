@@ -177,7 +177,8 @@ struct SteerRootView: View {
     }
 
     private func notifyForNewCards(_ loadedCards: [ActionCard]) async {
-        let activeFingerprints = Set(loadedCards.map(notificationFingerprint(for:)))
+        let notifiableCards = loadedCards.filter(\.shouldNotify)
+        let activeFingerprints = Set(notifiableCards.map(notificationFingerprint(for:)))
 
         guard didLoadInitialCards else {
             notifiedCardFingerprints = activeFingerprints
@@ -185,7 +186,7 @@ struct SteerRootView: View {
             return
         }
 
-        for card in loadedCards where !notifiedCardFingerprints.contains(notificationFingerprint(for: card)) {
+        for card in notifiableCards where !notifiedCardFingerprints.contains(notificationFingerprint(for: card)) {
             await notificationService.notify(card: card)
         }
 

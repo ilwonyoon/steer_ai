@@ -100,6 +100,7 @@ struct ActionCard: Identifiable {
     let reason: String
     let terminalLines: [TerminalLine]
     let chips: [String]
+    let shouldNotify: Bool
     var thread: [ThreadMessage]
 
     init(
@@ -114,6 +115,7 @@ struct ActionCard: Identifiable {
         reason: String,
         terminalLines: [TerminalLine],
         chips: [String],
+        shouldNotify: Bool = false,
         thread: [ThreadMessage]
     ) {
         self.id = id
@@ -127,6 +129,7 @@ struct ActionCard: Identifiable {
         self.reason = reason
         self.terminalLines = terminalLines
         self.chips = chips
+        self.shouldNotify = shouldNotify
         self.thread = thread
     }
 }

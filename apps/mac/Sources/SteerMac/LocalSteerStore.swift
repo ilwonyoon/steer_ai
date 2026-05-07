@@ -359,8 +359,13 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
         reason: row.actionPrompt ?? row.cwd ?? "No working directory recorded.",
         terminalLines: terminalLines,
         chips: decodeStringArray(row.optionsJSON).ifEmpty(defaultChips(for: state)),
+        shouldNotify: isNotifiableActionCategory(row.category),
         thread: []
     )
+}
+
+private func isNotifiableActionCategory(_ category: String) -> Bool {
+    ["blocker", "decision", "question", "waiting"].contains(category)
 }
 
 private func mapState(_ value: String) -> SessionState {
@@ -395,7 +400,10 @@ private func defaultChips(for state: SessionState) -> [String] {
 }
 
 private func makeTerminalLines(from entries: [TranscriptEntryRow], allowPtyFallback: Bool = false) -> [TerminalLine] {
-    let trustedEntries = trustedActionEntries(from: entries, allowPtyFallback: allowPtyFallback)
+    let trustedEntries = trustedActionEntries(from: entries)
+    if trustedEntries.isEmpty, allowPtyFallback, let ptyLines = makePtyFallbackTerminalLines(from: entries) {
+        return ptyLines
+    }
     let rawText = trustedEntries.map(\.chunk).joined()
     let fallbackKind = trustedEntries.last.map { lineKind(for: $0.stream) } ?? .standard
     let lines = terminalDisplayLines(from: rawText)
@@ -409,6 +417,19 @@ private func makeTerminalLines(from entries: [TranscriptEntryRow], allowPtyFallb
     }
 
     return Array(lines)
+}
+
+private func makePtyFallbackTerminalLines(from entries: [TranscriptEntryRow]) -> [TerminalLine]? {
+    let ptyText = entries.filter { $0.stream == "pty" }.map(\.chunk).joined()
+    guard !ptyText.isEmpty else { return nil }
+
+    let oscMessages = extractOSC9Messages(from: ptyText)
+    let sourceText = oscMessages.isEmpty ? ptyText : oscMessages.suffix(3).joined(separator: "\n")
+    let lines = terminalDisplayLines(from: sourceText)
+        .map { TerminalLine($0, kind: kind(forTerminalLine: $0, fallback: .standard)) }
+        .suffix(28)
+
+    return lines.isEmpty ? nil : Array(lines)
 }
 
 private func makeTerminalLines(from displayLines: [String], category: String) -> [TerminalLine] {
@@ -486,7 +507,7 @@ private func lineKind(for stream: String) -> TerminalLineKind {
     }
 }
 
-private func trustedActionEntries(from entries: [TranscriptEntryRow], allowPtyFallback: Bool = false) -> [TranscriptEntryRow] {
+private func trustedActionEntries(from entries: [TranscriptEntryRow]) -> [TranscriptEntryRow] {
     let reportEntries = entries.filter { $0.stream == "report" }
     if !reportEntries.isEmpty {
         return reportEntries
@@ -497,10 +518,6 @@ private func trustedActionEntries(from entries: [TranscriptEntryRow], allowPtyFa
     }
     if !semanticEntries.isEmpty {
         return semanticEntries
-    }
-
-    if allowPtyFallback {
-        return entries.filter { $0.stream == "pty" }
     }
 
     return []
@@ -552,6 +569,29 @@ private func cleanTerminalText(_ value: String) -> String {
     }
 
     return cleaned.replacingOccurrences(of: "\r", with: "\n")
+}
+
+private func extractOSC9Messages(from value: String) -> [String] {
+    var messages: [String] = []
+    var searchStart = value.startIndex
+
+    while let markerRange = value.range(of: "\u{001B}]9;", range: searchStart..<value.endIndex) {
+        let payloadStart = markerRange.upperBound
+        let terminatorRange = value[payloadStart...].firstIndex { character in
+            character == "\u{0007}" || character == "\u{001B}"
+        }
+        guard let terminatorRange else { break }
+
+        let payload = String(value[payloadStart..<terminatorRange])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !payload.isEmpty {
+            messages.append(payload)
+        }
+
+        searchStart = value.index(after: terminatorRange)
+    }
+
+    return messages
 }
 
 private func splitTerminalDisplayLine(_ line: String) -> [String] {
@@ -653,6 +693,9 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
         return false
     }
     if line.range(of: "running stop hooks", options: .caseInsensitive) != nil {
+        return false
+    }
+    if line.range(of: "Worked for", options: .caseInsensitive) != nil {
         return false
     }
     if line.range(of: "Cultivating", options: .caseInsensitive) != nil {
