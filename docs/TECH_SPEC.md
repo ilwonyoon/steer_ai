@@ -114,7 +114,7 @@ Codex smoke test: `steer codex --headless` plus `steer send <sessionId> "Reply e
 ### Steer Mac App
 
 - SwiftUI/AppKit shell.
-- Menu bar status item.
+- Menu bar status item with Open/Quit commands.
 - Default window size: focused mobile-width utility window, 375px wide x 812px tall.
 - iOS-native visual system; use Liquid Glass APIs where available, with material fallback.
 - Action card stack as the default surface.
@@ -125,7 +125,7 @@ Codex smoke test: `steer codex --headless` plus `steer send <sessionId> "Reply e
 - Quick reply / quick instruction chips above the card/detail input field.
 - Detail composer with target session selection or `@session` mention routing.
 - Provider icons, agent badges, and Linear-style state pills.
-- macOS notifications: the app requests local notification permission lazily and sends one notification when a new active action card appears after the initial load. Existing cards at launch do not notify, and polling does not repeat notifications for the same active card fingerprint.
+- macOS notifications: the app requests local notification permission lazily and sends one notification when a new active action card appears after the initial load. Existing cards at launch do not notify, and polling does not repeat notifications for the same active card fingerprint. Foreground notifications still present as banners, and notification clicks bring Steer to the front.
 
 SwiftUI implementation note: use native Liquid Glass APIs for app chrome, navigation controls, sheets, and larger floating surfaces where distortion will not affect typing. Do not apply Liquid Glass to the card reply chips or input field; keep those as minimal white pill controls to avoid stretching during card swipe.
 

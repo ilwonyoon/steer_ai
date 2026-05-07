@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import UserNotifications
 
 @MainActor
@@ -7,8 +8,11 @@ final class ActionNotificationService {
 
     private var didRequestAuthorization = false
     private var isAuthorized = false
+    private let delegate = SteerNotificationDelegate()
 
-    private init() {}
+    private init() {
+        UNUserNotificationCenter.current().delegate = delegate
+    }
 
     func notify(card: ActionCard) async {
         guard await ensureAuthorization() else { return }
@@ -60,4 +64,26 @@ func notificationFingerprint(for card: ActionCard) -> String {
 
 private func stableNotificationSuffix(for card: ActionCard) -> String {
     String(abs(notificationFingerprint(for: card).hashValue))
+}
+
+private final class SteerNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        await MainActor.run {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            for window in NSApplication.shared.windows where window.canBecomeKey {
+                window.deminiaturize(nil)
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
 }

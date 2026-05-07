@@ -3,6 +3,8 @@ import AppKit
 
 @main
 struct SteerMacApp: App {
+    @NSApplicationDelegateAdaptor(SteerAppDelegate.self) private var appDelegate
+
     init() {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)

@@ -115,7 +115,7 @@ Exit criteria:
 Goal: make the core loop usable from a native Mac UI.
 
 - [x] Create SwiftUI macOS app shell.
-- [ ] Add menu bar status item.
+- [x] Add menu bar status item.
 - [x] Build default action card stack view.
 - [x] Open card into Claude/Codex-style session detail.
 - [x] Show session badges and state pills.
