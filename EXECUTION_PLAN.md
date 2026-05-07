@@ -127,6 +127,7 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] Send replies from the card/detail composer through `steer send`.
 - [x] Verify card composer Enter key sends through the real Mac UI path.
 - [x] Add macOS notifications for new active action cards.
+- [x] Add local `.app` bundle script for notification-capable dogfooding.
 
 Exit criteria:
 - User can monitor multiple sessions and send a reply/instruction from the Mac UI.

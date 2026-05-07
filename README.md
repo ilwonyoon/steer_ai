@@ -57,6 +57,13 @@ swift build
 swift run SteerMac
 ```
 
+For notification testing, run the bundled app build instead of the raw SwiftPM executable:
+
+```sh
+./scripts/build-mac-app.sh
+open .build/SteerMac.app
+```
+
 The Mac app reads live action cards from `~/.steer/steer.sqlite` and sends replies through `steer send`. The current card generator is heuristic: it watches transcript tails for blockers, questions, decisions, completions, and progress.
 
 Current structure:

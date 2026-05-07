@@ -107,6 +107,8 @@ Current spike: Node `SteerAgent` listens on `~/.steer/steer.sock`, keeps active 
 
 Claude hook event ingest: `hook_event` messages record hook metadata as metric events, append `last_assistant_message` into transcript entries, and update session state (`Stop` -> `waiting`, `Notification`/`StopFailure` -> `blocked`, `SessionEnd` -> `ended`). The same action-card lifecycle applies: user reply injection resolves the active card for that session.
 
+Local app packaging: `scripts/build-mac-app.sh` wraps the SwiftPM executable in `.build/SteerMac.app`, writes `Info.plist` with bundle identifier `ai.steer.mac`, and ad-hoc signs the app. Use this bundle for notification dogfooding; raw `swift run SteerMac` keeps notifications disabled because it has no app identity.
+
 Claude smoke test: `steer claude --headless --max-budget-usd 0.02` plus `steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."` successfully returned `STEER_CLAUDE_OK` through Claude Code stream-json. The headless adapter currently marks state `running` on instruction injection and `waiting` when a Claude `result` event arrives.
 
 Codex smoke test: `steer codex --headless` plus `steer send <sessionId> "Reply exactly STEER_CODEX_WAIT_OK and nothing else."` successfully returned `STEER_CODEX_WAIT_OK` through Codex app-server JSON-RPC. The headless adapter marks state `running` on `thread/status/changed` active or `turn/started`, and `waiting` after `turn/completed`.
