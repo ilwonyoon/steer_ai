@@ -276,7 +276,7 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
         state: state,
         age: state.rawValue,
         title: row.title,
-        summary: row.summary,
+        summary: normalizeTerminalDisplayLine(row.summary),
         reason: row.actionPrompt ?? row.cwd ?? "No working directory recorded.",
         terminalLines: terminalLines,
         chips: decodeStringArray(row.optionsJSON).ifEmpty(defaultChips(for: state)),
@@ -339,7 +339,8 @@ private func makeTerminalLines(from displayLines: [String], category: String) ->
     default: .standard
     }
     let lines = displayLines
-        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .map { normalizeTerminalDisplayLine($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        .filter(isMeaningfulTerminalLine)
         .map { TerminalLine($0, kind: kind) }
 
     return lines.ifEmpty([TerminalLine("[no transcript yet]", kind: .muted)])
@@ -376,7 +377,7 @@ private func terminalDisplayLines(from rawText: String) -> [String] {
     let lines = text
         .components(separatedBy: .newlines)
         .flatMap(splitTerminalDisplayLine)
-        .map { collapseTerminalWhitespace($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        .map { normalizeTerminalDisplayLine($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         .filter(isMeaningfulTerminalLine)
 
     return Array(lines.suffix(28))
@@ -452,6 +453,16 @@ private func collapseTerminalWhitespace(_ value: String) -> String {
     value.replacingOccurrences(of: "[ \\t]{2,}", with: " ", options: .regularExpression)
 }
 
+private func normalizeTerminalDisplayLine(_ value: String) -> String {
+    collapseTerminalWhitespace(
+        value.replacingOccurrences(
+            of: "\\?•Work(?:ing)?\\b.*$",
+            with: "?",
+            options: [.regularExpression, .caseInsensitive]
+        )
+    )
+}
+
 private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     guard !line.isEmpty else { return false }
     guard line.range(of: "[A-Za-z0-9가-힣⚠✖✔›>]", options: .regularExpression) != nil else {
@@ -496,7 +507,7 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     if line.range(of: "MCP startup failed", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "No such file or directory", options: .caseInsensitive) != nil {
+    if line.range(of: "No such file or direc", options: .caseInsensitive) != nil {
         return false
     }
     if line.range(of: "os error 2", options: .caseInsensitive) != nil {
@@ -521,6 +532,9 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
         return false
     }
     if line.range(of: "(Working[•. ]*){2,}", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
+    if line.range(of: "^Wo•Wor", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
     if line.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,

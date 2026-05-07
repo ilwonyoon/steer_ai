@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyTranscript, transcriptDisplayLines } from "../src/classifier.js";
+import { classifyTranscript, terminalScreenText, transcriptDisplayLines } from "../src/classifier.js";
 
 const codexSession = {
   provider: "codex",
@@ -36,6 +36,20 @@ test("filters repeated Codex working repaint lines", () => {
   `);
 
   assert.deepEqual(lines, ["• Hello. How can I help?orking"]);
+});
+
+test("removes Codex working repaint suffix from question lines", () => {
+  const lines = transcriptDisplayLines("• Hi. What would you like to work on?•Work");
+
+  assert.deepEqual(lines, ["• Hi. What would you like to work on?"]);
+});
+
+test("renders terminal repaint output from the final screen state", () => {
+  const screen = terminalScreenText("\x1B[1;1HWorking\x1B[1;1H\x1B[K• Hi. What would you like to work on?");
+  const lines = transcriptDisplayLines("\x1B[1;1HWorking\x1B[1;1H\x1B[K• Hi. What would you like to work on?");
+
+  assert.equal(screen, "• Hi. What would you like to work on?");
+  assert.deepEqual(lines, ["• Hi. What would you like to work on?"]);
 });
 
 test("classifies direct questions as active question cards", () => {

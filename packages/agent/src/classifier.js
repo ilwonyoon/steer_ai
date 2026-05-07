@@ -11,7 +11,7 @@ export function classifyTranscript({ session, entries }) {
 }
 
 export function transcriptDisplayLines(rawText) {
-  const lines = cleanTerminalText(rawText)
+  const lines = terminalScreenText(rawText)
     .replace(/\s+([⚠✖✔])\s*/g, "\n$1 ")
     .replace(/\s+([›>])\s+/g, "\n$1 ")
     .replace(/([^\n])›(?=\S)/g, "$1\n›")
@@ -19,7 +19,7 @@ export function transcriptDisplayLines(rawText) {
     .replace(/\s{2,}(gpt-[\w.-]+[^\n]*·[^\n]*)/g, "\n$1")
     .split("\n")
     .flatMap(splitTerminalDisplayLine)
-    .map((line) => line.replace(/[ \t]{2,}/g, " ").trim())
+    .map(normalizeTerminalDisplayLine)
     .filter(isMeaningfulTerminalLine)
     .slice(-28);
 
@@ -189,10 +189,153 @@ export function cleanTerminalText(value) {
     .replace(/\r/g, "\n");
 }
 
+export function terminalScreenText(value, { rows = 60, cols = 240 } = {}) {
+  const screen = Array.from({ length: rows }, () => Array(cols).fill(" "));
+  let row = 0;
+  let col = 0;
+  let index = 0;
+
+  const clampCursor = () => {
+    row = Math.max(0, Math.min(rows - 1, row));
+    col = Math.max(0, Math.min(cols - 1, col));
+  };
+
+  const putChar = (char) => {
+    if (char === "\n") {
+      row = Math.min(rows - 1, row + 1);
+      return;
+    }
+    if (char === "\r") {
+      col = 0;
+      return;
+    }
+    if (char === "\b") {
+      col = Math.max(0, col - 1);
+      return;
+    }
+    const codePoint = char.codePointAt(0) ?? 0;
+    if (codePoint < 32 || codePoint === 127) return;
+
+    screen[row][col] = char;
+    col += 1;
+    if (col >= cols) {
+      col = 0;
+      row = Math.min(rows - 1, row + 1);
+    }
+  };
+
+  while (index < value.length) {
+    const char = value[index];
+
+    if (char === "\x1B") {
+      const consumed = consumeEscape(value, index, {
+        moveCursor(nextRow, nextCol) {
+          row = nextRow ?? row;
+          col = nextCol ?? col;
+          clampCursor();
+        },
+        eraseLine() {
+          screen[row].fill(" ", col);
+        },
+        eraseDisplay() {
+          for (let currentRow = row; currentRow < rows; currentRow += 1) {
+            screen[currentRow].fill(" ", currentRow === row ? col : 0);
+          }
+        },
+        reverseIndex() {
+          row = Math.max(0, row - 1);
+        }
+      });
+      if (consumed > 0) {
+        index += consumed;
+        continue;
+      }
+    }
+
+    putChar(char);
+    index += 1;
+  }
+
+  return screen
+    .map((line) => line.join("").trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+}
+
+function consumeEscape(value, start, actions) {
+  const next = value[start + 1];
+  if (!next) return 1;
+
+  if (next === "]") {
+    const belIndex = value.indexOf("\x07", start + 2);
+    const stIndex = value.indexOf("\x1B\\", start + 2);
+    if (belIndex === -1 && stIndex === -1) return value.length - start;
+    if (belIndex !== -1 && (stIndex === -1 || belIndex < stIndex)) return belIndex - start + 1;
+    return stIndex - start + 2;
+  }
+
+  if (next === "P" || next === "X" || next === "^" || next === "_") {
+    const stIndex = value.indexOf("\x1B\\", start + 2);
+    return stIndex === -1 ? value.length - start : stIndex - start + 2;
+  }
+
+  if (next === "M") {
+    actions.reverseIndex();
+    return 2;
+  }
+
+  if (next !== "[") return 2;
+
+  const match = /\x1B\[([0-?]*)([ -/]*)([@-~])/.exec(value.slice(start));
+  if (!match || match.index !== 0) return 1;
+
+  const [, params, _intermediate, command] = match;
+  applyCsi(params, command, actions);
+  return match[0].length;
+}
+
+function applyCsi(params, command, actions) {
+  const normalizedParams = params.replace(/^\?/, "");
+  const parts = normalizedParams
+    .split(";")
+    .filter(Boolean)
+    .map((part) => Number.parseInt(part, 10));
+
+  switch (command) {
+    case "H":
+    case "f": {
+      const nextRow = Math.max((parts[0] || 1) - 1, 0);
+      const nextCol = Math.max((parts[1] || 1) - 1, 0);
+      actions.moveCursor(nextRow, nextCol);
+      break;
+    }
+    case "G": {
+      const nextCol = Math.max((parts[0] || 1) - 1, 0);
+      actions.moveCursor(undefined, nextCol);
+      break;
+    }
+    case "K":
+      actions.eraseLine();
+      break;
+    case "J":
+      actions.eraseDisplay();
+      break;
+    default:
+      break;
+  }
+}
+
 function splitTerminalDisplayLine(line) {
   return line
     .replace(/\s+(gpt-[\w.-]+[^\n]*·[^\n]*)/g, "\n$1")
     .split("\n");
+}
+
+function normalizeTerminalDisplayLine(line) {
+  return line
+    .replace(/\?•Work(?:ing)?\b.*$/i, "?")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 function isMeaningfulTerminalLine(line) {
@@ -217,7 +360,7 @@ function isContentLineForAction(line) {
   if (/config\.toml/i.test(line)) return false;
   if (/MCP client for `?pencil`? failed/i.test(line)) return false;
   if (/MCP startup failed/i.test(line)) return false;
-  if (/No such file or directory/i.test(line)) return false;
+  if (/No such file or direc/i.test(line)) return false;
   if (/os error 2/i.test(line)) return false;
   if (/MCP startup incomplete/i.test(line)) return false;
   if (/esc to interr/i.test(line)) return false;
@@ -226,6 +369,7 @@ function isContentLineForAction(line) {
   if (/Starting MCP servers/i.test(line)) return false;
   if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(line)) return false;
   if (/(Working[•. ]*){2,}/i.test(line)) return false;
+  if (/^Wo•Wor/i.test(line)) return false;
   if (/\/model\s+choose what model/i.test(line) && /\/permissions/i.test(line)) return false;
   if (/codex_a|xcodebui|xcodebuildmcp|context left/i.test(line) && line.length > 80) return false;
   return true;
