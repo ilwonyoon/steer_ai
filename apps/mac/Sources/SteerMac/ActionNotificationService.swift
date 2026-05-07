@@ -9,12 +9,19 @@ final class ActionNotificationService {
     private var didRequestAuthorization = false
     private var isAuthorized = false
     private let delegate = SteerNotificationDelegate()
+    private let canUseNotificationCenter: Bool
 
     private init() {
-        UNUserNotificationCenter.current().delegate = delegate
+        canUseNotificationCenter = Bundle.main.bundleURL.pathExtension == "app"
+            && Bundle.main.bundleIdentifier != nil
+
+        if canUseNotificationCenter {
+            UNUserNotificationCenter.current().delegate = delegate
+        }
     }
 
     func notify(card: ActionCard) async {
+        guard canUseNotificationCenter else { return }
         guard await ensureAuthorization() else { return }
 
         let content = UNMutableNotificationContent()
@@ -36,6 +43,8 @@ final class ActionNotificationService {
     }
 
     private func ensureAuthorization() async -> Bool {
+        guard canUseNotificationCenter else { return false }
+
         if didRequestAuthorization {
             return isAuthorized
         }

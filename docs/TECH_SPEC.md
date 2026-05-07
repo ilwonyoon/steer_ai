@@ -125,7 +125,7 @@ Codex smoke test: `steer codex --headless` plus `steer send <sessionId> "Reply e
 - Quick reply / quick instruction chips above the card/detail input field.
 - Detail composer with target session selection or `@session` mention routing.
 - Provider icons, agent badges, and Linear-style state pills.
-- macOS notifications: the app requests local notification permission lazily and sends one notification when a new active action card appears after the initial load. Existing cards at launch do not notify, and polling does not repeat notifications for the same active card fingerprint. Foreground notifications still present as banners, and notification clicks bring Steer to the front.
+- macOS notifications: packaged `.app` builds request local notification permission lazily and send one notification when a new active action card appears after the initial load. Existing cards at launch do not notify, and polling does not repeat notifications for the same active card fingerprint. Foreground notifications still present as banners, and notification clicks bring Steer to the front. Raw SwiftPM executable builds disable `UNUserNotificationCenter` because macOS requires a bundled app identity.
 
 SwiftUI implementation note: use native Liquid Glass APIs for app chrome, navigation controls, sheets, and larger floating surfaces where distortion will not affect typing. Do not apply Liquid Glass to the card reply chips or input field; keep those as minimal white pill controls to avoid stretching during card swipe.
 
