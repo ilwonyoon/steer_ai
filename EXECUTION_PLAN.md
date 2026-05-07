@@ -141,6 +141,7 @@ Goal: make reports actionable without becoming noisy.
 - [x] Generate first `ActionCard` rows with `priority`, `summary`, `actionPrompt`, and `options`.
 - [x] Add regression tests for real Codex chrome/noise and answered-card lifecycle failures.
 - [x] Add regression coverage for Claude Stop hook -> active action card creation.
+- [x] Stop treating raw interactive PTY repaint bytes as authoritative action-card content.
 - [ ] Run classifier against a broader real transcript sample set.
 - [ ] Track false positive and false negative notifications.
 - [ ] Tune prompts for high precision on `requiresAction`.
@@ -214,11 +215,17 @@ Happy research showed that current Happy is not simply a raw pty wrapper. Claude
 
 ### 2026-05-06: Node Wrapper Spike
 
-The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. It first proved bidirectional delivery with a wrapped `node -i` REPL, then moved default local launches onto a Python PTY bridge so `steer claude` and `steer codex` behave like normal terminal CLIs.
+The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. It first proved bidirectional delivery with a wrapped `node -i` REPL, then moved default local launches onto a PTY bridge so `steer claude` and `steer codex` behave like normal terminal CLIs.
 
 Multiline injection now uses provider-specific PTY formatting. Claude/Codex multiline prompts are sent with bracketed paste plus a final submit key; generic custom wrappers preserve raw multiline text. Regression tests cover the input formatter, and an interactive Codex smoke test returned `two` for a multiline prompt.
 
 Claude hook bridge is now available for cleaner action-card creation. `steer install-claude-hooks` writes `.claude/settings.local.json` commands for Stop/Notification/StopFailure/SessionEnd, and `steer claude` exports `STEER_SESSION_ID` so hook events attach to the wrapped session. Stop hooks append `last_assistant_message` to the transcript and mark the session waiting; waiting sessions stay as active cards even when the final message looks like a completion report. Replies still use the wrapper-owned PTY channel.
+
+### 2026-05-06: PTY Is Transport, Not Report Source
+
+Dogfooding showed that Claude/Codex interactive TUIs repaint screens, move cursors, echo user input, and emit transient status lines. Using that same byte stream as card content caused repeated text, broken wrapping, and user input showing up inside Steer cards. Interactive PTY output is now treated as transport/debug transcript, not authoritative action-card evidence. Action cards should come from provider-native reports (`report` stream), Claude Stop hook `last_assistant_message`, Codex app-server events, or semantic headless stdout/stderr. This favors trust over recall until every provider has a structured report path.
+
+The wrapper now tries Node `node-pty` for default interactive launches, with the Python PTY shim retained as a runtime fallback. Local verification on Node 25.4.0 showed `node-pty` can fail with `posix_spawnp failed`, so the next durable implementation option is a packaged Swift/Rust helper rather than more regex filtering.
 
 ### 2026-05-06: Claude Stream JSON Adapter
 

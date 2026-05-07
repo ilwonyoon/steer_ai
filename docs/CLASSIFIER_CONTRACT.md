@@ -9,13 +9,14 @@ Steer classification turns recent session output into one action card at most. T
   "session": {
     "id": "codex-...",
     "provider": "codex",
+    "adapterKind": "codex-app-server",
     "command": "codex",
     "cwd": "/Users/name/project",
     "runState": "running"
   },
   "entries": [
     {
-      "stream": "stdout",
+      "stream": "report",
       "timestamp": "2026-05-06T23:00:00.000Z",
       "chunk": "Need answer?\\n"
     }
@@ -57,6 +58,8 @@ Steer classification turns recent session output into one action card at most. T
 
 The classifier must not treat terminal chrome as actionable content. Filter provider startup boilerplate, prompt/status lines, user echo, Steer ack lines, cursor repaint artifacts, and setup warnings that do not require a product decision.
 
+Interactive PTY output (`stream = pty`) is not an authoritative action source. It may be stored for debugging and terminal mirroring, but active cards should come from provider-native reports (`stream = report`) or semantic provider streams such as headless stdout/stderr. If a PTY session has no trusted report after the latest user instruction, the classifier should prefer a silent/done card over guessing from TUI repaint bytes.
+
 Examples to filter:
 
 - `Tip: Try the Codex App...`
@@ -72,4 +75,4 @@ Examples to filter:
 - Only one active card per session.
 - When a user reply is injected, the current active card is resolved.
 - After a reply, old pre-reply questions must not resurrect. Classification should inspect AI output after the latest user instruction.
-- Active cards should only appear for `blocker`, `decision`, or `question`.
+- Active cards should only appear for `blocker`, `decision`, `question`, or `waiting`.

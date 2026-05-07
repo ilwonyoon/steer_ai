@@ -74,7 +74,7 @@ export function createStore(filePath = databasePath) {
       VALUES (?, ?, ?, ?, ?, ?)
     `),
     selectSession: db.prepare(`
-      SELECT id, provider, command, cwd, run_state
+      SELECT id, provider, adapter_kind, command, cwd, run_state
       FROM sessions
       WHERE id = ?
     `),
@@ -240,7 +240,7 @@ export function createStore(filePath = databasePath) {
       if (assistantMessage) {
         this.appendTranscript({
           sessionId: event.sessionId,
-          stream: "stdout",
+          stream: "report",
           chunk: `${assistantMessage}\n`
         });
       }

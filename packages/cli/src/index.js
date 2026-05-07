@@ -6,6 +6,7 @@ import process from "node:process";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import pty from "node-pty";
 import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
 import { socketPath } from "../../agent/src/paths.js";
 import { formatPtyInstructionInput } from "./pty_input.js";
@@ -122,17 +123,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   const pendingInstructions = [];
   let ptyReady = provider === "custom";
   let instructionInFlight = false;
-  const child = spawn("python3", [ptyBridgePath, childCommand, ...childArgs], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      STEER_PROVIDER: provider,
-      STEER_SESSION_ID: sessionId,
-      STEER_PTY_COLS: String(process.stdout.columns || 80),
-      STEER_PTY_ROWS: String(process.stdout.rows || 24)
-    },
-    stdio: ["pipe", "pipe", "pipe"]
-  });
+  const ptyProcess = spawnInteractivePtyProcess(provider, sessionId, childCommand, childArgs);
 
   agent.write(encodeMessage({
     type: "register",
@@ -142,7 +133,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     command: childCommand,
     args: childArgs,
     cwd: process.cwd(),
-    pid: child.pid
+    pid: ptyProcess.pid
   }));
 
   process.stderr.write(`[steer] ${provider} session ${sessionId}\n`);
@@ -170,7 +161,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
   process.stdin.on("data", (chunk) => {
-    child.stdin.write(chunk);
+    ptyProcess.write(chunk.toString("utf8"));
   });
 
   const restoreInput = () => {
@@ -178,20 +169,14 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     process.stdin.pause();
   };
 
-  child.stdout.on("data", (chunk) => {
-    process.stdout.write(chunk);
-    agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: chunk.toString("utf8") }));
-    observePtyReadiness(provider, chunk.toString("utf8"), markPtyReady);
-  });
-
-  child.stderr.on("data", (chunk) => {
-    process.stderr.write(chunk);
-    agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: chunk.toString("utf8") }));
-    observePtyReadiness(provider, chunk.toString("utf8"), markPtyReady);
+  ptyProcess.onData((data) => {
+    process.stdout.write(data);
+    agent.write(encodeMessage({ type: "output", sessionId, stream: "pty", chunk: data }));
+    observePtyReadiness(provider, data, markPtyReady);
   });
 
   process.stdout.on("resize", () => {
-    child.kill("SIGWINCH");
+    ptyProcess.resize(process.stdout.columns || 80, process.stdout.rows || 24);
   });
 
   agent.on("data", createLineDecoder((message) => {
@@ -201,7 +186,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     processInstructionQueue();
   }));
 
-  child.on("exit", (exitCode) => {
+  ptyProcess.onExit(({ exitCode }) => {
     clearTimeout(readinessTimer);
     restoreInput();
     agent.write(encodeMessage({ type: "state", sessionId, runState: "ended", exitCode }));
@@ -211,33 +196,64 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   function submitPtyInstruction(message, done) {
     const input = formatPtyInstructionInput(provider, message.text);
-    child.stdin.write(input, (textError) => {
-      if (textError) {
-        agent.write(encodeMessage({
-          type: "ack",
-          sessionId,
-          instructionId: message.instructionId,
-          status: "failed",
-          failureReason: textError.message
-        }));
-        done();
-        return;
-      }
-
-      setTimeout(() => {
-        child.stdin.write("\r", (submitError) => {
-          agent.write(encodeMessage({
-            type: "ack",
-            sessionId,
-            instructionId: message.instructionId,
-            status: submitError ? "failed" : "injected",
-            ...(submitError ? { failureReason: submitError.message } : {})
-          }));
-          done();
-        });
-      }, 50);
-    });
+    ptyProcess.write(input);
+    setTimeout(() => {
+      ptyProcess.write("\r");
+      agent.write(encodeMessage({
+        type: "ack",
+        sessionId,
+        instructionId: message.instructionId,
+        status: "injected"
+      }));
+      done();
+    }, 50);
   }
+}
+
+function spawnInteractivePtyProcess(provider, sessionId, childCommand, childArgs) {
+  const env = {
+    ...process.env,
+    STEER_PROVIDER: provider,
+    STEER_SESSION_ID: sessionId,
+    STEER_PTY_COLS: String(process.stdout.columns || 80),
+    STEER_PTY_ROWS: String(process.stdout.rows || 24)
+  };
+
+  try {
+    return pty.spawn(childCommand, childArgs, {
+      name: process.env.TERM || "xterm-256color",
+      cols: process.stdout.columns || 80,
+      rows: process.stdout.rows || 24,
+      cwd: process.cwd(),
+      env
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[steer] node-pty unavailable (${detail}); falling back to python PTY bridge\n`);
+  }
+
+  const child = spawn("python3", [ptyBridgePath, childCommand, ...childArgs], {
+    cwd: process.cwd(),
+    env,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+
+  return {
+    pid: child.pid,
+    write(data) {
+      child.stdin.write(data);
+    },
+    resize() {
+      child.kill("SIGWINCH");
+    },
+    onData(callback) {
+      child.stdout.on("data", (chunk) => callback(chunk.toString("utf8")));
+      child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+    },
+    onExit(callback) {
+      child.on("exit", (exitCode) => callback({ exitCode }));
+    }
+  };
 }
 
 function observePtyReadiness(provider, chunk, markReady) {

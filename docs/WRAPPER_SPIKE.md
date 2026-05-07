@@ -58,7 +58,7 @@ Use `steer claude --raw` only as the generic stdin/stdout fallback.
 - `steer send <sessionId> <instruction>` routes text to the active wrapper.
 - The PTY wrapper writes the instruction text, then sends a submit key. For Claude/Codex multiline text, it uses bracketed paste before submit so embedded newlines do not execute partial prompts.
 - The wrapper reports injected status and exit state back to the agent.
-- `steer claude` and `steer codex` start provider CLIs through a PTY bridge so they look like normal terminal sessions.
+- `steer claude` and `steer codex` start provider CLIs through a PTY bridge so they look like normal terminal sessions. The wrapper tries `node-pty` first and falls back to the Python PTY bridge if the local Node runtime cannot spawn through `node-pty`.
 - `steer claude --headless` starts Claude Code through stream-json headless mode and sends user messages as JSON lines.
 - Claude adapter marks the session `running` when an instruction is injected and `waiting` when Claude emits a `result`.
 
@@ -100,6 +100,8 @@ Codex returned `two`, proving multiline text can be pasted into the interactive 
 ## Failure Cases And Edge Cases
 
 - Provider TUIs can repaint prompts/status lines into stdout. Card extraction must filter prompt chrome, status lines, and setup warnings before classification.
+- Raw interactive PTY output is not a reliable action-card source. Claude/Codex TUIs emit cursor movement, screen clearing, status repaint, and user-input echo bytes that are valid for the terminal but dirty for Steer cards.
+- Provider-native reports must be the source of truth for action cards: Claude Stop hook `last_assistant_message`, Codex app-server turn/result events, or semantic headless stdout/stderr. PTY bytes remain a debug transcript and terminal mirror.
 - Codex startup can emit prompt-looking lines before MCP startup finishes. The PTY wrapper queues pending instructions until Codex reports MCP startup complete/incomplete, with a timeout fallback.
 - Multiline PTY input must not be written as raw newline-separated keystrokes for Claude/Codex. Use bracketed paste plus a final submit key.
 - Generic `steer wrap -- <command>` cannot assume bracketed paste support, so it preserves raw multiline text.
@@ -109,15 +111,16 @@ Codex returned `two`, proving multiline text can be pasted into the interactive 
 
 ## Known Limits
 
-- The generic `steer wrap -- <command>` path now uses the PTY bridge, but resize handling is still basic.
+- The generic `steer wrap -- <command>` path now uses the PTY bridge, but resize handling still needs more dogfood coverage.
 - `--raw` provider paths still use child stdin/stdout pipes and are only fallback/debug modes.
 - Active sockets are still in memory, but durable session, message, instruction, transcript, and metric rows are persisted in SQLite.
 - Claude headless uses CLI stream-json, not the TypeScript SDK package yet.
 - Codex headless uses app-server, but same-turn steering and approval flows need real dogfood testing.
+- Interactive PTY sessions without provider-native reports should not create active cards from the raw screen alone. This favors trust over recall until each provider has a structured reporting path.
 
 ## Next
 
 1. Dogfood Claude Stop hook classification on real `steer claude` sessions.
-2. Add prompt-ready/waiting detection hardening for Claude and Codex.
+2. Move default Claude/Codex action-card generation to provider-native report streams instead of raw PTY capture.
 3. Add provider-native approval/request handling for Codex app-server events.
-4. Replace the Python PTY bridge with a packaged Swift/Rust helper if dogfooding shows bridge limits.
+4. Keep evaluating a packaged Swift/Rust helper because `node-pty` can fail under some local Node/runtime combinations.

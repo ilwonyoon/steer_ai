@@ -4,6 +4,7 @@ import { classifyTranscript, terminalScreenText, transcriptDisplayLines } from "
 
 const codexSession = {
   provider: "codex",
+  adapter_kind: "codex-app-server",
   command: "codex",
   run_state: "running"
 };
@@ -80,6 +81,55 @@ test("classifies direct questions as active question cards", () => {
   assert.equal(result.card.category, "question");
   assert.equal(result.card.state, "active");
   assert.deepEqual(result.displayLines, ["Need answer?"]);
+});
+
+test("does not classify interactive PTY repaint text as an action source", () => {
+  const result = classifyTranscript({
+    session: {
+      provider: "claude",
+      adapter_kind: "pty-bridge",
+      command: "claude",
+      run_state: "running"
+    },
+    entries: [
+      {
+        stream: "pty",
+        timestamp: "2026-05-06T23:00:00.000Z",
+        chunk: "Cascading… (20s · ↓784 tokens)\r\n› user text echoed in the prompt\r\nNeed answer?\r\n"
+      }
+    ]
+  });
+
+  assert.equal(result.card.category, "progress");
+  assert.equal(result.card.state, "done");
+  assert.deepEqual(result.displayLines, ["[no transcript yet]"]);
+});
+
+test("prefers provider report events over noisy interactive PTY output", () => {
+  const result = classifyTranscript({
+    session: {
+      provider: "claude",
+      adapter_kind: "pty-bridge",
+      command: "claude",
+      run_state: "waiting"
+    },
+    entries: [
+      {
+        stream: "pty",
+        timestamp: "2026-05-06T23:00:00.000Z",
+        chunk: "Cultivating…running stop hooks… 0/3 · 39s · ↓1.4k tokens)\n"
+      },
+      {
+        stream: "report",
+        timestamp: "2026-05-06T23:00:01.000Z",
+        chunk: "Decision needed: choose Option A or Option B before I continue.\n"
+      }
+    ]
+  });
+
+  assert.equal(result.card.category, "decision");
+  assert.equal(result.card.state, "active");
+  assert.deepEqual(result.displayLines, ["Decision needed: choose Option A or Option B before I continue."]);
 });
 
 test("does not resurrect a question after the user answers", () => {

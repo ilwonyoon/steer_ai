@@ -1,13 +1,25 @@
 export function classifyTranscript({ session, entries }) {
   const timing = transcriptTiming(entries);
-  const cardEntries = timing.latestUserAt
-    ? entries.filter((entry) => entry.stream !== "user" && entry.timestamp > timing.latestUserAt)
-    : entries;
+  const cardEntries = selectActionSourceEntries(session, entries, timing.latestUserAt);
   const rawText = cardEntries.map((entry) => entry.chunk).join("");
   const displayLines = transcriptDisplayLines(rawText);
   const card = classifyActionCard(session, displayLines, timing);
 
   return { rawText, displayLines, card };
+}
+
+function selectActionSourceEntries(session, entries, latestUserAt) {
+  const candidates = latestUserAt
+    ? entries.filter((entry) => entry.stream !== "user" && entry.timestamp > latestUserAt)
+    : entries.filter((entry) => entry.stream !== "user");
+  const reports = candidates.filter((entry) => entry.stream === "report");
+  if (reports.length > 0) return reports;
+
+  if (session.adapter_kind === "pty-bridge") {
+    return candidates.filter((entry) => entry.stream !== "pty" && entry.stream !== "system");
+  }
+
+  return candidates.filter((entry) => entry.stream !== "system");
 }
 
 export function transcriptDisplayLines(rawText) {
@@ -36,7 +48,7 @@ function transcriptTiming(entries) {
       continue;
     }
 
-    if ((entry.stream === "stdout" || entry.stream === "stderr") && transcriptDisplayLines(entry.chunk).some(isContentLineForAction)) {
+    if (["report", "stdout", "stderr"].includes(entry.stream) && transcriptDisplayLines(entry.chunk).some(isContentLineForAction)) {
       latestOutputAt = maxTimestamp(latestOutputAt, entry.timestamp);
     }
   }

@@ -182,6 +182,12 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
         LEFT JOIN terminal_excerpts te ON te.id = ac.terminal_excerpt_id
         WHERE ac.state = 'active'
           AND s.run_state != 'disconnected'
+          AND EXISTS (
+            SELECT 1
+            FROM transcript_entries trusted
+            WHERE trusted.session_id = s.id
+              AND trusted.stream IN ('report', 'stdout', 'stderr')
+          )
         ORDER BY
           CASE ac.priority
             WHEN 'urgent' THEN 0
@@ -321,8 +327,9 @@ private func defaultChips(for state: SessionState) -> [String] {
 }
 
 private func makeTerminalLines(from entries: [TranscriptEntryRow]) -> [TerminalLine] {
-    let rawText = entries.map(\.chunk).joined()
-    let fallbackKind = entries.last.map { lineKind(for: $0.stream) } ?? .standard
+    let trustedEntries = trustedActionEntries(from: entries)
+    let rawText = trustedEntries.map(\.chunk).joined()
+    let fallbackKind = trustedEntries.last.map { lineKind(for: $0.stream) } ?? .standard
     let lines = terminalDisplayLines(from: rawText)
         .map { line in
             TerminalLine(line, kind: kind(forTerminalLine: line, fallback: fallbackKind))
@@ -390,6 +397,7 @@ private func terminalDisplayLines(from rawText: String) -> [String] {
 
 private func makeThread(from entries: [TranscriptEntryRow]) -> [ThreadMessage] {
     entries
+        .filter { $0.stream != "pty" }
         .suffix(12)
         .compactMap { entry in
             let text = cleanTerminalText(entry.chunk).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -407,7 +415,19 @@ private func lineKind(for stream: String) -> TerminalLineKind {
     case "user": .accent
     case "stderr": .warning
     case "system": .muted
+    case "report": .accent
     default: .standard
+    }
+}
+
+private func trustedActionEntries(from entries: [TranscriptEntryRow]) -> [TranscriptEntryRow] {
+    let reportEntries = entries.filter { $0.stream == "report" }
+    if !reportEntries.isEmpty {
+        return reportEntries
+    }
+
+    return entries.filter { entry in
+        entry.stream != "pty" && entry.stream != "system" && entry.stream != "user"
     }
 }
 

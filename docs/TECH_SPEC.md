@@ -83,7 +83,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 ### Steer Control Adapters
 
 - CLI wrapper mode: `steer claude [args]`, `steer codex [args]`.
-- Interactive adapter: default provider launches use a Python PTY bridge so `steer claude` and `steer codex` look like normal terminal sessions while Steer captures output and can inject `steer send` instructions.
+- Interactive adapter: default provider launches use a PTY bridge so `steer claude` and `steer codex` look like normal terminal sessions while Steer can inject `steer send` instructions. Prefer `node-pty` when it is stable in the local Node runtime, with the Python PTY bridge as a fallback until a packaged Swift/Rust helper exists. Raw PTY output is captured for debugging/terminal history, but not trusted as action-card content.
 - Interactive PTY injection: single-line instructions are typed then submitted. Claude/Codex multiline instructions use bracketed paste plus a final submit key so embedded newlines remain inside one prompt. Generic custom wrappers preserve raw multiline text because bracketed paste support is unknown.
 - Claude headless adapter: `steer claude --headless` uses Claude Code stream-json (`claude -p --input-format stream-json --output-format stream-json --replay-user-messages`), then evaluate TypeScript SDK if the CLI stream is insufficient.
 - Claude hook bridge: `steer install-claude-hooks` installs local project hooks that call `steer hook claude <event>`. `steer claude` exports `STEER_SESSION_ID` to the child process, so Claude `Stop`, `Notification`, `StopFailure`, and `SessionEnd` hooks can report structured events back to SteerAgent without breaking the bidirectional wrapper channel.
@@ -93,7 +93,15 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Receives delivery commands and injects/sends `Instruction` to the target session.
 - Updates session state on child/protocol exit.
 
-Current heuristic card generator: after transcript/state updates, SteerAgent stores a latest `TerminalExcerpt` and one active `ActionCard` per session. It classifies transcript tails into `blocker`, `decision`, `question`, `waiting`, `completion`, or `progress` using local keyword/state rules. `waiting` is active by default even if the stopped output reads like a completion report, because a stopped agent needs the user's next instruction. Claude `Stop` hooks can supply `last_assistant_message` as a cleaner terminal/action source, while PTY capture remains the durable fallback. This is a pre-LLM classifier scaffold for dogfooding and will be replaced or augmented by the classifier JSON contract.
+Current heuristic card generator: after transcript/state updates, SteerAgent stores a latest `TerminalExcerpt` and one active `ActionCard` per session. It classifies trusted report tails into `blocker`, `decision`, `question`, `waiting`, `completion`, or `progress` using local keyword/state rules. `waiting` is active by default even if the stopped output reads like a completion report, because a stopped agent needs the user's next instruction. This is a pre-LLM classifier scaffold for dogfooding and will be replaced or augmented by the classifier JSON contract.
+
+Raw interactive PTY output is not a trusted action source. Claude/Codex TUIs repaint prompts, status lines, cursor positions, and user input echoes; those bytes are useful for terminal mirroring and debugging, but not for action-card content. The card source priority is:
+
+1. Provider-native report events, stored as `stream = report` (`Claude Stop` `last_assistant_message`, Codex app-server turn/result events).
+2. Headless/provider-native stdout/stderr where the stream is semantic, not a TUI screen repaint.
+3. Raw PTY only as a debug transcript, not as active-card evidence.
+
+This separation prevents repeated status text, broken line wrapping, and user input echo from becoming Steer cards. If an interactive PTY session has no provider-native report event, Steer may still show session state, but should not infer a question/decision from the raw TUI screen alone.
 
 ### SteerAgent
 
