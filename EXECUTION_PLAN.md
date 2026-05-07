@@ -13,6 +13,7 @@ Steer is a macOS-first AI action queue for CLI coding agents. The core loop is s
 - `DESIGN.md`: visual system and interaction direction.
 - `AGENTS.md`: contributor and agent workflow guide.
 - `docs/CLASSIFIER_CONTRACT.md`: card classifier input/output and lifecycle rules.
+- `docs/MAC_UI_E2E.md`: current Mac UI end-to-end validation notes.
 - Backtick Memory `Steer / prd`: product requirements and positioning.
 - Backtick Memory `Steer / tech-spec`: technical architecture and implementation notes.
 
@@ -123,6 +124,7 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] Pivot card content from large summary cards to terminal-tail excerpts.
 - [x] Read live sessions and transcript entries from local SQLite.
 - [x] Send replies from the card/detail composer through `steer send`.
+- [x] Verify card composer Enter key sends through the real Mac UI path.
 - [ ] Add macOS notifications for waiting/blocker states.
 
 Exit criteria:

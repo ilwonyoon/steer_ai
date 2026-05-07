@@ -68,6 +68,7 @@ struct ReplyDock: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: .monospaced))
                 .onSubmit(submitReply)
+                .accessibilityIdentifier("reply-input")
                 .padding(.leading, 14)
                 .padding(.trailing, 46)
                 .frame(height: 42)
@@ -86,6 +87,7 @@ struct ReplyDock: View {
                         .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("reply-send")
                 .padding(.trailing, 6)
                 .transition(.scale.combined(with: .opacity))
                 .accessibilityLabel("Send reply")
