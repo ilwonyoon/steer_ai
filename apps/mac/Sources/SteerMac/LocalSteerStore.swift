@@ -316,7 +316,7 @@ private func makeCard(session: SessionRow, entries: [TranscriptEntryRow]) -> Act
     let provider = ProviderKind(rawValue: session.provider) ?? .custom
     let state = mapState(session.runState)
     let project = projectName(from: session.cwd)
-    let terminalLines = makeTerminalLines(from: entries)
+    let terminalLines = makeTerminalLines(from: entries, allowPtyFallback: true)
     let lastLine = terminalLines.last(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.text
     let command = session.command ?? session.provider
 
@@ -394,8 +394,8 @@ private func defaultChips(for state: SessionState) -> [String] {
     }
 }
 
-private func makeTerminalLines(from entries: [TranscriptEntryRow]) -> [TerminalLine] {
-    let trustedEntries = trustedActionEntries(from: entries)
+private func makeTerminalLines(from entries: [TranscriptEntryRow], allowPtyFallback: Bool = false) -> [TerminalLine] {
+    let trustedEntries = trustedActionEntries(from: entries, allowPtyFallback: allowPtyFallback)
     let rawText = trustedEntries.map(\.chunk).joined()
     let fallbackKind = trustedEntries.last.map { lineKind(for: $0.stream) } ?? .standard
     let lines = terminalDisplayLines(from: rawText)
@@ -486,15 +486,24 @@ private func lineKind(for stream: String) -> TerminalLineKind {
     }
 }
 
-private func trustedActionEntries(from entries: [TranscriptEntryRow]) -> [TranscriptEntryRow] {
+private func trustedActionEntries(from entries: [TranscriptEntryRow], allowPtyFallback: Bool = false) -> [TranscriptEntryRow] {
     let reportEntries = entries.filter { $0.stream == "report" }
     if !reportEntries.isEmpty {
         return reportEntries
     }
 
-    return entries.filter { entry in
+    let semanticEntries = entries.filter { entry in
         entry.stream != "pty" && entry.stream != "system" && entry.stream != "user"
     }
+    if !semanticEntries.isEmpty {
+        return semanticEntries
+    }
+
+    if allowPtyFallback {
+        return entries.filter { $0.stream == "pty" }
+    }
+
+    return []
 }
 
 private func kind(forTerminalLine line: String, fallback: TerminalLineKind) -> TerminalLineKind {
