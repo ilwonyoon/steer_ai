@@ -279,7 +279,7 @@ private func recentTranscriptEntries(for sessionId: String, databaseURL: URL) th
         FROM transcript_entries
         WHERE session_id = '\(quotedSessionId)'
         ORDER BY timestamp DESC
-        LIMIT 24;
+        LIMIT 360;
         """
     )
     return rows.reversed()
@@ -424,12 +424,22 @@ private func makePtyFallbackTerminalLines(from entries: [TranscriptEntryRow]) ->
     guard !ptyText.isEmpty else { return nil }
 
     let oscMessages = extractOSC9Messages(from: ptyText)
-    let sourceText = oscMessages.isEmpty ? ptyText : oscMessages.suffix(3).joined(separator: "\n")
+    let oscText = oscMessages.suffix(3).joined(separator: "\n")
+    let sourceText = shouldUseOSC9Preview(oscText) ? oscText : ptyText
     let lines = terminalDisplayLines(from: sourceText)
         .map { TerminalLine($0, kind: kind(forTerminalLine: $0, fallback: .standard)) }
         .suffix(28)
 
     return lines.isEmpty ? nil : Array(lines)
+}
+
+private func shouldUseOSC9Preview(_ value: String) -> Bool {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    if trimmed.contains("...") || trimmed.contains("…") {
+        return false
+    }
+    return trimmed.count >= 80
 }
 
 private func makeTerminalLines(from displayLines: [String], category: String) -> [TerminalLine] {

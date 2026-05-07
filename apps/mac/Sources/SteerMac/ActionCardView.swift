@@ -11,13 +11,7 @@ struct ActionCardView: View {
             SessionHeader(card: card)
 
             Divider()
-                .padding(.top, 14)
-
-            TerminalMetaView(card: card)
-                .padding(.top, 12)
-
-            Divider()
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
 
             TerminalExcerptView(lines: card.terminalLines)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -37,54 +31,6 @@ struct ActionCardView: View {
                 .stroke(SteerColors.separator, lineWidth: 1)
         }
         .shadow(color: SteerColors.cardShadow, radius: 24, y: 16)
-    }
-}
-
-private struct TerminalMetaView: View {
-    let card: ActionCard
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TerminalMetaLine(label: "title", value: card.title, color: SteerColors.ink, weight: .semibold)
-            TerminalMetaLine(label: "status", value: statusValue, color: card.state.color, weight: .semibold)
-            TerminalMetaLine(label: "reason", value: card.summary, color: SteerColors.secondaryInk, weight: .regular)
-        }
-    }
-
-    private var statusValue: String {
-        switch card.state {
-        case .waiting:
-            "waiting_for_decision"
-        case .blocked:
-            "blocked"
-        case .running:
-            "running"
-        case .ended:
-            "ended"
-        case .disconnected:
-            "disconnected"
-        }
-    }
-}
-
-private struct TerminalMetaLine: View {
-    let label: String
-    let value: String
-    let color: Color
-    let weight: Font.Weight
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("\(label):")
-                .foregroundStyle(SteerColors.secondaryInk)
-                .lineLimit(1)
-                .frame(width: 56, alignment: .leading)
-            Text(value)
-                .foregroundStyle(color)
-                .fontWeight(weight)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .font(.system(size: 12, design: .monospaced))
     }
 }
 
