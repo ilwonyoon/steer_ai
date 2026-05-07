@@ -10,6 +10,7 @@ import pty from "node-pty";
 import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
 import { socketPath } from "../../agent/src/paths.js";
 import { formatPtyInstructionInput } from "./pty_input.js";
+import { extractPtyIdleReport } from "./pty_idle.js";
 import { installClaudeHooks, normalizeHookPayload, parseHookInput } from "./hooks.js";
 
 const [, , command, ...args] = process.argv;
@@ -123,6 +124,9 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   const pendingInstructions = [];
   let ptyReady = provider === "custom";
   let instructionInFlight = false;
+  let ptyBuffer = "";
+  let idleReportTimer = null;
+  let lastIdleReport = "";
   const ptyProcess = spawnInteractivePtyProcess(provider, sessionId, childCommand, childArgs);
 
   agent.write(encodeMessage({
@@ -171,8 +175,10 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   ptyProcess.onData((data) => {
     process.stdout.write(data);
+    ptyBuffer = (ptyBuffer + data).slice(-120_000);
     agent.write(encodeMessage({ type: "output", sessionId, stream: "pty", chunk: data }));
     observePtyReadiness(provider, data, markPtyReady);
+    schedulePtyIdleReport(provider);
   });
 
   process.stdout.on("resize", () => {
@@ -188,6 +194,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   ptyProcess.onExit(({ exitCode }) => {
     clearTimeout(readinessTimer);
+    clearTimeout(idleReportTimer);
     restoreInput();
     agent.write(encodeMessage({ type: "state", sessionId, runState: "ended", exitCode }));
     agent.end();
@@ -195,6 +202,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   });
 
   function submitPtyInstruction(message, done) {
+    agent.write(encodeMessage({ type: "state", sessionId, runState: "running" }));
     const input = formatPtyInstructionInput(provider, message.text);
     ptyProcess.write(input);
     setTimeout(() => {
@@ -207,6 +215,20 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
       }));
       done();
     }, 50);
+  }
+
+  function schedulePtyIdleReport(currentProvider) {
+    if (!["codex", "claude"].includes(currentProvider)) return;
+    clearTimeout(idleReportTimer);
+    idleReportTimer = setTimeout(() => {
+      const report = extractPtyIdleReport(currentProvider, ptyBuffer);
+      if (!report || report === lastIdleReport) return;
+
+      lastIdleReport = report;
+      agent.write(encodeMessage({ type: "output", sessionId, stream: "report", chunk: `${report}\n` }));
+      agent.write(encodeMessage({ type: "state", sessionId, runState: "waiting" }));
+    }, 900);
+    idleReportTimer.unref?.();
   }
 }
 
