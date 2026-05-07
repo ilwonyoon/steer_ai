@@ -121,6 +121,19 @@ function classifyActionCard(session, displayLines, timing = {}) {
     };
   }
 
+  if (session.run_state === "waiting") {
+    return {
+      category: "waiting",
+      priority: "normal",
+      title: `${titlePrefix} is waiting`,
+      summary,
+      actionPrompt: "Send the next instruction so the session can continue.",
+      options: ["Continue", "Summarize result", "Start next task"],
+      state: "active",
+      highlightedLineIndexes: highlightIndexes(displayLines, ["complete", "completed", "done", "success", "passed", "next"])
+    };
+  }
+
   if (session.run_state === "ended" || hasAny(lower, ["complete", "completed", "done", "success", "passed"])) {
     return {
       category: "completion",

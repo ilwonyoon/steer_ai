@@ -47,7 +47,8 @@ Steer classification turns recent session output into one action card at most. T
 - `blocker`: error, failed command, permission/approval issue, disconnected session, or explicit blocked state. Active, usually urgent.
 - `decision`: explicit choice, option set, confirmation request, or architectural/product decision. Active.
 - `question`: direct question or request for input. Active.
-- `completion`: completed work or successful result. Done/silent unless notifications later opt in.
+- `waiting`: the provider stopped and returned control to the user. Active by default, even when the text looks like completion or progress, because the user must decide the next instruction.
+- `completion`: completed work or successful result while the session is not waiting. Done/silent unless notifications later opt in.
 - `progress`: non-actionable running output. Done/silent.
 - `answered`: latest user instruction has been delivered and no newer actionable AI output exists. Done/silent.
 

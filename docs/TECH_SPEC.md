@@ -93,7 +93,7 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Receives delivery commands and injects/sends `Instruction` to the target session.
 - Updates session state on child/protocol exit.
 
-Current heuristic card generator: after transcript/state updates, SteerAgent stores a latest `TerminalExcerpt` and one active `ActionCard` per session. It classifies transcript tails into `blocker`, `decision`, `question`, `completion`, or `progress` using local keyword/state rules. Claude `Stop` hooks can supply `last_assistant_message` as a cleaner terminal/action source, while PTY capture remains the durable fallback. This is a pre-LLM classifier scaffold for dogfooding and will be replaced or augmented by the classifier JSON contract.
+Current heuristic card generator: after transcript/state updates, SteerAgent stores a latest `TerminalExcerpt` and one active `ActionCard` per session. It classifies transcript tails into `blocker`, `decision`, `question`, `waiting`, `completion`, or `progress` using local keyword/state rules. `waiting` is active by default even if the stopped output reads like a completion report, because a stopped agent needs the user's next instruction. Claude `Stop` hooks can supply `last_assistant_message` as a cleaner terminal/action source, while PTY capture remains the durable fallback. This is a pre-LLM classifier scaffold for dogfooding and will be replaced or augmented by the classifier JSON contract.
 
 ### SteerAgent
 

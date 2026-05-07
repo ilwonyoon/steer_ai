@@ -136,7 +136,7 @@ Exit criteria:
 Goal: make reports actionable without becoming noisy.
 
 - [x] Define classifier JSON contract.
-- [x] Add first heuristic categories: `progress`, `completion`, `decision`, `blocker`, `question`.
+- [x] Add first heuristic categories: `progress`, `completion`, `waiting`, `decision`, `blocker`, `question`.
 - [x] Generate first `ActionCard` rows with `priority`, `summary`, `actionPrompt`, and `options`.
 - [x] Add regression tests for real Codex chrome/noise and answered-card lifecycle failures.
 - [x] Add regression coverage for Claude Stop hook -> active action card creation.
@@ -217,7 +217,7 @@ The first implementation spike uses Node for speed: a Unix domain socket `SteerA
 
 Multiline injection now uses provider-specific PTY formatting. Claude/Codex multiline prompts are sent with bracketed paste plus a final submit key; generic custom wrappers preserve raw multiline text. Regression tests cover the input formatter, and an interactive Codex smoke test returned `two` for a multiline prompt.
 
-Claude hook bridge is now available for cleaner action-card creation. `steer install-claude-hooks` writes `.claude/settings.local.json` commands for Stop/Notification/StopFailure/SessionEnd, and `steer claude` exports `STEER_SESSION_ID` so hook events attach to the wrapped session. Stop hooks append `last_assistant_message` to the transcript and mark the session waiting; replies still use the wrapper-owned PTY channel.
+Claude hook bridge is now available for cleaner action-card creation. `steer install-claude-hooks` writes `.claude/settings.local.json` commands for Stop/Notification/StopFailure/SessionEnd, and `steer claude` exports `STEER_SESSION_ID` so hook events attach to the wrapped session. Stop hooks append `last_assistant_message` to the transcript and mark the session waiting; waiting sessions stay as active cards even when the final message looks like a completion report. Replies still use the wrapper-owned PTY channel.
 
 ### 2026-05-06: Claude Stream JSON Adapter
 

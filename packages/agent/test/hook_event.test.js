@@ -50,3 +50,48 @@ test("Claude Stop hook creates an active action card from the final assistant me
   assert.match(card.summary, /Option B/);
   assert.deepEqual(JSON.parse(card.options_json), ["Use your recommendation", "Pick simpler option", "Explain options"]);
 });
+
+test("Claude Stop hook keeps completion reports active because the session stopped", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "steer-agent-hook-"));
+  const dbPath = path.join(tempDir, "steer.sqlite");
+  const store = createStore(dbPath);
+
+  store.upsertSession({
+    id: "claude-complete-stop",
+    provider: "claude",
+    adapterKind: "pty-bridge",
+    command: "claude",
+    args: [],
+    cwd: tempDir,
+    pid: 123,
+    runState: "running",
+    createdAt: "2026-05-06T23:00:00.000Z",
+    updatedAt: "2026-05-06T23:00:00.000Z",
+    currentRoomId: store.defaultRoomId
+  });
+
+  store.recordHookEvent({
+    sessionId: "claude-complete-stop",
+    provider: "claude",
+    eventName: "Stop",
+    providerSessionId: "provider-session",
+    lastAssistantMessage: "Completed the requested change and all tests passed.",
+    rawPayload: {}
+  });
+  store.updateSessionState("claude-complete-stop", "waiting");
+  store.close();
+
+  const db = new DatabaseSync(dbPath);
+  const card = db.prepare(`
+    SELECT category, state, title, summary, options_json
+    FROM action_cards
+    WHERE session_id = ?
+  `).get("claude-complete-stop");
+  db.close();
+
+  assert.equal(card.category, "waiting");
+  assert.equal(card.state, "active");
+  assert.match(card.title, /is waiting/);
+  assert.match(card.summary, /tests passed/);
+  assert.deepEqual(JSON.parse(card.options_json), ["Continue", "Summarize result", "Start next task"]);
+});

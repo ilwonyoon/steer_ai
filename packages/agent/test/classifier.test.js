@@ -93,3 +93,24 @@ test("classifies decision prompts as active decision cards", () => {
   assert.equal(result.card.category, "decision");
   assert.equal(result.card.state, "active");
 });
+
+test("keeps stopped waiting sessions active even when the output looks complete", () => {
+  const result = classifyTranscript({
+    session: {
+      provider: "claude",
+      command: "claude",
+      run_state: "waiting"
+    },
+    entries: [
+      {
+        stream: "stdout",
+        timestamp: "2026-05-06T23:00:00.000Z",
+        chunk: "Completed the implementation and tests passed.\n"
+      }
+    ]
+  });
+
+  assert.equal(result.card.category, "waiting");
+  assert.equal(result.card.state, "active");
+  assert.deepEqual(result.card.options, ["Continue", "Summarize result", "Start next task"]);
+});
