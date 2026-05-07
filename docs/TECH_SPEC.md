@@ -86,13 +86,14 @@ room은 후속 확장 포인트로 모델에 포함하되, v1 UI에서는 기본
 - Interactive adapter: default provider launches use a Python PTY bridge so `steer claude` and `steer codex` look like normal terminal sessions while Steer captures output and can inject `steer send` instructions.
 - Interactive PTY injection: single-line instructions are typed then submitted. Claude/Codex multiline instructions use bracketed paste plus a final submit key so embedded newlines remain inside one prompt. Generic custom wrappers preserve raw multiline text because bracketed paste support is unknown.
 - Claude headless adapter: `steer claude --headless` uses Claude Code stream-json (`claude -p --input-format stream-json --output-format stream-json --replay-user-messages`), then evaluate TypeScript SDK if the CLI stream is insufficient.
+- Claude hook bridge: `steer install-claude-hooks` installs local project hooks that call `steer hook claude <event>`. `steer claude` exports `STEER_SESSION_ID` to the child process, so Claude `Stop`, `Notification`, `StopFailure`, and `SessionEnd` hooks can report structured events back to SteerAgent without breaking the bidirectional wrapper channel.
 - Codex headless adapter: `steer codex --headless` uses `codex app-server --listen stdio://` JSON-RPC. Start a thread with `thread/start`, submit user instructions with `turn/start`, stream `item/agentMessage/delta`, and use `turn/steer` when a turn is already active.
 - Fallback adapter: use pty ownership when no provider-native protocol is viable.
 - Streams transcript/event chunks and heartbeat/state to SteerAgent.
 - Receives delivery commands and injects/sends `Instruction` to the target session.
 - Updates session state on child/protocol exit.
 
-Current heuristic card generator: after transcript/state updates, SteerAgent stores a latest `TerminalExcerpt` and one active `ActionCard` per session. It classifies transcript tails into `blocker`, `decision`, `question`, `completion`, or `progress` using local keyword/state rules. This is a pre-LLM classifier scaffold for dogfooding and will be replaced or augmented by the classifier JSON contract.
+Current heuristic card generator: after transcript/state updates, SteerAgent stores a latest `TerminalExcerpt` and one active `ActionCard` per session. It classifies transcript tails into `blocker`, `decision`, `question`, `completion`, or `progress` using local keyword/state rules. Claude `Stop` hooks can supply `last_assistant_message` as a cleaner terminal/action source, while PTY capture remains the durable fallback. This is a pre-LLM classifier scaffold for dogfooding and will be replaced or augmented by the classifier JSON contract.
 
 ### SteerAgent
 
@@ -103,6 +104,8 @@ Current heuristic card generator: after transcript/state updates, SteerAgent sto
 - Prototype may use TypeScript/Node; production should evaluate Swift or Rust plus XPC.
 
 Current spike: Node `SteerAgent` listens on `~/.steer/steer.sock`, keeps active sockets in memory, writes transcripts to `~/.steer/sessions/<sessionId>.log`, persists rooms/sessions/messages/instructions/transcript entries/metric events to `~/.steer/steer.sqlite`, and routes `send` requests to the wrapper's persistent socket. CLI commands auto-start the agent in the background if the socket is missing. This validates the local report/instruct loop before classification and Mac app ingestion are added.
+
+Claude hook event ingest: `hook_event` messages record hook metadata as metric events, append `last_assistant_message` into transcript entries, and update session state (`Stop` -> `waiting`, `Notification`/`StopFailure` -> `blocked`, `SessionEnd` -> `ended`). The same action-card lifecycle applies: user reply injection resolves the active card for that session.
 
 Claude smoke test: `steer claude --headless --max-budget-usd 0.02` plus `steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."` successfully returned `STEER_CLAUDE_OK` through Claude Code stream-json. The headless adapter currently marks state `running` on instruction injection and `waiting` when a Claude `result` event arrives.
 

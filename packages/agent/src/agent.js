@@ -32,6 +32,9 @@ const server = net.createServer((socket) => {
       case "send":
         routeInstruction(message, send);
         break;
+      case "hook_event":
+        recordHookEvent(message, send);
+        break;
       case "sessions":
         send({
           type: "sessions",
@@ -139,6 +142,32 @@ function updateState(message) {
   store.updateSessionState(message.sessionId, message.runState, message.exitCode ?? null);
 }
 
+function recordHookEvent(message, send) {
+  const session = sessions.get(message.sessionId);
+  if (!session) {
+    send({ type: "error", error: `session not found: ${message.sessionId}` });
+    return;
+  }
+
+  store.recordHookEvent({
+    sessionId: message.sessionId,
+    provider: message.provider,
+    eventName: message.eventName,
+    providerSessionId: message.providerSessionId,
+    transcriptPath: message.transcriptPath,
+    lastAssistantMessage: message.lastAssistantMessage,
+    message: message.message,
+    rawPayload: message.rawPayload
+  });
+
+  const runState = runStateForHookEvent(message);
+  if (runState) {
+    updateState({ sessionId: message.sessionId, runState });
+  }
+
+  send({ type: "hook_recorded", sessionId: message.sessionId, eventName: message.eventName });
+}
+
 function routeInstruction(message, send) {
   const session = sessions.get(message.sessionId);
   if (!session) {
@@ -168,6 +197,20 @@ function routeInstruction(message, send) {
     chunk: `[user] ${message.text}\n`
   });
   send({ type: "queued", sessionId: message.sessionId, instructionId });
+}
+
+function runStateForHookEvent(message) {
+  switch (message.eventName) {
+    case "Stop":
+      return "waiting";
+    case "StopFailure":
+    case "Notification":
+      return "blocked";
+    case "SessionEnd":
+      return "ended";
+    default:
+      return null;
+  }
 }
 
 function shutdown() {

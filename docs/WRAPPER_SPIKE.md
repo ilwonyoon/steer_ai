@@ -104,6 +104,7 @@ Codex returned `two`, proving multiline text can be pasted into the interactive 
 - Multiline PTY input must not be written as raw newline-separated keystrokes for Claude/Codex. Use bracketed paste plus a final submit key.
 - Generic `steer wrap -- <command>` cannot assume bracketed paste support, so it preserves raw multiline text.
 - If the agent process restarts, existing wrapper sockets are not durable yet. Active terminal sessions may keep running, but Steer delivery requires launching a new wrapped session.
+- Claude hooks are now a reporting bridge, not the control channel. `steer install-claude-hooks` writes local Claude hook commands, and `steer hook claude Stop` forwards `last_assistant_message` into SteerAgent for cleaner action-card classification. The session still needs to be launched through `steer claude` so `STEER_SESSION_ID` is available and reply injection remains possible.
 - Provider-native headless adapters avoid terminal repaint noise but still need approval/interruption handling.
 
 ## Known Limits
@@ -116,7 +117,7 @@ Codex returned `two`, proving multiline text can be pasted into the interactive 
 
 ## Next
 
-1. Add prompt-ready/waiting detection hardening for Claude and Codex.
-2. Add provider-native approval/request handling for Codex app-server events.
-3. Add transcript excerpt extraction and classifier-generated action card rows.
+1. Dogfood Claude Stop hook classification on real `steer claude` sessions.
+2. Add prompt-ready/waiting detection hardening for Claude and Codex.
+3. Add provider-native approval/request handling for Codex app-server events.
 4. Replace the Python PTY bridge with a packaged Swift/Rust helper if dogfooding shows bridge limits.

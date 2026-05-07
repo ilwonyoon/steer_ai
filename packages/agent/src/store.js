@@ -223,6 +223,36 @@ export function createStore(filePath = databasePath) {
     },
     resolveActionCardsForSession(sessionId) {
       statements.resolveActionCardsForSession.run(new Date().toISOString(), sessionId);
+    },
+    recordHookEvent(event) {
+      recordMetric({
+        sessionId: event.sessionId,
+        type: "hook_event",
+        metadata: {
+          provider: event.provider,
+          eventName: event.eventName,
+          providerSessionId: event.providerSessionId,
+          transcriptPath: event.transcriptPath
+        }
+      });
+
+      const assistantMessage = normalizeHookText(event.lastAssistantMessage);
+      if (assistantMessage) {
+        this.appendTranscript({
+          sessionId: event.sessionId,
+          stream: "stdout",
+          chunk: `${assistantMessage}\n`
+        });
+      }
+
+      const hookMessage = normalizeHookText(event.message);
+      if (hookMessage) {
+        this.appendTranscript({
+          sessionId: event.sessionId,
+          stream: "system",
+          chunk: `[${event.provider ?? "provider"} ${event.eventName}] ${hookMessage}\n`
+        });
+      }
     }
   };
 
@@ -266,6 +296,12 @@ function transcriptMessageForStream(stream, chunk) {
   if (stream === "user") return { direction: "user_to_agent", source: "user" };
   if (stream === "system") return { direction: "system", source: "wrapper" };
   return { direction: "agent_to_user", source: "wrapper" };
+}
+
+function normalizeHookText(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 const schemaSql = `

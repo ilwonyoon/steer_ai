@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
 import { socketPath } from "../../agent/src/paths.js";
 import { formatPtyInstructionInput } from "./pty_input.js";
+import { installClaudeHooks, normalizeHookPayload, parseHookInput } from "./hooks.js";
 
 const [, , command, ...args] = process.argv;
 const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
@@ -29,6 +30,12 @@ switch (command) {
     break;
   case "send":
     await sendInstruction(args);
+    break;
+  case "hook":
+    await reportHookEvent(args);
+    break;
+  case "install-claude-hooks":
+    await installClaudeHooksCommand();
     break;
   case "sessions":
     await listSessions();
@@ -55,7 +62,11 @@ async function wrapProvider(provider, childCommand, childArgs) {
   const agent = await connectToAgent();
   const child = spawn(childCommand, childArgs, {
     cwd: process.cwd(),
-    env: process.env,
+    env: {
+      ...process.env,
+      STEER_PROVIDER: provider,
+      STEER_SESSION_ID: sessionId
+    },
     stdio: ["pipe", "pipe", "pipe"]
   });
 
@@ -115,6 +126,8 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      STEER_PROVIDER: provider,
+      STEER_SESSION_ID: sessionId,
       STEER_PTY_COLS: String(process.stdout.columns || 80),
       STEER_PTY_ROWS: String(process.stdout.rows || 24)
     },
@@ -281,7 +294,11 @@ async function runClaudeHeadlessAdapter(args) {
   ];
   const child = spawn("claude", claudeArgs, {
     cwd: process.cwd(),
-    env: process.env,
+    env: {
+      ...process.env,
+      STEER_PROVIDER: "claude",
+      STEER_SESSION_ID: sessionId
+    },
     stdio: ["pipe", "pipe", "pipe"]
   });
 
@@ -520,6 +537,35 @@ async function sendInstruction(args) {
   console.log(JSON.stringify(response, null, 2));
 }
 
+async function reportHookEvent(args) {
+  const [provider, eventName] = args;
+  const rawInput = fs.readFileSync(0, "utf8");
+  let payload;
+
+  try {
+    payload = parseHookInput(rawInput);
+  } catch (error) {
+    process.stderr.write(`[steer hook] ignored invalid JSON: ${error.message}\n`);
+    return;
+  }
+
+  const event = normalizeHookPayload(provider, eventName, payload);
+  if (!event.sessionId) {
+    process.stderr.write("[steer hook] missing STEER_SESSION_ID; start the session with steer claude\n");
+    return;
+  }
+
+  const response = await requestAgent({ type: "hook_event", ...event });
+  if (response.type === "error") {
+    process.stderr.write(`[steer hook] ${response.error}\n`);
+  }
+}
+
+async function installClaudeHooksCommand() {
+  const settingsPath = installClaudeHooks();
+  console.log(`Installed Steer Claude hooks at ${settingsPath}`);
+}
+
 async function listSessions() {
   const response = await requestAgent({ type: "sessions" });
   console.log(JSON.stringify(response.sessions ?? [], null, 2));
@@ -593,6 +639,8 @@ function printUsage() {
   steer codex --raw [...codex interactive args]
   steer sessions
   steer send <sessionId> <instruction>
+  steer hook <provider> <eventName>
+  steer install-claude-hooks
 `);
 }
 

@@ -87,6 +87,7 @@ Goal: prove we can own a CLI session and safely inject input.
 - [x] Detect prompt-ready / waiting states for Claude stream-json result events.
 - [x] Inject single-line instruction into a wrapped process.
 - [x] Test multiline injection behavior.
+- [x] Add Claude hook bridge for Stop/Notification events while preserving wrapper-owned input.
 - [x] Document failure cases and edge cases.
 
 Exit criteria:
@@ -138,6 +139,7 @@ Goal: make reports actionable without becoming noisy.
 - [x] Add first heuristic categories: `progress`, `completion`, `decision`, `blocker`, `question`.
 - [x] Generate first `ActionCard` rows with `priority`, `summary`, `actionPrompt`, and `options`.
 - [x] Add regression tests for real Codex chrome/noise and answered-card lifecycle failures.
+- [x] Add regression coverage for Claude Stop hook -> active action card creation.
 - [ ] Run classifier against a broader real transcript sample set.
 - [ ] Track false positive and false negative notifications.
 - [ ] Tune prompts for high precision on `requiresAction`.
@@ -214,6 +216,8 @@ Happy research showed that current Happy is not simply a raw pty wrapper. Claude
 The first implementation spike uses Node for speed: a Unix domain socket `SteerAgent`, a `steer wrap -- <command>` wrapper, provider shims for `steer claude` and `steer codex`, transcript logs under `~/.steer/sessions`, and `steer send <sessionId> <instruction>` for local instruction injection. It first proved bidirectional delivery with a wrapped `node -i` REPL, then moved default local launches onto a Python PTY bridge so `steer claude` and `steer codex` behave like normal terminal CLIs.
 
 Multiline injection now uses provider-specific PTY formatting. Claude/Codex multiline prompts are sent with bracketed paste plus a final submit key; generic custom wrappers preserve raw multiline text. Regression tests cover the input formatter, and an interactive Codex smoke test returned `two` for a multiline prompt.
+
+Claude hook bridge is now available for cleaner action-card creation. `steer install-claude-hooks` writes `.claude/settings.local.json` commands for Stop/Notification/StopFailure/SessionEnd, and `steer claude` exports `STEER_SESSION_ID` so hook events attach to the wrapped session. Stop hooks append `last_assistant_message` to the transcript and mark the session waiting; replies still use the wrapper-owned PTY channel.
 
 ### 2026-05-06: Claude Stream JSON Adapter
 
