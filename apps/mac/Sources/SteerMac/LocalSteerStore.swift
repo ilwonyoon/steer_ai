@@ -256,10 +256,22 @@ private func makeTerminalLines(from displayLines: [String], category: String) ->
     case "completion": .success
     default: .standard
     }
-    let lines = displayLines
-        .map { normalizeTerminalDisplayLine($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        .filter(isMeaningfulTerminalLine)
-        .map { TerminalLine($0, kind: kind(forTerminalLine: $0, fallback: fallbackKind)) }
+    let normalizedLines = displayLines.map { normalizeTerminalDisplayLine($0) }
+    var lines: [TerminalLine] = []
+
+    for (index, line) in normalizedLines.enumerated() {
+        if isMeaningfulTerminalLine(line) {
+            lines.append(TerminalLine(line, kind: kind(forTerminalLine: line, fallback: fallbackKind)))
+            continue
+        }
+
+        if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !lines.isEmpty,
+           lines.last?.text.isEmpty == false,
+           normalizedLines[(index + 1)...].contains(where: isMeaningfulTerminalLine) {
+            lines.append(TerminalLine("", kind: .muted))
+        }
+    }
 
     return lines.ifEmpty([TerminalLine("[no transcript yet]", kind: .muted)])
 }
@@ -364,131 +376,131 @@ private func collapseTerminalWhitespace(_ value: String) -> String {
 }
 
 private func normalizeTerminalDisplayLine(_ value: String) -> String {
-    collapseTerminalWhitespace(
-        value.replacingOccurrences(
-            of: "\\?•Work(?:ing)?\\b.*$",
-            with: "?",
-            options: [.regularExpression, .caseInsensitive]
-        )
+    value.replacingOccurrences(
+        of: "\\?•Work(?:ing)?\\b.*$",
+        with: "?",
+        options: [.regularExpression, .caseInsensitive]
     )
+    .trimmingCharacters(in: .newlines)
 }
 
 private func isMeaningfulTerminalLine(_ line: String) -> Bool {
-    guard !line.isEmpty else { return false }
-    guard line.range(of: "[A-Za-z0-9가-힣⚠✖✔›>]", options: .regularExpression) != nil else {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    guard trimmed.range(of: "[A-Za-z0-9가-힣⚠✖✔›>]", options: .regularExpression) != nil else {
         return false
     }
-    if line.range(of: "^\\s*(?:\\[user\\]|\\[steer\\])", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "^(?:\\[user\\]|\\[steer\\])", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^\\s*›", options: .regularExpression) != nil {
+    if trimmed.range(of: "^›", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "^gpt-[\\w.-]+.*·", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "^gpt-[\\w.-]+.*·", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^\\s*[A-Za-z]{1,2}\\s*$", options: .regularExpression) != nil {
+    if trimmed.range(of: "^[A-Za-z]{1,2}$", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "^\\]1[01];\\?\\\\?$", options: .regularExpression) != nil {
+    if trimmed.range(of: "^\\]1[01];\\?\\\\?$", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "^Tip: Try the Codex App", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "^Tip: Try the Codex App", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "^https://chatgpt.com/codex", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "^https://chatgpt.com/codex", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Under-development features enabled", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Under-development features enabled", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "features are incomplete", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "features are incomplete", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "suppress_unstable_features_warning", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "suppress_unstable_features_warning", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "config.toml", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "config.toml", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "MCP client for `?pencil`? failed", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "MCP client for `?pencil`? failed", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "MCP startup failed", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "MCP startup failed", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "No such file or direc", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "No such file or direc", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "os error 2", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "os error 2", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "MCP startup incomplete", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "MCP startup incomplete", options: .caseInsensitive) != nil {
         return false
     }
-    if line.localizedCaseInsensitiveContains("esc to interr") {
+    if trimmed.localizedCaseInsensitiveContains("esc to interr") {
         return false
     }
-    if line.localizedCaseInsensitiveContains("esc again to edit previous message") {
+    if trimmed.localizedCaseInsensitiveContains("esc again to edit previous message") {
         return false
     }
-    if line.localizedCaseInsensitiveContains("tab to queue message") {
+    if trimmed.localizedCaseInsensitiveContains("tab to queue message") {
         return false
     }
-    if line.range(of: "auto mode on", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "auto mode on", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "shift\\+tab", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "shift\\+tab", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "esc to interrupt", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "esc to interrupt", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "tokens?\\)", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "tokens?\\)", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "running stop hooks", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "running stop hooks", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Worked for", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Worked for", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Cultivating", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Cultivating", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Crunching", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Crunching", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "\\*?Worked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "\\*?Worked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "\\*?Baked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "\\*?Baked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^\\d+$", options: .regularExpression) != nil {
+    if trimmed.range(of: "^\\d+$", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "Starting MCP servers", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Starting MCP servers", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "SStt|WWoorr|MMCC|rrvv|sseerr", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "SStt|WWoorr|MMCC|rrvv|sseerr", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "(Working[•. ]*){2,}", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "(Working[•. ]*){2,}", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^Wo•Wor", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "^Wo•Wor", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "xcodebui.*xcodebuild.*•", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "xcodebui.*xcodebuild.*•", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,
-       line.range(of: "/permissions", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,
+       trimmed.range(of: "/permissions", options: .caseInsensitive) != nil {
         return false
     }
-    if line.count > 80,
-       line.range(of: "codex_a|xcodebui|xcodebuildmcp|context left", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.count > 80,
+       trimmed.range(of: "codex_a|xcodebui|xcodebuildmcp|context left", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
     return true
