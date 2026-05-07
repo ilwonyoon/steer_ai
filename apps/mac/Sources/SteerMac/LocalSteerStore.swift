@@ -520,6 +520,9 @@ private func isMeaningfulTerminalLine(_ line: String) -> Bool {
     if line.range(of: "SStt|WWoorr|MMCC|rrvv|sseerr", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
+    if line.range(of: "(Working[•. ]*){2,}", options: [.regularExpression, .caseInsensitive]) != nil {
+        return false
+    }
     if line.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,
        line.range(of: "/permissions", options: .caseInsensitive) != nil {
         return false

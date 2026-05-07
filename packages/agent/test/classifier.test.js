@@ -29,6 +29,15 @@ test("separates Codex prompt chrome appended after content", () => {
   assert.deepEqual(lines, ["• two"]);
 });
 
+test("filters repeated Codex working repaint lines", () => {
+  const lines = transcriptDisplayLines(`
+    Working•Working•WorkingWorking1•
+    • Hello. How can I help?orking
+  `);
+
+  assert.deepEqual(lines, ["• Hello. How can I help?orking"]);
+});
+
 test("classifies direct questions as active question cards", () => {
   const result = classifyTranscript({
     session: codexSession,

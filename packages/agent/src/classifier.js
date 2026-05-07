@@ -225,6 +225,7 @@ function isContentLineForAction(line) {
   if (/tab to queue message/i.test(line)) return false;
   if (/Starting MCP servers/i.test(line)) return false;
   if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(line)) return false;
+  if (/(Working[•. ]*){2,}/i.test(line)) return false;
   if (/\/model\s+choose what model/i.test(line) && /\/permissions/i.test(line)) return false;
   if (/codex_a|xcodebui|xcodebuildmcp|context left/i.test(line) && line.length > 80) return false;
   return true;

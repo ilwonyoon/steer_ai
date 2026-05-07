@@ -4,7 +4,7 @@ struct TerminalExcerptView: View {
     let lines: [TerminalLine]
 
     var body: some View {
-        ScrollView([.vertical, .horizontal], showsIndicators: false) {
+        ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 5) {
                 ForEach(lines) { line in
                     Text(line.text.isEmpty ? " " : line.text)
@@ -12,7 +12,8 @@ struct TerminalExcerptView: View {
                         .foregroundStyle(color(for: line.kind))
                         .textSelection(.enabled)
                         .lineLimit(nil)
-                        .fixedSize(horizontal: true, vertical: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(.vertical, 2)
