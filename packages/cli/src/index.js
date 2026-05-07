@@ -127,6 +127,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   let ptyBuffer = "";
   let idleReportTimer = null;
   let lastIdleReport = "";
+  let terminalInputSinceLastSteerInstruction = false;
   const ptyProcess = spawnInteractivePtyProcess(provider, sessionId, childCommand, childArgs);
 
   agent.write(encodeMessage({
@@ -165,6 +166,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
   process.stdin.on("data", (chunk) => {
+    terminalInputSinceLastSteerInstruction = true;
     ptyProcess.write(chunk.toString("utf8"));
   });
 
@@ -202,6 +204,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   });
 
   function submitPtyInstruction(message, done) {
+    terminalInputSinceLastSteerInstruction = false;
     agent.write(encodeMessage({ type: "state", sessionId, runState: "running" }));
     const input = formatPtyInstructionInput(provider, message.text);
     ptyProcess.write(input);
@@ -221,6 +224,8 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     if (!["codex", "claude"].includes(currentProvider)) return;
     clearTimeout(idleReportTimer);
     idleReportTimer = setTimeout(() => {
+      if (terminalInputSinceLastSteerInstruction) return;
+
       const report = extractPtyIdleReport(currentProvider, ptyBuffer);
       if (!report || report === lastIdleReport) return;
 

@@ -1,3 +1,5 @@
+const MAX_DISPLAY_LINES = 120;
+
 export function classifyTranscript({ session, entries }) {
   const timing = transcriptTiming(entries);
   const cardEntries = selectActionSourceEntries(session, entries, timing.latestUserAt);
@@ -32,10 +34,15 @@ export function transcriptDisplayLines(rawText) {
     .split("\n")
     .flatMap(splitTerminalDisplayLine)
     .map(normalizeTerminalDisplayLine)
-    .filter(isMeaningfulTerminalLine)
-    .slice(-28);
+    .filter(isMeaningfulTerminalLine);
 
-  return lines.length > 0 ? lines : ["[no transcript yet]"];
+  if (lines.length === 0) return ["[no transcript yet]"];
+  if (lines.length <= MAX_DISPLAY_LINES) return lines;
+
+  return [
+    `[trimmed: showing last ${MAX_DISPLAY_LINES} lines]`,
+    ...lines.slice(-MAX_DISPLAY_LINES)
+  ];
 }
 
 function transcriptTiming(entries) {

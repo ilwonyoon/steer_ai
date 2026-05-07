@@ -66,6 +66,8 @@ open .build/SteerMac.app
 
 The Mac app reads stopped/actionable cards from `~/.steer/steer.sqlite` and sends replies through `steer send`. It is not a live terminal mirror: running sessions stay quiet until the AI stops and reports a blocker, question, decision, or waiting/completion message that needs the user's next instruction.
 
+Run `scripts/verify-steer-regression.sh` before changing wrapper lifecycle, hook ingest, classifier rules, Mac card loading, notifications, or terminal rendering. The product-level harness contract lives in `docs/HARNESS_ENGINEERING.md`.
+
 Current structure:
 
 ```text
