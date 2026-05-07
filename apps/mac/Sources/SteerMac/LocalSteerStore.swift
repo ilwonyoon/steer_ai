@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct LocalSteerStore {
     private let databaseURL: URL
@@ -14,7 +15,7 @@ struct LocalSteerStore {
             }
 
             do {
-                return try loadActionCards(databaseURL: databaseURL)
+                return try loadDashboardCards(databaseURL: databaseURL)
             } catch {
                 guard shouldFallbackToSessionCards(error) else {
                     return []
@@ -24,7 +25,7 @@ struct LocalSteerStore {
                     let sessions: [SessionRow] = try runSQLiteJSON(
                         databaseURL: databaseURL,
                         sql: """
-                        SELECT id, provider, adapter_kind, command, cwd, run_state, created_at, updated_at
+                        SELECT id, provider, adapter_kind, command, cwd, pid, run_state, created_at, updated_at
                         FROM sessions
                         ORDER BY
                           CASE run_state
@@ -101,6 +102,7 @@ private struct SessionRow: Decodable {
     let adapterKind: String?
     let command: String?
     let cwd: String?
+    let pid: Int?
     let runState: String
     let createdAt: String
     let updatedAt: String
@@ -111,6 +113,7 @@ private struct SessionRow: Decodable {
         case adapterKind = "adapter_kind"
         case command
         case cwd
+        case pid
         case runState = "run_state"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -130,6 +133,7 @@ private struct ActionCardRow: Decodable {
     let provider: String
     let command: String?
     let cwd: String?
+    let pid: Int?
     let runState: String
     let category: String
     let priority: String
@@ -146,6 +150,7 @@ private struct ActionCardRow: Decodable {
         case provider
         case command
         case cwd
+        case pid
         case runState = "run_state"
         case category
         case priority
@@ -158,6 +163,14 @@ private struct ActionCardRow: Decodable {
     }
 }
 
+private func loadDashboardCards(databaseURL: URL) throws -> [ActionCard] {
+    let actionCards = try loadActionCards(databaseURL: databaseURL)
+    let actionSessionIds = Set(actionCards.map(\.sessionId))
+    let sessionCards = try loadSessionCards(databaseURL: databaseURL, excluding: actionSessionIds)
+
+    return Array((actionCards + sessionCards).prefix(12))
+}
+
 private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
     let rows: [ActionCardRow] = try runSQLiteJSON(
         databaseURL: databaseURL,
@@ -168,6 +181,7 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
           s.provider,
           s.command,
           s.cwd,
+          s.pid,
           s.run_state,
           ac.category,
           ac.priority,
@@ -199,7 +213,61 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
         """
     )
 
-    return rows.map(makeCard(row:))
+    return rows.filter(isLiveActionCardRow).map(makeCard(row:))
+}
+
+private func loadSessionCards(databaseURL: URL, excluding excludedSessionIds: Set<String>) throws -> [ActionCard] {
+    let exclusionClause: String
+    if excludedSessionIds.isEmpty {
+        exclusionClause = ""
+    } else {
+        let quotedIds = excludedSessionIds
+            .map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
+            .joined(separator: ",")
+        exclusionClause = "AND id NOT IN (\(quotedIds))"
+    }
+
+    let rows: [SessionRow] = try runSQLiteJSON(
+        databaseURL: databaseURL,
+        sql: """
+        SELECT id, provider, adapter_kind, command, cwd, pid, run_state, created_at, updated_at
+        FROM sessions
+        WHERE run_state IN ('running', 'waiting', 'blocked')
+          \(exclusionClause)
+        ORDER BY
+          CASE run_state
+            WHEN 'waiting' THEN 0
+            WHEN 'blocked' THEN 1
+            WHEN 'running' THEN 2
+            ELSE 3
+          END,
+          updated_at DESC
+        LIMIT 12;
+        """
+    )
+
+    return rows.filter(isLiveSessionRow).map { session in
+        let entries = (try? recentTranscriptEntries(for: session.id, databaseURL: databaseURL)) ?? []
+        return makeCard(session: session, entries: entries)
+    }
+}
+
+private func isLiveActionCardRow(_ row: ActionCardRow) -> Bool {
+    guard ["running", "waiting", "blocked"].contains(row.runState) else {
+        return true
+    }
+    return isLiveProcess(pid: row.pid)
+}
+
+private func isLiveSessionRow(_ row: SessionRow) -> Bool {
+    isLiveProcess(pid: row.pid)
+}
+
+private func isLiveProcess(pid: Int?) -> Bool {
+    guard let pid, pid > 0 else {
+        return true
+    }
+    return kill(pid_t(pid), 0) == 0
 }
 
 private func recentTranscriptEntries(for sessionId: String, databaseURL: URL) throws -> [TranscriptEntryRow] {
