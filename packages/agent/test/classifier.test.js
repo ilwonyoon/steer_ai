@@ -138,7 +138,10 @@ test("does not open an active card while the session is still running", () => {
   assert.deepEqual(result.card.options, []);
 });
 
-test("does not classify interactive PTY repaint text as an action source", () => {
+test("does not classify interactive PTY repaint text as a content source", () => {
+  // While the session is just starting and no trusted output has arrived,
+  // we surface a ready card. The card body must NOT be sourced from raw PTY
+  // (no "Need answer?" leaking in); it must use the canned ready summary.
   const result = classifyTranscript({
     session: {
       provider: "claude",
@@ -155,8 +158,9 @@ test("does not classify interactive PTY repaint text as an action source", () =>
     ]
   });
 
-  assert.equal(result.card.category, "progress");
-  assert.equal(result.card.state, "done");
+  assert.equal(result.card.category, "waiting");
+  assert.equal(result.card.state, "active");
+  assert.match(result.card.summary, /session opened/);
   assert.deepEqual(result.displayLines, ["[no transcript yet]"]);
 });
 

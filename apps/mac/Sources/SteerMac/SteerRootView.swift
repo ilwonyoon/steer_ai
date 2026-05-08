@@ -91,15 +91,6 @@ struct SteerRootView: View {
             }
 
             Spacer()
-
-            HStack(spacing: 8) {
-                RoundIconButton(systemName: "chevron.left") {
-                    move(-1)
-                }
-                RoundIconButton(systemName: "chevron.right") {
-                    move(1)
-                }
-            }
         }
         .frame(height: 44)
     }
@@ -272,27 +263,6 @@ struct SteerRootView: View {
     }
 }
 
-private struct RoundIconButton: View {
-    let systemName: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(SteerColors.ink)
-                .frame(width: 36, height: 36)
-        }
-        .buttonStyle(.plain)
-        .background(SteerColors.controlFill, in: Circle())
-        .overlay {
-            Circle()
-                .stroke(SteerColors.controlStroke, lineWidth: 1)
-        }
-        .shadow(color: SteerColors.controlShadow, radius: 12, y: 5)
-        .accessibilityLabel(systemName == "chevron.left" ? "Previous card" : "Next card")
-    }
-}
 
 private struct CardBackplate: View {
     let offset: CGFloat

@@ -2,11 +2,18 @@ import AppKit
 import Combine
 
 @MainActor
-final class SteerAppDelegate: NSObject, NSApplicationDelegate {
+final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let status = SteerStatus()
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
     private var cancellables: Set<AnyCancellable> = []
+
+    nonisolated func menuWillOpen(_ menu: NSMenu) {
+        for item in menu.items { item.image = nil }
+    }
+    nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
+        for item in menu.items { item.image = nil }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
@@ -38,18 +45,30 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate {
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.toolTip = "Open Steer"
-        item.button?.target = self
-        item.button?.action = #selector(handleStatusClick(_:))
-        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Open Steer", action: #selector(openSteer), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Open agent log", action: #selector(openAgentLog), keyEquivalent: ""))
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Steer", action: #selector(quitSteer), keyEquivalent: "q"))
-        for menuItem in menu.items { menuItem.target = self }
+        menu.showsStateColumn = false
+        let openItem = NSMenuItem(title: "Open Steer", action: #selector(openSteer), keyEquivalent: "")
+        openItem.target = self
+        let settingsItem = NSMenuItem(title: "Settings", action: #selector(handleConfigure), keyEquivalent: "")
+        settingsItem.target = self
+        let logItem = NSMenuItem(title: "Open agent log", action: #selector(openAgentLog), keyEquivalent: "")
+        logItem.target = self
+        let quitItem = NSMenuItem(title: "Quit Steer", action: #selector(quitSteer), keyEquivalent: "q")
+        quitItem.target = self
 
+        menu.addItem(openItem)
+        menu.addItem(settingsItem)
+        menu.addItem(logItem)
+        menu.addItem(.separator())
+        menu.addItem(quitItem)
+        for menuItem in menu.items {
+            menuItem.image = nil
+            menuItem.indentationLevel = 0
+        }
+
+        menu.delegate = self
+        item.menu = menu
         statusItem = item
         statusMenu = menu
         refreshStatusItem(waitingCount: 0)
@@ -64,18 +83,6 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func handleStatusClick(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else {
-            openSteer()
-            return
-        }
-        if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
-            statusMenu?.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: sender)
-        } else {
-            openSteer()
-        }
-    }
-
     @objc private func openSteer() {
         NSApplication.shared.activate(ignoringOtherApps: true)
         for window in NSApplication.shared.windows where window.canBecomeKey {
@@ -84,13 +91,38 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func openSettings() {
+    @objc private func handleConfigure() {
+        openSettings()
+    }
+
+    private func openSettings() {
         NSApplication.shared.activate(ignoringOtherApps: true)
-        if #available(macOS 14, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+
+        // First try to drive SwiftUI's auto-installed Settings command via the
+        // app menu (the chain that Cmd+, would use). This is the path most
+        // likely to exist on macOS 14+.
+        if let appMenu = NSApp.mainMenu?.items.first?.submenu {
+            for item in appMenu.items {
+                let title = item.title
+                if title.contains("Settings") || title.contains("Preferences") || title == "환경설정…" || title == "설정…" {
+                    if let action = item.action {
+                        NSApp.sendAction(action, to: item.target, from: item)
+                        return
+                    }
+                }
+            }
         }
+
+        // Fallbacks: try the documented selectors directly.
+        let candidates: [Selector] = [
+            Selector(("showSettingsWindow:")),
+            Selector(("showPreferencesWindow:"))
+        ]
+        for selector in candidates {
+            if NSApp.sendAction(selector, to: nil, from: nil) { return }
+        }
+
+        NSLog("Steer: could not open Settings window; main menu items = \(NSApp.mainMenu?.items.first?.submenu?.items.map(\.title) ?? [])")
     }
 
     @objc private func openAgentLog() {

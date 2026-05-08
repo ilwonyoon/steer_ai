@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-08 (Settings Phase 1)
+Last updated: 2026-05-08 (ready-card + terminal-typing handoff)
 
 ## Purpose
 
@@ -162,6 +162,8 @@ Goal: make reports actionable without becoming noisy.
 - [x] Debounce action card refresh (200ms) for pty/stdout, flush immediately for report/user.
 - [x] Auto-reap zombie sessions and stale active cards on agent startup.
 - [x] `steer stats` CLI for session/card/instruction summary + avg reply→inject latency.
+- [x] Surface a `waiting` "ready" card the moment a session is registered (run_state=running, no trusted output, no user reply). Card body uses a canned summary; PTY content never sources card body.
+- [x] Auto-resolve the active card when the user types directly in the wrapped terminal (wrapper sends `user_input` debounced; agent records a synthetic user transcript entry and resolves the card). Prevents double-replying via Steer + terminal.
 - [ ] Run classifier against a broader real transcript sample set.
 - [ ] Track false positive and false negative notifications. *(dogfood-driven)*
 - [ ] Tune prompts for high precision on `requiresAction`. *(dogfood-driven)*
@@ -278,6 +280,15 @@ The PTY screen-scraping heuristic for codex (`pty_idle.js`) was structurally fra
 ### 2026-05-07: Workspace Layout Cleanup
 
 The repo previously sat at `~/Documents/Steer_ai/repo/` with stale doc copies in the parent. We collapsed the wrapper directory so the git repo root is `~/Documents/Steer_ai/` directly, repointed `npm link` so `/opt/homebrew/bin/steer` resolves to the Documents copy, and reset `~/Developer/steer_ai` (the abandoned older clone) to clean main. A backup of the pre-move state lives at `~/Documents/Steer_ai_backup_20260507/` for one-week safety.
+
+### 2026-05-08: Ready Card + Terminal Typing Handoff
+
+Two product-level changes to the classifier contract, both driven by dogfood-style observation that the user wanted *something* to happen the moment a session opens, and the user must never be asked to reply to a card while they are answering directly in the terminal:
+
+1. **Ready card**: a freshly registered running session with no trusted output and no user reply now produces a `waiting/active` card titled `… ready` with a canned summary ("session opened; send your first instruction"). PTY repaint never sources this card body. Once any trusted output (report/stdout/stderr) arrives, the card collapses to `progress/silent`.
+2. **Terminal typing handoff**: when the user types into the wrapped terminal, the wrapper sends a debounced `user_input` message (max once / 500ms). The agent appends a synthetic `user` transcript entry (`[user] (typed in terminal)`) and resolves the session's active cards so Steer doesn't ask for a reply that is already happening at the prompt.
+
+The two contract tests that previously asserted "PTY repaint never produces an active card" were updated to assert "PTY repaint never *sources card body content*" — the active flag is allowed for the ready phase.
 
 ### 2026-05-08: Document Folder TCC
 

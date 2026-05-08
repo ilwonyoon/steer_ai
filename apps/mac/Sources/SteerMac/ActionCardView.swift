@@ -29,7 +29,7 @@ struct ActionCardView: View {
 
             Divider()
 
-            ReplyDock(chips: card.chips, reply: $reply, onSend: onSend)
+            ReplyDock(chips: card.chips, reply: $reply, onSend: onSend, provider: card.provider)
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 20)

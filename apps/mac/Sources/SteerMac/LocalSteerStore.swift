@@ -141,11 +141,17 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
         WHERE ac.state = 'active'
           AND s.run_state != 'disconnected'
           AND ac.category IN ('blocker', 'decision', 'question', 'waiting')
-          AND EXISTS (
-            SELECT 1
-            FROM transcript_entries trusted
-            WHERE trusted.session_id = s.id
-              AND trusted.stream IN ('report', 'stdout', 'stderr')
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM transcript_entries trusted
+              WHERE trusted.session_id = s.id
+                AND trusted.stream IN ('report', 'stdout', 'stderr')
+            )
+            OR (
+              ac.category = 'waiting'
+              AND s.run_state = 'running'
+            )
           )
         ORDER BY
           CASE ac.priority

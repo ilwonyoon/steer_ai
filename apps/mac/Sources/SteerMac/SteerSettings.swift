@@ -12,18 +12,6 @@ final class SteerSettings: ObservableObject {
     @Published var soundEnabled: Bool {
         didSet { defaults.set(soundEnabled, forKey: Key.soundEnabled) }
     }
-    @Published var notifyBlocker: Bool {
-        didSet { defaults.set(notifyBlocker, forKey: Key.notifyBlocker) }
-    }
-    @Published var notifyQuestion: Bool {
-        didSet { defaults.set(notifyQuestion, forKey: Key.notifyQuestion) }
-    }
-    @Published var notifyDecision: Bool {
-        didSet { defaults.set(notifyDecision, forKey: Key.notifyDecision) }
-    }
-    @Published var notifyWaiting: Bool {
-        didSet { defaults.set(notifyWaiting, forKey: Key.notifyWaiting) }
-    }
     @Published var dndEnabled: Bool {
         didSet { defaults.set(dndEnabled, forKey: Key.dndEnabled) }
     }
@@ -48,10 +36,6 @@ final class SteerSettings: ObservableObject {
     private enum Key {
         static let notificationsEnabled = "steer.notifications.enabled"
         static let soundEnabled = "steer.notifications.sound"
-        static let notifyBlocker = "steer.notifications.category.blocker"
-        static let notifyQuestion = "steer.notifications.category.question"
-        static let notifyDecision = "steer.notifications.category.decision"
-        static let notifyWaiting = "steer.notifications.category.waiting"
         static let dndEnabled = "steer.notifications.dnd.enabled"
         static let dndStartHour = "steer.notifications.dnd.startHour"
         static let dndEndHour = "steer.notifications.dnd.endHour"
@@ -63,10 +47,6 @@ final class SteerSettings: ObservableObject {
         defaults.register(defaults: [
             Key.notificationsEnabled: true,
             Key.soundEnabled: true,
-            Key.notifyBlocker: true,
-            Key.notifyQuestion: true,
-            Key.notifyDecision: true,
-            Key.notifyWaiting: true,
             Key.dndEnabled: false,
             Key.dndStartHour: 22,
             Key.dndEndHour: 8,
@@ -75,10 +55,6 @@ final class SteerSettings: ObservableObject {
         ])
         notificationsEnabled = defaults.bool(forKey: Key.notificationsEnabled)
         soundEnabled = defaults.bool(forKey: Key.soundEnabled)
-        notifyBlocker = defaults.bool(forKey: Key.notifyBlocker)
-        notifyQuestion = defaults.bool(forKey: Key.notifyQuestion)
-        notifyDecision = defaults.bool(forKey: Key.notifyDecision)
-        notifyWaiting = defaults.bool(forKey: Key.notifyWaiting)
         dndEnabled = defaults.bool(forKey: Key.dndEnabled)
         dndStartHour = defaults.integer(forKey: Key.dndStartHour)
         dndEndHour = defaults.integer(forKey: Key.dndEndHour)
@@ -89,13 +65,7 @@ final class SteerSettings: ObservableObject {
     func shouldNotify(category: String) -> Bool {
         guard notificationsEnabled else { return false }
         if isInDoNotDisturb() { return false }
-        switch category {
-        case "blocker": return notifyBlocker
-        case "question": return notifyQuestion
-        case "decision": return notifyDecision
-        case "waiting": return notifyWaiting
-        default: return false
-        }
+        return ["blocker", "question", "decision", "waiting"].contains(category)
     }
 
     private func isInDoNotDisturb() -> Bool {
@@ -127,85 +97,131 @@ struct SteerSettingsView: View {
 
     var body: some View {
         TabView {
-            generalTab
+            GeneralPane(settings: settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
-            notificationsTab
+            NotificationsPane(settings: settings)
                 .tabItem { Label("Notifications", systemImage: "bell") }
-            aboutTab
+            AboutPane()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 460, height: 360)
+        .frame(width: 520, height: 440)
     }
+}
 
-    private var generalTab: some View {
+private struct GeneralPane: View {
+    @ObservedObject var settings: SteerSettings
+
+    var body: some View {
         Form {
-            Toggle("Always on top", isOn: $settings.alwaysOnTop)
-            Toggle("Open Steer at login", isOn: $settings.runAtLogin)
+            Section("Window") {
+                Toggle("Keep window on top of other apps", isOn: $settings.alwaysOnTop)
+                Toggle("Open Steer at login", isOn: $settings.runAtLogin)
+            }
+
+            Section("Folder access") {
+                Text("Steer usually doesn't need any extra permission. If a session under Documents, Desktop, or Downloads ever stops appearing, open Full Disk Access in System Settings, click the + button, and add Steer (the Reveal button below opens its location in Finder).")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    Button("Open Full Disk Access…") { openFullDiskAccess() }
+                    Button("Reveal Steer in Finder") { revealSteerInFinder() }
+                    Spacer()
+                }
+            }
         }
-        .padding(20)
+        .formStyle(.grouped)
     }
 
-    private var notificationsTab: some View {
+    private func openFullDiskAccess() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw) {
+                NSWorkspace.shared.open(url)
+                return
+            }
+        }
+    }
+
+    private func revealSteerInFinder() {
+        let url = Bundle.main.bundleURL
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+}
+
+private struct NotificationsPane: View {
+    @ObservedObject var settings: SteerSettings
+
+    var body: some View {
         Form {
-            Section {
-                Toggle("Show notifications", isOn: $settings.notificationsEnabled)
+            Section("Notifications") {
+                Toggle("Show banners for new action cards", isOn: $settings.notificationsEnabled)
                 Toggle("Play sound", isOn: $settings.soundEnabled)
                     .disabled(!settings.notificationsEnabled)
             }
-            Section("Notify on") {
-                Toggle("Blocker", isOn: $settings.notifyBlocker)
-                Toggle("Question", isOn: $settings.notifyQuestion)
-                Toggle("Decision", isOn: $settings.notifyDecision)
-                Toggle("Waiting", isOn: $settings.notifyWaiting)
-            }
-            .disabled(!settings.notificationsEnabled)
-            Section("Do not disturb") {
-                Toggle("Quiet hours", isOn: $settings.dndEnabled)
-                HStack {
-                    Stepper("Start: \(formatHour(settings.dndStartHour))",
-                            value: $settings.dndStartHour, in: 0...23)
-                    Stepper("End: \(formatHour(settings.dndEndHour))",
-                            value: $settings.dndEndHour, in: 0...23)
+
+            Section("Quiet hours") {
+                Toggle("Mute notifications during quiet hours", isOn: $settings.dndEnabled)
+                HStack(spacing: 18) {
+                    Stepper(value: $settings.dndStartHour, in: 0...23) {
+                        Text("Start \(formatHour(settings.dndStartHour))")
+                    }
+                    Stepper(value: $settings.dndEndHour, in: 0...23) {
+                        Text("End \(formatHour(settings.dndEndHour))")
+                    }
+                    Spacer()
                 }
                 .disabled(!settings.dndEnabled)
             }
             .disabled(!settings.notificationsEnabled)
         }
-        .padding(20)
-    }
-
-    private var aboutTab: some View {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
-        let steerHome = ProcessInfo.processInfo.environment["STEER_HOME"]
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".steer").path
-        return VStack(alignment: .leading, spacing: 12) {
-            Text("Steer")
-                .font(.system(size: 20, weight: .semibold))
-            Text("Version \(version) (\(build))")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Divider()
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Steer home").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                Text(steerHome).font(.system(size: 11, design: .monospaced))
-            }
-            HStack(spacing: 12) {
-                Button("Open agent log") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: "\(steerHome)/agent.log"))
-                }
-                Button("Open data folder") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: steerHome))
-                }
-            }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(20)
+        .formStyle(.grouped)
     }
 
     private func formatHour(_ hour: Int) -> String {
         let h = max(0, min(23, hour))
         return String(format: "%02d:00", h)
+    }
+}
+
+private struct AboutPane: View {
+    var body: some View {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+        let steerHome = ProcessInfo.processInfo.environment["STEER_HOME"]
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".steer").path
+
+        return Form {
+            Section("Steer") {
+                LabeledContent("Version") {
+                    Text("\(version) (\(build))")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Data folder") {
+                Text(steerHome)
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 10) {
+                    Button("Open data folder") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: steerHome))
+                    }
+                    Button("Open agent log") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: "\(steerHome)/agent.log"))
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }

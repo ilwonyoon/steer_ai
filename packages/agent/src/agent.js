@@ -57,6 +57,9 @@ const server = net.createServer((socket) => {
           store.resolveActionCardsForSession(message.sessionId);
         }
         break;
+      case "user_input":
+        handleUserInput(message);
+        break;
       default:
         send({ type: "error", error: `unknown message type: ${message.type}` });
     }
@@ -192,6 +195,17 @@ function updateState(message) {
     updatedAt: new Date().toISOString()
   });
   store.updateSessionState(message.sessionId, message.runState, message.exitCode ?? null);
+}
+
+function handleUserInput(message) {
+  const session = sessions.get(message.sessionId);
+  if (!session) return;
+  appendTranscript({
+    sessionId: message.sessionId,
+    stream: "user",
+    chunk: "[user] (typed in terminal)\n"
+  });
+  store.resolveActionCardsForSession(message.sessionId);
 }
 
 function recordHookEvent(message, send) {

@@ -128,7 +128,11 @@ test("lifecycle contract: disconnected sessions do not keep active cards", () =>
   assert.equal(card.category, "disconnected");
 });
 
-test("lifecycle contract: PTY repaint is never enough to create an active action card", () => {
+test("lifecycle contract: PTY repaint by itself surfaces a ready card, not a progress card", () => {
+  // A freshly registered session that has only emitted noisy PTY repaint
+  // (no trusted report/stdout/stderr, no user reply) is treated as
+  // "ready, waiting for first instruction". The card body is the canned
+  // ready summary - PTY content must not leak into it.
   const { store, dbPath } = createLifecycleStore();
 
   store.appendTranscript({
@@ -139,7 +143,7 @@ test("lifecycle contract: PTY repaint is never enough to create an active action
   store.close();
 
   const card = readCard(dbPath);
-  assert.equal(card.state, "done");
-  assert.equal(card.category, "progress");
-  assert.equal(card.summary, "[no transcript yet]");
+  assert.equal(card.state, "active");
+  assert.equal(card.category, "waiting");
+  assert.match(card.summary, /session opened/);
 });

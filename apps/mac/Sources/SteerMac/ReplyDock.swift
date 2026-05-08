@@ -5,6 +5,7 @@ struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
     var tint: Color = SteerColors.inputFill
+    var provider: ProviderKind = .custom
 
     var body: some View {
         inputField

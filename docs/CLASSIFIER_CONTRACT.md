@@ -73,6 +73,7 @@ Examples to filter:
 ## Lifecycle Rules
 
 - Only one active card per session.
-- When a user reply is injected, the current active card is resolved.
+- When a user reply is injected (Steer reply box) or when the user types directly into the wrapped terminal, the current active card is resolved.
 - After a reply, old pre-reply questions must not resurrect. Classification should inspect AI output after the latest user instruction.
 - Active cards should only appear for `blocker`, `decision`, `question`, or `waiting`.
+- A freshly registered session (`run_state="running"`, no trusted output, no user reply) surfaces a `waiting` "ready" card with a canned summary so the user sees something to act on right away. The card's body must NOT be sourced from raw PTY (no leaking "Need answer?" etc.). Once any trusted output arrives the card flips to `progress/silent`.

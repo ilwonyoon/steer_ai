@@ -197,8 +197,13 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
+  let userTypingTimer = null;
   process.stdin.on("data", (chunk) => {
     ptyProcess.write(chunk);
+    if (userTypingTimer) return;
+    agent.write({ type: "user_input", sessionId });
+    userTypingTimer = setTimeout(() => { userTypingTimer = null; }, 500);
+    userTypingTimer.unref?.();
   });
   process.stdin.on("end", () => {
     ptyProcess.write("\x04");

@@ -152,6 +152,19 @@ function classifyActionCard(session, displayLines, timing = {}) {
   }
 
   if (session.run_state === "running") {
+    const noTrustedOutput = timing.latestOutputIndex === null || timing.latestOutputIndex === undefined;
+    if (noTrustedOutput && timing.latestUserIndex === null) {
+      return {
+        category: "waiting",
+        priority: "normal",
+        title: `${titlePrefix} ready`,
+        summary: `${command} session opened; send your first instruction.`,
+        actionPrompt: "Send the first instruction to start the session.",
+        options: ["Continue", "Use your judgment", "Explain options"],
+        state: "active",
+        highlightedLineIndexes: []
+      };
+    }
     return {
       category: "progress",
       priority: "silent",
