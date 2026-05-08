@@ -439,7 +439,7 @@ private func makeTerminalLines(from displayLines: [String]) -> [TerminalLine] {
         }
     }
 
-    return lines.ifEmpty([TerminalLine("[no transcript yet]", kind: .muted)])
+    return lines.ifEmpty([TerminalLine("session just opened — send your first instruction", kind: .muted)])
 }
 
 private func terminalDisplayLines(from rawText: String) -> [String] {

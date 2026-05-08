@@ -21,7 +21,7 @@ test("filters Codex startup chrome and MCP boilerplate", () => {
     gpt-5.5 high fast · ~/Documents/Steer_ai
   `);
 
-  assert.deepEqual(lines, ["[no transcript yet]"]);
+  assert.deepEqual(lines, ["session just opened — send your first instruction"]);
 });
 
 test("separates Codex prompt chrome appended after content", () => {
@@ -96,7 +96,7 @@ test("filters Claude running status repaint lines", () => {
     *Baked for 3s
   `);
 
-  assert.deepEqual(lines, ["[no transcript yet]"]);
+  assert.deepEqual(lines, ["session just opened — send your first instruction"]);
 });
 
 test("classifies direct questions as active question cards", () => {
@@ -161,7 +161,7 @@ test("does not classify interactive PTY repaint text as a content source", () =>
   assert.equal(result.card.category, "waiting");
   assert.equal(result.card.state, "active");
   assert.match(result.card.summary, /session opened/);
-  assert.deepEqual(result.displayLines, ["[no transcript yet]"]);
+  assert.deepEqual(result.displayLines, ["session just opened — send your first instruction"]);
 });
 
 test("prefers provider report events over noisy interactive PTY output", () => {

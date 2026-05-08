@@ -36,7 +36,7 @@ export function transcriptDisplayLines(rawText) {
   const normalizedLines = dedentDisplayLines(splitLines).map(normalizeTerminalDisplayLine);
   const lines = retainReadableDisplayLines(normalizedLines);
 
-  return lines.length > 0 ? lines : ["[no transcript yet]"];
+  return lines.length > 0 ? lines : ["session just opened — send your first instruction"];
 }
 
 function transcriptDisplayText(rawText) {
