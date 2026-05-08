@@ -27,8 +27,6 @@ struct SteerRootView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 16) {
-                topBar
-
                 if let lastError {
                     ErrorBanner(message: lastError, onDismiss: { self.lastError = nil })
                 }
@@ -47,7 +45,7 @@ struct SteerRootView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 14)
+            .padding(.top, 44)
             .padding(.bottom, 8)
         }
         .frame(width: 375, height: 812)
@@ -66,22 +64,6 @@ struct SteerRootView: View {
         .task {
             await refreshLoop()
         }
-    }
-
-    private var topBar: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Steer")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(SteerColors.ink)
-                Text(statusText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(SteerColors.secondaryInk)
-            }
-
-            Spacer()
-        }
-        .frame(height: 44)
     }
 
     @ViewBuilder
@@ -119,22 +101,6 @@ struct SteerRootView: View {
             return "Running sessions appear here when they stop."
         }
         return "In a terminal:\n  cd ~/your/project\n  steer codex   # or steer claude"
-    }
-
-    private var statusText: String {
-        if let lastError {
-            return lastError
-        }
-        if cards.isEmpty {
-            if isLoading {
-                return "loading sessions"
-            }
-            if !liveChips.isEmpty {
-                return "\(liveChips.count) running \(liveChips.count == 1 ? "session" : "sessions")"
-            }
-            return "no active sessions"
-        }
-        return "\(cards.count) sessions"
     }
 
     private func move(_ delta: Int) {
