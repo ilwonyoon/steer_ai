@@ -34,6 +34,17 @@ export function createAgentLink({ agentEntryPath }) {
         connecting = false;
         return;
       } catch (error) {
+        // ECONNREFUSED on an existing socket file means the agent died without
+        // unlinking it (e.g. SIGKILL). Clear the stale entry and re-spawn.
+        const isStale =
+          error.code === "ECONNREFUSED" || error.code === "ENOENT";
+        if (isStale && fs.existsSync(socketPath)) {
+          try {
+            fs.unlinkSync(socketPath);
+          } catch (unlinkError) {
+            process.stderr.write(`[steer] could not clear stale socket: ${unlinkError.message}\n`);
+          }
+        }
         process.stderr.write(`[steer] agent reconnect failed: ${error.message}; retrying in ${reconnectDelay}ms\n`);
         await delay(reconnectDelay);
         reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
