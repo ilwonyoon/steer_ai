@@ -1,0 +1,151 @@
+# Release workflow for Steer.
+#
+# Triggered by pushing a version tag (e.g. v0.1.0). Builds the SwiftPM
+# bundle through scripts/release-mac.sh, signs with the imported
+# Developer ID Application certificate, notarizes with notarytool, and
+# uploads the resulting .dmg to a GitHub Release.
+#
+# Required repository secrets:
+#   DEVELOPER_ID_CERT_P12        — base64-encoded Developer ID Application .p12
+#   DEVELOPER_ID_CERT_PASSWORD   — password for the .p12
+#   NOTARY_APPLE_ID              — Apple ID used for notarization
+#   NOTARY_TEAM_ID               — Apple Team ID (LG7667PAS6)
+#   NOTARY_APP_SPECIFIC_PASSWORD — app-specific password for the Apple ID
+#
+# Required permissions:
+#   contents: write   — create GitHub Releases
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (defaults to current ref)"
+        required: false
+
+jobs:
+  release:
+    name: Build, sign, notarize, publish
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+
+    env:
+      KEYCHAIN_PATH: ${{ github.workspace }}/../steer-release-${{ github.run_id }}.keychain
+      KEYCHAIN_PASSWORD: steer-ci-${{ github.run_id }}
+      OUTPUT_ROOT: .build/release
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Node 22.5+
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Run node tests
+        run: npm test
+
+      - name: Pre-flight Mac swift build
+        run: swift build --package-path apps/mac
+
+      - name: Import Developer ID certificate into a temporary keychain
+        env:
+          DEVELOPER_ID_CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          set -e
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Make this keychain the search default so `security find-identity`
+          # picks it up during release-mac.sh.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          echo "$DEVELOPER_ID_CERT_P12" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 \
+            -k "$KEYCHAIN_PATH" \
+            -P "$DEVELOPER_ID_CERT_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          rm /tmp/cert.p12
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Register notarytool credentials
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_APP_SPECIFIC_PASSWORD: ${{ secrets.NOTARY_APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials steer-notary \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_APP_SPECIFIC_PASSWORD" \
+            --keychain "$KEYCHAIN_PATH"
+
+      - name: Generate placeholder icon if needed
+        run: |
+          if [ ! -f apps/mac/Resources/AppIcon-master.png ]; then
+            bash scripts/generate-placeholder-icon.sh
+          fi
+          bash scripts/generate-app-icon.sh
+
+      - name: Run release-mac.sh
+        env:
+          STEER_NOTARY_PROFILE: steer-notary
+          APP_VERSION: ${{ steps.tag.outputs.version }}
+        run: bash scripts/release-mac.sh
+
+      - name: Compute checksum
+        id: artifact
+        run: |
+          DMG_PATH="$(ls .build/release/Steer-*.dmg | head -n1)"
+          shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"
+          echo "dmg=$DMG_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Steer ${{ steps.tag.outputs.version }}
+          files: |
+            ${{ steps.artifact.outputs.dmg }}
+            ${{ steps.artifact.outputs.dmg }}.sha256
+
+      - name: Tear down temporary keychain
+        if: always()
+        run: |
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi

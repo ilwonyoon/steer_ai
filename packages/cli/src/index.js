@@ -20,7 +20,6 @@ import { formatInstructionWithAttachments } from "./attachments.js";
 
 const [, , command, ...args] = process.argv;
 const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
-const ptyBridgePath = fileURLToPath(new URL("./pty_bridge.py", import.meta.url));
 
 switch (command) {
   case "agent":
@@ -299,41 +298,13 @@ function spawnInteractivePtyProcess(provider, sessionId, childCommand, childArgs
     STEER_PTY_ROWS: String(process.stdout.rows || 24)
   };
 
-  try {
-    return pty.spawn(childCommand, childArgs, {
-      name: process.env.TERM || "xterm-256color",
-      cols: process.stdout.columns || 80,
-      rows: process.stdout.rows || 24,
-      cwd: process.cwd(),
-      env
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[steer] node-pty unavailable (${detail}); falling back to python PTY bridge\n`);
-  }
-
-  const child = spawn("python3", [ptyBridgePath, childCommand, ...childArgs], {
+  return pty.spawn(childCommand, childArgs, {
+    name: process.env.TERM || "xterm-256color",
+    cols: process.stdout.columns || 80,
+    rows: process.stdout.rows || 24,
     cwd: process.cwd(),
-    env,
-    stdio: ["pipe", "pipe", "pipe"]
+    env
   });
-
-  return {
-    pid: child.pid,
-    write(data) {
-      child.stdin.write(data);
-    },
-    resize() {
-      child.kill("SIGWINCH");
-    },
-    onData(callback) {
-      child.stdout.on("data", (chunk) => callback(chunk.toString("utf8")));
-      child.stderr.on("data", (chunk) => process.stderr.write(chunk));
-    },
-    onExit(callback) {
-      child.on("exit", (exitCode) => callback({ exitCode }));
-    }
-  };
 }
 
 function observePtyReadiness(provider, chunk, markReady) {

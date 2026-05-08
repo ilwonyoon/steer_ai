@@ -51,6 +51,15 @@ else
   ICON_KEY_BLOCK=""
 fi
 
+# Sparkle integration: only emitted if both URL and public key are provided
+# via the environment, so dogfood builds quietly skip the update check.
+SPARKLE_KEY_BLOCK=""
+if [ -n "${SPARKLE_FEED_URL:-}" ] && [ -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]; then
+  SPARKLE_KEY_BLOCK=$'\n  <key>SparkleEnabled</key>\n  <string>YES</string>'
+  SPARKLE_KEY_BLOCK+=$'\n  <key>SUFeedURL</key>\n  <string>'"$SPARKLE_FEED_URL"$'</string>'
+  SPARKLE_KEY_BLOCK+=$'\n  <key>SUPublicEDKey</key>\n  <string>'"$SPARKLE_PUBLIC_ED_KEY"$'</string>'
+fi
+
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -83,12 +92,27 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>NSDesktopFolderUsageDescription</key>
   <string>Steer reads CLI session metadata when you start sessions from your Desktop.</string>
   <key>NSDownloadsFolderUsageDescription</key>
-  <string>Steer reads CLI session metadata when you start sessions from Downloads.</string>${ICON_KEY_BLOCK}
+  <string>Steer reads CLI session metadata when you start sessions from Downloads.</string>${ICON_KEY_BLOCK}${SPARKLE_KEY_BLOCK}
 </dict>
 </plist>
 PLIST
 
-CODESIGN_FLAGS=("--force" "--deep" "--timestamp" "--options" "runtime")
+# Bundle Sparkle.framework if SwiftPM emitted one for this configuration. We
+# also patch the executable's rpath so the standard Sparkle install name
+# (@rpath/Sparkle.framework/...) resolves to Contents/Frameworks at launch.
+SPARKLE_BUILT_PATH="$(swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION" --show-bin-path)/Sparkle.framework"
+if [ -d "$SPARKLE_BUILT_PATH" ]; then
+  FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
+  mkdir -p "$FRAMEWORKS_DIR"
+  rm -rf "$FRAMEWORKS_DIR/Sparkle.framework"
+  cp -R "$SPARKLE_BUILT_PATH" "$FRAMEWORKS_DIR/Sparkle.framework"
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/$APP_NAME" 2>/dev/null || true
+fi
+
+CODESIGN_FLAGS=("--force" "--timestamp")
+if [ "$SIGN_IDENTITY" != "-" ]; then
+  CODESIGN_FLAGS+=("--options" "runtime")
+fi
 if [ -n "$ENTITLEMENTS" ] && [ -f "$ENTITLEMENTS" ]; then
   CODESIGN_FLAGS+=("--entitlements" "$ENTITLEMENTS")
 fi
@@ -98,7 +122,40 @@ fi
 # option for ad-hoc when explicitly requested via SKIP_HARDENED=1, since
 # some sandboxed dev tools dislike it.
 if [ "$SIGN_IDENTITY" = "-" ] && [ "${SKIP_HARDENED:-0}" = "1" ]; then
-  CODESIGN_FLAGS=("--force" "--deep")
+  CODESIGN_FLAGS=("--force")
+fi
+
+# Sign nested frameworks first so the outer bundle's signature seals over
+# them, then sign the bundle itself. --deep is unreliable for hardened
+# runtime, so we walk the framework explicitly.
+#
+# For ad-hoc dogfood signing we *must not* attach hardened runtime to the
+# inner framework Mach-Os — the runtime forces a Team ID match check that
+# fails when both layers are ad-hoc. release-mac.sh re-signs everything
+# under a real Developer ID later, where hardened runtime is required.
+INNER_FLAGS=("--force" "--timestamp" "--options" "runtime")
+if [ "$SIGN_IDENTITY" = "-" ]; then
+  INNER_FLAGS=("--force" "--timestamp")
+fi
+
+if [ -d "$CONTENTS_DIR/Frameworks" ]; then
+  for framework in "$CONTENTS_DIR"/Frameworks/*.framework; do
+    [ -d "$framework" ] || continue
+    while IFS= read -r -d '' xpc; do
+      codesign "${INNER_FLAGS[@]}" --sign "$SIGN_IDENTITY" "$xpc" >/dev/null
+    done < <(find "$framework" -name '*.xpc' -print0)
+    while IFS= read -r -d '' nested_app; do
+      codesign --force --deep --timestamp \
+        $([ "$SIGN_IDENTITY" != "-" ] && echo "--options runtime") \
+        --sign "$SIGN_IDENTITY" "$nested_app" >/dev/null
+    done < <(find "$framework" -name '*.app' -print0)
+    while IFS= read -r -d '' bin; do
+      [ -f "$bin" ] && [ -x "$bin" ] || continue
+      file "$bin" | grep -q "Mach-O" || continue
+      codesign "${INNER_FLAGS[@]}" --sign "$SIGN_IDENTITY" "$bin" >/dev/null
+    done < <(find "$framework/Versions" -maxdepth 2 -type f -print0)
+    codesign "${INNER_FLAGS[@]}" --sign "$SIGN_IDENTITY" "$framework" >/dev/null
+  done
 fi
 
 codesign "${CODESIGN_FLAGS[@]}" --sign "$SIGN_IDENTITY" "$APP_DIR" >/dev/null

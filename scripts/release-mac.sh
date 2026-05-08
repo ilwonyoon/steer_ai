@@ -20,15 +20,29 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ -z "${STEER_SIGN_IDENTITY:-}" ]; then
-  echo "error: STEER_SIGN_IDENTITY is not set" >&2
-  echo "  example: export STEER_SIGN_IDENTITY=\"Developer ID Application: Ilwon Yoon (TEAMID)\"" >&2
+  STEER_SIGN_IDENTITY="$(
+    security find-identity -v -p codesigning 2>/dev/null \
+      | awk -F '"' '/Developer ID Application:/ && $0 !~ /REVOKED/ { print $2; exit }'
+  )"
+fi
+if [ -z "${STEER_SIGN_IDENTITY}" ]; then
+  echo "error: no valid 'Developer ID Application' certificate in the keychain" >&2
+  echo "  install one (Apple Developer → Certificates → Developer ID Application)" >&2
+  echo "  or set STEER_SIGN_IDENTITY explicitly" >&2
   exit 1
 fi
-if [ -z "${STEER_NOTARY_PROFILE:-}" ]; then
-  echo "error: STEER_NOTARY_PROFILE is not set" >&2
-  echo "  create one with: xcrun notarytool store-credentials steer-notary --apple-id <id> --team-id <TEAMID> --password <app-specific-pw>" >&2
+
+STEER_NOTARY_PROFILE="${STEER_NOTARY_PROFILE:-steer-notary}"
+if ! xcrun notarytool history --keychain-profile "$STEER_NOTARY_PROFILE" >/dev/null 2>&1; then
+  echo "error: notarytool keychain profile '$STEER_NOTARY_PROFILE' is missing or invalid" >&2
+  echo "  create it once with:" >&2
+  echo "  xcrun notarytool store-credentials $STEER_NOTARY_PROFILE \\" >&2
+  echo "    --apple-id <your apple-id> --team-id LG7667PAS6 --password <app-specific-pw>" >&2
   exit 1
 fi
+
+echo "==> Signing identity: $STEER_SIGN_IDENTITY"
+echo "==> Notary profile:   $STEER_NOTARY_PROFILE"
 
 if [ -z "${APP_VERSION:-}" ]; then
   if APP_VERSION="$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null)"; then
@@ -59,6 +73,31 @@ APP_DIR="$(
 if [ ! -d "$APP_DIR" ]; then
   echo "error: build did not produce an app bundle at $APP_DIR" >&2
   exit 1
+fi
+
+# Sparkle.framework ships with its own signature. Apple notarization rejects
+# anything signed with a non-Developer-ID identity, so we re-sign every nested
+# binary inside the framework before signing the framework itself.
+SPARKLE_FW="$APP_DIR/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+  echo "==> Re-signing Sparkle framework with $STEER_SIGN_IDENTITY"
+  while IFS= read -r -d '' xpc; do
+    codesign --force --options runtime --timestamp --sign "$STEER_SIGN_IDENTITY" "$xpc"
+  done < <(find "$SPARKLE_FW" -name '*.xpc' -print0)
+  while IFS= read -r -d '' nested_app; do
+    codesign --force --deep --options runtime --timestamp --sign "$STEER_SIGN_IDENTITY" "$nested_app"
+  done < <(find "$SPARKLE_FW" -name '*.app' -print0)
+  while IFS= read -r -d '' bin; do
+    [ -f "$bin" ] && [ -x "$bin" ] || continue
+    file "$bin" | grep -q "Mach-O" || continue
+    codesign --force --options runtime --timestamp --sign "$STEER_SIGN_IDENTITY" "$bin"
+  done < <(find "$SPARKLE_FW/Versions" -maxdepth 2 -type f -print0)
+  codesign --force --options runtime --timestamp --sign "$STEER_SIGN_IDENTITY" "$SPARKLE_FW"
+  # Re-sign the outer app once Sparkle is settled, otherwise the bundle's
+  # CodeResources hash drifts.
+  codesign --force --deep --options runtime --timestamp \
+    --entitlements "${ENTITLEMENTS:-$ROOT_DIR/apps/mac/Steer.entitlements}" \
+    --sign "$STEER_SIGN_IDENTITY" "$APP_DIR"
 fi
 
 echo "==> Verifying signature"

@@ -8,28 +8,31 @@ The release machine is whichever Mac actually runs `scripts/release-mac.sh`. Tod
 
 ### 1. Apple Developer Program
 
-- Membership: $99/year, registered to the publishing entity (individual or company).
-- Record the Team ID below once enrollment is complete.
+- Membership active under ILWON YOON (the same account that ships Backtick).
+- Recorded values:
 
   ```
-  Team ID: <FILL-IN>
-  Apple ID for Apple Developer:   <FILL-IN>
-  Apple ID for App Store Connect: <FILL-IN>   # often the same
+  Team ID:                         LG7667PAS6
+  Apple ID for Apple Developer:    ilwonyoon@gmail.com
+  Apple ID for App Store Connect:  ilwonyoon@gmail.com
+  Bundle Identifier (Mac app):     ai.steer.mac
   ```
+
+- Steer's Bundle ID is `ai.steer.mac`. If the App ID has not yet been registered in Apple Developer → Certificates, Identifiers & Profiles → Identifiers, register it once before the first signed build (no special capabilities required for v1 — no iCloud, no push, no associated domains).
 
 ### 2. Developer ID Application certificate
 
 This is the signing identity for direct-distribution apps. **Not** the "Apple Distribution" certificate — that one is for the Mac App Store and will not satisfy notarization for direct .dmg distribution.
 
-Generate it once via Apple Developer → Certificates, Identifiers & Profiles → Certificates → `+` → Developer ID Application. Use a CSR generated from this Mac's Keychain Access. Download the resulting `.cer`, double-click to import into the login keychain.
+The same Developer ID Application certificate already issued for Backtick is reusable for Steer — Apple binds these to a Team, not a single bundle ID, so we do not need to enroll a second certificate.
 
-Verify with:
+Verify on this machine:
 
 ```sh
 security find-identity -v -p codesigning | grep "Developer ID Application"
 ```
 
-The string that comes out — typically `Developer ID Application: <Name> (<TEAMID>)` — is the value to export as `STEER_SIGN_IDENTITY` when running the release script.
+Today this returns two valid certificates under `Developer ID Application: ILWON YOON (LG7667PAS6)`. Either works; the release script auto-picks the first non-revoked match. To pin a specific cert, export `STEER_SIGN_IDENTITY` to its full name string before running the release script.
 
 ### 3. App-specific password for notarytool
 
@@ -65,10 +68,14 @@ git status
 git tag v0.1.0
 git push origin v0.1.0
 
-# 3. Run the release script.
-export STEER_SIGN_IDENTITY="Developer ID Application: <Name> (<TEAMID>)"
-export STEER_NOTARY_PROFILE="steer-notary"
+# 3. Run the release script. With no environment overrides, the script picks
+#    the first valid Developer ID Application identity from the keychain and
+#    uses STEER_NOTARY_PROFILE if set, falling back to "steer-notary".
 bash scripts/release-mac.sh
+
+# To pin a specific cert / notary profile:
+# export STEER_SIGN_IDENTITY="Developer ID Application: ILWON YOON (LG7667PAS6)"
+# export STEER_NOTARY_PROFILE="steer-notary"
 ```
 
 Output lands in `.build/release/`:

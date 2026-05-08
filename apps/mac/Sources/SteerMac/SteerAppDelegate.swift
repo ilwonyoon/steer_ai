@@ -17,6 +17,7 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
+        SparkleController.shared.start()
         Task.detached(priority: .background) {
             AttachmentService.cleanupStaleTempFiles()
         }
@@ -55,14 +56,23 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openItem.target = self
         let settingsItem = NSMenuItem(title: "Settings", action: #selector(handleConfigure), keyEquivalent: "")
         settingsItem.target = self
+        let aboutItem = NSMenuItem(title: "About Steer", action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
         let logItem = NSMenuItem(title: "Open agent log", action: #selector(openAgentLog), keyEquivalent: "")
         logItem.target = self
+        let revealItem = NSMenuItem(title: "Reveal Steer logs in Finder", action: #selector(revealSteerHome), keyEquivalent: "")
+        revealItem.target = self
+        let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.target = self
         let quitItem = NSMenuItem(title: "Quit Steer", action: #selector(quitSteer), keyEquivalent: "q")
         quitItem.target = self
 
         menu.addItem(openItem)
         menu.addItem(settingsItem)
+        menu.addItem(aboutItem)
         menu.addItem(logItem)
+        menu.addItem(revealItem)
+        menu.addItem(updateItem)
         menu.addItem(.separator())
         menu.addItem(quitItem)
         for menuItem in menu.items {
@@ -132,6 +142,66 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let home = ProcessInfo.processInfo.environment["STEER_HOME"]
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".steer").path
         NSWorkspace.shared.open(URL(fileURLWithPath: "\(home)/agent.log"))
+    }
+
+    @objc private func revealSteerHome() {
+        let home = ProcessInfo.processInfo.environment["STEER_HOME"]
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".steer").path
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: home)])
+    }
+
+    @objc private func openAbout() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let build = info["CFBundleVersion"] as? String ?? "1"
+        let bundleId = info["CFBundleIdentifier"] as? String ?? "ai.steer.mac"
+
+        let alert = NSAlert()
+        alert.messageText = "Steer"
+        alert.informativeText = """
+        version \(version) (\(build))
+        bundle \(bundleId)
+
+        Steer is an AI action queue for terminal-based coding agents. \
+        Cards surface only when a wrapped session needs a human reply.
+        """
+        alert.addButton(withTitle: "Reveal logs")
+        alert.addButton(withTitle: "Copy diagnostics")
+        alert.addButton(withTitle: "Done")
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            revealSteerHome()
+        case .alertSecondButtonReturn:
+            copyDiagnostics(version: version, build: build, bundleId: bundleId)
+        default:
+            break
+        }
+    }
+
+    private func copyDiagnostics(version: String, build: String, bundleId: String) {
+        let home = ProcessInfo.processInfo.environment["STEER_HOME"]
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".steer").path
+        let macOS = ProcessInfo.processInfo.operatingSystemVersionString
+
+        let payload = """
+        Steer diagnostics
+
+        app version : \(version) (\(build))
+        bundle id   : \(bundleId)
+        macOS       : \(macOS)
+        STEER_HOME  : \(home)
+        """
+
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(payload, forType: .string)
+    }
+
+    @objc private func checkForUpdates(_ sender: Any?) {
+        SparkleController.shared.checkForUpdates(sender)
     }
 
     @objc private func quitSteer() {
