@@ -10,6 +10,8 @@ struct ReplyDock: View {
     var tint: Color = SteerColors.inputFill
     var provider: ProviderKind = .custom
 
+    @StateObject private var clipboardMonitor = ClipboardImageMonitor()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !attachments.isEmpty {
@@ -23,7 +25,15 @@ struct ReplyDock: View {
         }
         .animation(.snappy(duration: 0.18), value: attachments)
         .onDrop(of: [.image, .fileURL], isTargeted: nil, perform: handleDrop)
-        .background(PasteCommandCatcher(onPaste: ingestPasteboardAttachments))
+        .onAppear {
+            clipboardMonitor.onImageDetected = { attachment in
+                attachments.append(attachment)
+            }
+            clipboardMonitor.start()
+        }
+        .onDisappear {
+            clipboardMonitor.stop()
+        }
     }
 
     private var trimmedReply: String {
@@ -46,18 +56,6 @@ struct ReplyDock: View {
     private func removeAttachment(_ attachment: ReplyAttachment) {
         AttachmentService.discard(attachment)
         attachments.removeAll { $0.id == attachment.id }
-    }
-
-    /// Returns true if the current pasteboard had image attachments that we
-    /// captured. Returning false lets the caller (PasteCommandCatcher) pass
-    /// the cmd+v event through to the underlying TextField for plain-text
-    /// pastes.
-    @discardableResult
-    private func ingestPasteboardAttachments() -> Bool {
-        let captured = AttachmentService.attachments(from: NSPasteboard.general)
-        guard !captured.isEmpty else { return false }
-        attachments.append(contentsOf: captured)
-        return true
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -93,9 +91,6 @@ struct ReplyDock: View {
                     }
                     submitReply()
                     return .handled
-                }
-                .onPasteCommand(of: [.png, .tiff, .image, .fileURL]) { _ in
-                    ingestPasteboardAttachments()
                 }
 
             if canSend {
@@ -187,69 +182,3 @@ private struct AttachmentThumbnail: View {
     }
 }
 
-// SwiftUI's .onPasteCommand only fires when no other view (like the
-// TextField) is the first responder. We sidestep that by installing a
-// local NSEvent monitor for Cmd+V on the underlying NSWindow whenever the
-// catcher is in the view tree.
-private struct PasteCommandCatcher: NSViewRepresentable {
-    let onPaste: () -> Bool
-
-    func makeNSView(context: Context) -> CatcherView {
-        let view = CatcherView()
-        view.onPaste = onPaste
-        return view
-    }
-
-    func updateNSView(_ nsView: CatcherView, context: Context) {
-        nsView.onPaste = onPaste
-    }
-
-    final class CatcherView: NSView {
-        var onPaste: (() -> Bool)?
-        private var monitor: Any?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            tearDownMonitor()
-            guard window != nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self else { return event }
-                let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                let isCmdV = mods == .command
-                    && (event.charactersIgnoringModifiers?.lowercased() == "v")
-                guard isCmdV else { return event }
-
-                let pb = NSPasteboard.general
-                let hasImageData = pb.canReadObject(forClasses: [NSImage.self], options: nil)
-                let imageURLs = (pb.readObjects(forClasses: [NSURL.self]) as? [URL])?.filter(PasteCommandCatcher.isImageURL) ?? []
-                NSLog("[Steer] paste cmd+v: hasImageData=\(hasImageData) imageURLs=\(imageURLs.count) types=\(pb.types ?? [])")
-
-                if hasImageData || !imageURLs.isEmpty {
-                    let consumed = self.onPaste?() ?? false
-                    NSLog("[Steer] paste consumed=\(consumed)")
-                    if consumed { return nil }
-                }
-                return event
-            }
-        }
-
-        override func viewWillMove(toWindow newWindow: NSWindow?) {
-            super.viewWillMove(toWindow: newWindow)
-            if newWindow == nil {
-                tearDownMonitor()
-            }
-        }
-
-        private func tearDownMonitor() {
-            if let monitor {
-                NSEvent.removeMonitor(monitor)
-            }
-            monitor = nil
-        }
-    }
-
-    private static func isImageURL(_ url: URL) -> Bool {
-        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return false }
-        return type.conforms(to: .image)
-    }
-}

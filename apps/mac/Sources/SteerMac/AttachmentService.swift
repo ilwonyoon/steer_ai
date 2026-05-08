@@ -109,14 +109,20 @@ enum AttachmentService {
               let png = rep.representation(using: .png, properties: [:]) else {
             return nil
         }
+        return writeImageData(png, pathExtension: "png")
+    }
 
+    /// Writes raw image bytes (PNG/TIFF/etc) into a managed temp file and
+    /// returns the resulting ReplyAttachment. Public so the clipboard monitor
+    /// can reuse the same lifecycle / naming convention.
+    static func writeImageData(_ data: Data, pathExtension: String) -> ReplyAttachment? {
         let id = UUID()
         let timestamp = Int(Date().timeIntervalSince1970)
         let suffix = id.uuidString.split(separator: "-").first.map(String.init) ?? "img"
-        let filename = "\(tempPrefix)-\(timestamp)-\(suffix).png"
+        let filename = "\(tempPrefix)-\(timestamp)-\(suffix).\(pathExtension.lowercased())"
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(filename)
         do {
-            try png.write(to: url, options: .atomic)
+            try data.write(to: url, options: .atomic)
             return ReplyAttachment(
                 id: id,
                 url: url,
