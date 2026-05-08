@@ -22,9 +22,17 @@ struct SteerRootView: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             SteerColors.appBackground
                 .ignoresSafeArea()
+
+            Text("Steer")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(SteerColors.secondaryInk)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(height: 28)
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
 
             VStack(spacing: 16) {
                 if let lastError {
