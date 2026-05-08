@@ -483,15 +483,16 @@ private struct CompactActionCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                ProviderMark(provider: card.provider, size: 11)
+                ProviderMark(provider: card.provider, size: 14)
                 Text(card.project)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(SteerColors.ink)
                     .lineLimit(1)
                     .truncationMode(.head)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(headerTint)
 
