@@ -16,10 +16,8 @@ struct SteerMacApp: App {
             Group {
                 if hasCompletedOnboarding {
                     SteerRootView()
-                        .frame(
-                            minWidth: 320, idealWidth: 375, maxWidth: 720,
-                            minHeight: 600, idealHeight: 812, maxHeight: 1400
-                        )
+                        .frame(width: 375, height: 812)
+                        .fixedSize()
                 } else {
                     OnboardingView {
                         hasCompletedOnboarding = true
@@ -30,7 +28,7 @@ struct SteerMacApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
+        .windowResizability(.contentSize)
         .defaultSize(width: 375, height: 812)
 
         Settings {

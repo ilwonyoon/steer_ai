@@ -42,19 +42,7 @@ struct SteerRootView: View {
                 }
 
                 cardStack
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                ActionCardCarousel(
-                    cards: cards,
-                    currentIndex: currentIndex,
-                    namespace: sessionTransition,
-                    onSelect: { tappedIndex in
-                        guard cards.indices.contains(tappedIndex) else { return }
-                        withAnimation(.snappy(duration: 0.24)) {
-                            currentIndex = tappedIndex
-                        }
-                    }
-                )
+                    .frame(maxWidth: .infinity, maxHeight: 540)
 
                 Spacer(minLength: 0)
             }
