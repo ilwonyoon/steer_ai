@@ -494,7 +494,16 @@ private struct CompactActionCardView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(headerTint)
+            .background(
+                headerTint,
+                in: UnevenRoundedRectangle(
+                    topLeadingRadius: 12,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 12,
+                    style: .continuous
+                )
+            )
 
             Text(summaryLine)
                 .font(.system(size: 10.5, design: .monospaced))
@@ -504,10 +513,18 @@ private struct CompactActionCardView: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 11)
-                .background(SteerColors.cardBackground)
+                .background(
+                    SteerColors.cardBackground,
+                    in: UnevenRoundedRectangle(
+                        topLeadingRadius: 0,
+                        bottomLeadingRadius: 12,
+                        bottomTrailingRadius: 12,
+                        topTrailingRadius: 0,
+                        style: .continuous
+                    )
+                )
         }
         .frame(width: 132, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(isCurrent ? Color.accentColor.opacity(0.55) : SteerColors.softSeparator, lineWidth: isCurrent ? 1.4 : 1)
