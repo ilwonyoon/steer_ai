@@ -31,9 +31,9 @@ struct ActionCardView: View {
             Divider()
 
             ReplyDock(chips: card.chips, reply: $reply, attachments: $attachments, onSend: onSend, provider: card.provider)
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 20)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -34,7 +34,7 @@ struct SteerRootView: View {
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
 
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 if let lastError {
                     ErrorBanner(message: lastError, onDismiss: { self.lastError = nil })
                 }
@@ -66,7 +66,7 @@ struct SteerRootView: View {
             .padding(.top, 36)
             .padding(.bottom, 12)
         }
-        .frame(width: 375, height: 640)
+        .frame(width: 375, height: 600)
         .background(keyboardShortcuts)
         .animation(.snappy(duration: 0.22), value: currentIndex)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))
@@ -449,10 +449,10 @@ private struct ActionCardCarousel: View {
                         }
                     }
                     .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 0)
                     .padding(.trailing, 18)
                 }
-                .frame(height: 110)
+                .frame(height: 100)
             }
         }
     }
