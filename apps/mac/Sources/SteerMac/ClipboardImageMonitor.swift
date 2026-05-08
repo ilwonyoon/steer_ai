@@ -8,7 +8,11 @@ import Foundation
 /// TextField is the first responder. The Backtick app uses the same trick.
 @MainActor
 final class ClipboardImageMonitor: ObservableObject {
-    var onImageDetected: ((ReplyAttachment) -> Void)?
+    /// Newly detected attachments are appended here. Drive your UI off
+    /// `.onChange(of: detected)` or `objectWillChange` rather than a
+    /// closure callback — closures captured in `.onAppear` get stale
+    /// binding references on view rebuilds.
+    @Published var detected: [ReplyAttachment] = []
 
     private var lastChangeCount: Int
     private var timer: Timer?
@@ -49,10 +53,12 @@ final class ClipboardImageMonitor: ObservableObject {
         guard current != lastChangeCount else { return }
         lastChangeCount = current
 
+        var newlyFound: [ReplyAttachment] = []
+
         // File URL paste/copy from Finder: surface as-is.
         if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL] {
             for url in urls where ClipboardImageMonitor.isImageURL(url) {
-                onImageDetected?(ReplyAttachment(
+                newlyFound.append(ReplyAttachment(
                     id: UUID(),
                     url: url,
                     displayName: url.lastPathComponent,
@@ -61,18 +67,29 @@ final class ClipboardImageMonitor: ObservableObject {
             }
         }
 
-        // Raw image data (cmd+option+shift+4 puts PNG/TIFF directly on the
-        // clipboard). Materialize once into a temp file the wrapper can hand
-        // to the model.
-        if let pngData = pb.data(forType: .png), !pngData.isEmpty {
-            if let attachment = AttachmentService.writeImageData(pngData, pathExtension: "png") {
-                onImageDetected?(attachment)
-            }
-        } else if let tiffData = pb.data(forType: .tiff), !tiffData.isEmpty {
-            if let attachment = AttachmentService.writeImageData(tiffData, pathExtension: "tiff") {
-                onImageDetected?(attachment)
+        // Raw image data: PNG and TIFF often coexist on the same pasteboard;
+        // we only materialize one to avoid duplicate temp files.
+        if newlyFound.isEmpty {
+            if let pngData = pb.data(forType: .png), !pngData.isEmpty {
+                if let attachment = AttachmentService.writeImageData(pngData, pathExtension: "png") {
+                    newlyFound.append(attachment)
+                }
+            } else if let tiffData = pb.data(forType: .tiff), !tiffData.isEmpty {
+                if let attachment = AttachmentService.writeImageData(tiffData, pathExtension: "tiff") {
+                    newlyFound.append(attachment)
+                }
             }
         }
+
+        if !newlyFound.isEmpty {
+            detected.append(contentsOf: newlyFound)
+        }
+    }
+
+    /// ReplyDock calls this after consuming the buffered `detected` array so
+    /// the same attachments aren't re-applied across SwiftUI view rebuilds.
+    func clearDetected() {
+        detected.removeAll()
     }
 
     private static func isImageURL(_ url: URL) -> Bool {

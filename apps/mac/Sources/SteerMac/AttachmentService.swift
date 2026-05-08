@@ -52,25 +52,38 @@ enum AttachmentService {
     }
 
     /// Drag-and-drop variant. NSItemProviders may carry either fileURLs or
-    /// image data; we honor whichever ships first.
+    /// image data; for each provider we surface every payload we can extract
+    /// so dragging multiple files in one gesture appends multiple
+    /// attachments.
     @MainActor
     static func attachments(from providers: [NSItemProvider]) async -> [ReplyAttachment] {
         var result: [ReplyAttachment] = []
         for provider in providers {
-            if let url = await loadFileURL(from: provider), isProbablyImage(url: url) {
-                result.append(ReplyAttachment(
-                    id: UUID(),
-                    url: url,
-                    displayName: url.lastPathComponent,
-                    isManaged: false
-                ))
-                continue
+            if let url = await loadFileURL(from: provider) {
+                if isProbablyImage(url: url) || providerLooksLikeImage(provider) {
+                    result.append(ReplyAttachment(
+                        id: UUID(),
+                        url: url,
+                        displayName: url.lastPathComponent,
+                        isManaged: false
+                    ))
+                    continue
+                }
             }
             if let image = await loadImage(from: provider), let written = writeImage(image) {
                 result.append(written)
             }
         }
         return result
+    }
+
+    private static func providerLooksLikeImage(_ provider: NSItemProvider) -> Bool {
+        for identifier in provider.registeredTypeIdentifiers {
+            if let type = UTType(identifier), type.conforms(to: .image) {
+                return true
+            }
+        }
+        return false
     }
 
     /// Called when the user removes an attachment row or clears the dock.
@@ -135,7 +148,11 @@ enum AttachmentService {
     }
 
     private static func isProbablyImage(url: URL) -> Bool {
-        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return false }
+        let ext = url.pathExtension.lowercased()
+        if ["png", "jpg", "jpeg", "gif", "tiff", "tif", "heic", "heif", "webp", "bmp"].contains(ext) {
+            return true
+        }
+        guard let type = UTType(filenameExtension: ext) else { return false }
         return type.conforms(to: .image)
     }
 

@@ -13,27 +13,48 @@ struct ReplyDock: View {
     @StateObject private var clipboardMonitor = ClipboardImageMonitor()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !attachments.isEmpty {
-                AttachmentRow(
-                    attachments: attachments,
-                    onRemove: removeAttachment
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
+        ZStack(alignment: .bottomTrailing) {
+            VStack(alignment: .leading, spacing: 0) {
+                if !attachments.isEmpty {
+                    AttachmentRow(
+                        attachments: attachments,
+                        onRemove: removeAttachment
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                textInput
             }
-            inputField
+            .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(SteerColors.softSeparator, lineWidth: 1)
+            }
+
+            if canSend {
+                sendButton
+            }
         }
         .animation(.snappy(duration: 0.18), value: attachments)
-        .onDrop(of: [.image, .fileURL], isTargeted: nil, perform: handleDrop)
+        .animation(.snappy(duration: 0.16), value: canSend)
+        .onDrop(of: dropAcceptedTypes, isTargeted: nil, perform: handleDrop)
         .onAppear {
-            clipboardMonitor.onImageDetected = { attachment in
-                attachments.append(attachment)
-            }
             clipboardMonitor.start()
         }
         .onDisappear {
             clipboardMonitor.stop()
         }
+        .onChange(of: clipboardMonitor.detected) { _, newValue in
+            guard !newValue.isEmpty else { return }
+            attachments.append(contentsOf: newValue)
+            clipboardMonitor.clearDetected()
+        }
+    }
+
+    private var dropAcceptedTypes: [UTType] {
+        [.png, .jpeg, .tiff, .heic, .gif, .webP, .bmp, .image, .fileURL]
     }
 
     private var trimmedReply: String {
@@ -68,48 +89,40 @@ struct ReplyDock: View {
         return true
     }
 
-    private var inputField: some View {
-        ZStack(alignment: .bottomTrailing) {
-            TextField("reply to this session", text: $reply, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(SteerColors.ink)
-                .lineLimit(1...8)
-                .accessibilityIdentifier("reply-input")
-                .padding(.leading, 14)
-                .padding(.trailing, 46)
-                .padding(.vertical, 12)
-                .frame(minHeight: 42)
-                .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(SteerColors.softSeparator, lineWidth: 1)
+    private var textInput: some View {
+        TextField("reply to this session", text: $reply, axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13, design: .monospaced))
+            .foregroundStyle(SteerColors.ink)
+            .lineLimit(1...8)
+            .accessibilityIdentifier("reply-input")
+            .padding(.leading, 14)
+            .padding(.trailing, 46)
+            .padding(.vertical, 12)
+            .frame(minHeight: 42)
+            .onKeyPress(keys: [.return], phases: .down) { keyPress in
+                if keyPress.modifiers.contains(.shift) {
+                    return .ignored
                 }
-                .onKeyPress(keys: [.return], phases: .down) { keyPress in
-                    if keyPress.modifiers.contains(.shift) {
-                        return .ignored
-                    }
-                    submitReply()
-                    return .handled
-                }
-
-            if canSend {
-                Button(action: submitReply) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 31, height: 31)
-                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("reply-send")
-                .padding(.trailing, 6)
-                .padding(.bottom, 5)
-                .transition(.scale.combined(with: .opacity))
-                .accessibilityLabel("Send reply")
+                submitReply()
+                return .handled
             }
+    }
+
+    private var sendButton: some View {
+        Button(action: submitReply) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 31, height: 31)
+                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-        .animation(.snappy(duration: 0.16), value: canSend)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("reply-send")
+        .padding(.trailing, 6)
+        .padding(.bottom, 5)
+        .transition(.scale.combined(with: .opacity))
+        .accessibilityLabel("Send reply")
     }
 }
 
