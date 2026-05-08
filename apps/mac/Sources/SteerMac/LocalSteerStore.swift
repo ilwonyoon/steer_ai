@@ -178,6 +178,7 @@ private struct LiveSessionRow: Decodable {
     let provider: String
     let cwd: String?
     let pid: Int?
+    let runState: String
     let updatedAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -185,6 +186,7 @@ private struct LiveSessionRow: Decodable {
         case provider
         case cwd
         case pid
+        case runState = "run_state"
         case updatedAt = "updated_at"
     }
 }
@@ -203,7 +205,7 @@ private func loadLiveSessionChips(databaseURL: URL, excluding excludedSessionIds
     let rows: [LiveSessionRow] = try runSQLiteJSON(
         databaseURL: databaseURL,
         sql: """
-        SELECT id, provider, cwd, pid, updated_at
+        SELECT id, provider, cwd, pid, run_state, updated_at
         FROM sessions
         WHERE run_state IN ('running', 'waiting', 'blocked')
           \(exclusionClause)
@@ -222,6 +224,8 @@ private func makeLiveSessionChip(row: LiveSessionRow) -> LiveSessionChip {
         sessionId: row.sessionId,
         provider: ProviderKind(rawValue: row.provider) ?? .custom,
         project: projectName(from: row.cwd),
+        cwd: row.cwd,
+        runState: row.runState,
         lastActivityAt: parseISODate(row.updatedAt) ?? Date()
     )
 }
