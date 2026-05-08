@@ -139,18 +139,17 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
         JOIN sessions s ON s.id = ac.session_id
         LEFT JOIN terminal_excerpts te ON te.id = ac.terminal_excerpt_id
         WHERE ac.state = 'active'
-          AND s.run_state != 'disconnected'
           AND ac.category IN ('blocker', 'decision', 'question', 'waiting')
           AND (
-            EXISTS (
-              SELECT 1
-              FROM transcript_entries trusted
-              WHERE trusted.session_id = s.id
-                AND trusted.stream IN ('report', 'stdout', 'stderr')
-            )
+            s.run_state IN ('waiting', 'blocked')
             OR (
-              ac.category = 'waiting'
-              AND s.run_state = 'running'
+              s.run_state = 'running'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM transcript_entries traffic
+                WHERE traffic.session_id = s.id
+                  AND traffic.stream IN ('report', 'stdout', 'stderr', 'pty', 'user')
+              )
             )
           )
         ORDER BY

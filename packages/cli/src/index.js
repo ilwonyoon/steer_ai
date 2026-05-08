@@ -197,13 +197,24 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
-  let userTypingTimer = null;
+  let stdinSignalTimer = null;
+  let lastReportedRunState = null;
+  const sendRunState = (next) => {
+    if (next === lastReportedRunState) return;
+    lastReportedRunState = next;
+    agent.write({ type: "state", sessionId, runState: next });
+  };
   process.stdin.on("data", (chunk) => {
     ptyProcess.write(chunk);
-    if (userTypingTimer) return;
-    agent.write({ type: "user_input", sessionId });
-    userTypingTimer = setTimeout(() => { userTypingTimer = null; }, 500);
-    userTypingTimer.unref?.();
+    const isCancelKey = chunk.length === 1 && (chunk[0] === 0x1B || chunk[0] === 0x03);
+    if (isCancelKey) {
+      sendRunState("waiting");
+      return;
+    }
+    if (stdinSignalTimer) return;
+    sendRunState("running");
+    stdinSignalTimer = setTimeout(() => { stdinSignalTimer = null; }, 500);
+    stdinSignalTimer.unref?.();
   });
   process.stdin.on("end", () => {
     ptyProcess.write("\x04");

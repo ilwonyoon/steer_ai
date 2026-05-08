@@ -286,9 +286,21 @@ The repo previously sat at `~/Documents/Steer_ai/repo/` with stale doc copies in
 Two product-level changes to the classifier contract, both driven by dogfood-style observation that the user wanted *something* to happen the moment a session opens, and the user must never be asked to reply to a card while they are answering directly in the terminal:
 
 1. **Ready card**: a freshly registered running session with no trusted output and no user reply now produces a `waiting/active` card titled `… ready` with a canned summary ("session opened; send your first instruction"). PTY repaint never sources this card body. Once any trusted output (report/stdout/stderr) arrives, the card collapses to `progress/silent`.
-2. **Terminal typing handoff**: when the user types into the wrapped terminal, the wrapper sends a debounced `user_input` message (max once / 500ms). The agent appends a synthetic `user` transcript entry (`[user] (typed in terminal)`) and resolves the session's active cards so Steer doesn't ask for a reply that is already happening at the prompt.
+2. **Terminal typing handoff (superseded 2026-05-08 by Terminal-Running Invariant)**: an earlier iteration sent a `user_input` debounce message and inserted a synthetic `[user] (typed in terminal)` transcript row to dismiss the card. This was replaced the same day with a SQL-gate-based invariant — see "Terminal-Running Invariant" below.
 
 The two contract tests that previously asserted "PTY repaint never produces an active card" were updated to assert "PTY repaint never *sources card body content*" — the active flag is allowed for the ready phase.
+
+### 2026-05-08: Terminal-Running Invariant
+
+Replaces the earlier `user_input` debounce with a structurally simpler rule: **while the user is actively interacting with the wrapped terminal, no card exists.** Removes the "two input sources" race entirely (you can't double-input if there's nothing to reply to).
+
+Implementation:
+
+1. Mac SQL gate (`apps/mac/Sources/SteerMac/LocalSteerStore.swift`): cards only fetched when `run_state IN ('waiting','blocked')` OR `(run_state='running' AND no traffic in report/stdout/stderr/pty/user)`. Pure read-side gate — same card row stays in the DB and naturally re-appears when the AI returns to a stopped state.
+2. Wrapper stdin (`packages/cli/src/index.js`): first key after a stopped state debounces a `state=running` message (500ms). Esc (`0x1B`) and Ctrl-C (`0x03`) bytes are detected and immediately send `state=waiting` to restore the card.
+3. Agent: removed `user_input` handler and the synthetic `[user] (typed in terminal)` transcript entry. Visibility is now derived from `run_state` + traffic existence, not from injected fake transcript rows.
+
+Validated by direct SQL gate exercise on a sample DB: running+no-traffic shows ready card, running+pty-traffic hides it, waiting/blocked always show, and Stop transition restores visibility even when traffic rows already exist.
 
 ### 2026-05-08: Document Folder TCC
 
