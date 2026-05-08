@@ -13,7 +13,7 @@ import { formatPtyInstructionInput } from "./pty_input.js";
 import { extractPtyIdleReport } from "./pty_idle.js";
 import { startCodexSessionReader } from "./codex_session_reader.js";
 import { createAgentLink } from "./agent_link.js";
-import { installClaudeHooks, normalizeHookPayload, parseHookInput } from "./hooks.js";
+import { installClaudeHooks, isClaudeHookInstalled, normalizeHookPayload, parseHookInput } from "./hooks.js";
 
 const [, , command, ...args] = process.argv;
 const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
@@ -349,7 +349,18 @@ async function runClaudeAdapter(args) {
     return;
   }
 
+  ensureClaudeHooksInstalled();
   await wrapPtyProvider("claude", "claude", args);
+}
+
+function ensureClaudeHooksInstalled() {
+  if (isClaudeHookInstalled()) return;
+  try {
+    const settingsPath = installClaudeHooks();
+    process.stderr.write(`[steer] installed Claude Stop/Notification hooks at ${settingsPath}\n`);
+  } catch (error) {
+    process.stderr.write(`[steer] could not install Claude hooks (${error.message}); cards will fall back to PTY heuristic\n`);
+  }
 }
 
 async function runClaudeHeadlessAdapter(args) {

@@ -32,6 +32,23 @@ export function parseHookInput(rawInput) {
   return JSON.parse(trimmed);
 }
 
+export function isClaudeHookInstalled({ cwd = process.cwd() } = {}) {
+  const settingsPath = path.join(cwd, ".claude", "settings.local.json");
+  if (!fs.existsSync(settingsPath)) return false;
+  try {
+    const settings = readJsonObject(settingsPath);
+    const hooks = settings.hooks ?? {};
+    return Object.keys(CLAUDE_HOOK_COMMANDS).every((event) => {
+      const entry = hooks[event];
+      if (!entry) return false;
+      const flat = JSON.stringify(entry);
+      return flat.includes("steer hook claude");
+    });
+  } catch {
+    return false;
+  }
+}
+
 export function installClaudeHooks({ cwd = process.cwd() } = {}) {
   const claudeDir = path.join(cwd, ".claude");
   const settingsPath = path.join(claudeDir, "settings.local.json");

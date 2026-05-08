@@ -27,6 +27,10 @@ struct SteerRootView: View {
             VStack(spacing: 16) {
                 topBar
 
+                if let lastError {
+                    ErrorBanner(message: lastError, onDismiss: { self.lastError = nil })
+                }
+
                 if liveChips.count > 0 && currentCard != nil {
                     HStack {
                         RunningBadge(count: liveChips.count)
@@ -57,6 +61,7 @@ struct SteerRootView: View {
             .padding(.bottom, 8)
         }
         .frame(width: 375, height: 812)
+        .background(keyboardShortcuts)
         .animation(.snappy(duration: 0.22), value: currentIndex)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))
         .task {
@@ -123,7 +128,7 @@ struct SteerRootView: View {
         if !liveChips.isEmpty {
             return "Running sessions appear here when they stop."
         }
-        return "Run steer claude or steer codex in a terminal."
+        return "In a terminal:\n  cd ~/your/project\n  steer codex   # or steer claude"
     }
 
     private var statusText: String {
@@ -206,6 +211,22 @@ struct SteerRootView: View {
         }
     }
 
+    private var keyboardShortcuts: some View {
+        ZStack {
+            Button("Previous card") { move(-1) }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+            Button("Next card") { move(1) }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+            Button("Refresh") {
+                Task { await reload() }
+            }
+            .keyboardShortcut("r", modifiers: .command)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
     private func reload() async {
         let loadedCards = await store.loadCards()
         await notifyForNewCards(loadedCards)
@@ -220,6 +241,7 @@ struct SteerRootView: View {
         if !loadedCards.isEmpty || !loadedChips.isEmpty {
             lastError = nil
         }
+        SteerAppDelegate.shared.waitingCount = loadedCards.count
     }
 
     private func notifyForNewCards(_ loadedCards: [ActionCard]) async {
@@ -295,6 +317,41 @@ private struct PageDots: View {
             }
         }
         .frame(height: 38)
+    }
+}
+
+private struct ErrorBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(SteerColors.blocked)
+            Text(message)
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(SteerColors.ink)
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(SteerColors.blocked.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(SteerColors.blocked.opacity(0.30), lineWidth: 1)
+        }
     }
 }
 
@@ -420,6 +477,8 @@ private struct EmptyStateView: View {
             Text(detail)
                 .font(.system(size: 11.5, design: .monospaced))
                 .foregroundStyle(SteerColors.tertiaryInk)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: 540)
         .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
