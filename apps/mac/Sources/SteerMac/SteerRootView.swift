@@ -13,7 +13,6 @@ struct SteerRootView: View {
     @State private var lastError: String?
     @State private var didLoadInitialCards = false
     @State private var notifiedCardFingerprints = Set<String>()
-    @State private var expandedLiveSessionId: String? = nil
     @Namespace private var sessionTransition
 
     private var currentCard: ActionCard? {
@@ -34,11 +33,8 @@ struct SteerRootView: View {
                 }
 
                 if !liveChips.isEmpty {
-                    LiveSessionChipRow(
-                        chips: liveChips,
-                        expandedSessionId: $expandedLiveSessionId
-                    )
-                    .padding(.leading, 4)
+                    LiveSessionChipRow(chips: liveChips)
+                        .padding(.leading, 4)
                 }
 
                 cardStack
@@ -327,76 +323,44 @@ private struct ErrorBanner: View {
 
 private struct LiveSessionChipRow: View {
     let chips: [LiveSessionChip]
-    @Binding var expandedSessionId: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(chips) { chip in
-                        LiveSessionChipPill(
-                            chip: chip,
-                            isExpanded: expandedSessionId == chip.sessionId
-                        ) {
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                if expandedSessionId == chip.sessionId {
-                                    expandedSessionId = nil
-                                } else {
-                                    expandedSessionId = chip.sessionId
-                                }
-                            }
-                        }
-                    }
-                    Spacer(minLength: 0)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(chips) { chip in
+                    LiveSessionChipPill(chip: chip)
                 }
-                .padding(.vertical, 2)
-                .padding(.trailing, 4)
+                Spacer(minLength: 0)
             }
-
-            if let expandedSessionId,
-               let chip = chips.first(where: { $0.sessionId == expandedSessionId }) {
-                LiveSessionDetail(chip: chip)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            .padding(.vertical, 2)
+            .padding(.trailing, 4)
         }
     }
 }
 
 private struct LiveSessionChipPill: View {
     let chip: LiveSessionChip
-    let isExpanded: Bool
-    let onTap: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(stateColor)
-                    .frame(width: 6, height: 6)
-                Text(chip.project)
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(SteerColors.secondaryInk)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(
-                isExpanded ? SteerColors.subtleFill : SteerColors.cardBackground,
-                in: Capsule(style: .continuous)
-            )
-            .overlay {
-                Capsule(style: .continuous)
-                    .stroke(
-                        isExpanded ? SteerColors.softSeparator.opacity(1) : SteerColors.softSeparator,
-                        lineWidth: 1
-                    )
-            }
-            .shadow(color: SteerColors.cardShadow.opacity(isExpanded ? 0.0 : 0.5), radius: 6, y: 2)
+        HStack(spacing: 5) {
+            Circle()
+                .fill(stateColor)
+                .frame(width: 6, height: 6)
+            Text(chip.project)
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(SteerColors.secondaryInk)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(SteerColors.cardBackground, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(SteerColors.softSeparator, lineWidth: 1)
+        }
+        .shadow(color: SteerColors.cardShadow.opacity(0.5), radius: 6, y: 2)
         .accessibilityLabel("\(chip.project), \(chip.runState)")
-        .accessibilityHint(isExpanded ? "Tap to collapse" : "Tap to expand")
     }
 
     private var stateColor: Color {
@@ -405,50 +369,6 @@ private struct LiveSessionChipPill: View {
         case "waiting": return SteerColors.waiting
         default: return SteerColors.running
         }
-    }
-}
-
-private struct LiveSessionDetail: View {
-    let chip: LiveSessionChip
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            row("State", chip.runState.capitalized)
-            row("Project", chip.project)
-            if let cwd = chip.cwd, !cwd.isEmpty {
-                row("Path", cwd)
-            }
-            row("Last activity", relativeTime(chip.lastActivityAt))
-            row("Session", chip.sessionId)
-        }
-        .padding(10)
-        .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(SteerColors.softSeparator, lineWidth: 1)
-        }
-    }
-
-    @ViewBuilder
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(SteerColors.tertiaryInk)
-                .frame(width: 70, alignment: .leading)
-            Text(value)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(SteerColors.secondaryInk)
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func relativeTime(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
