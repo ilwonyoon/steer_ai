@@ -7,8 +7,9 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import pty from "node-pty";
+import { DatabaseSync } from "node:sqlite";
 import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
-import { socketPath } from "../../agent/src/paths.js";
+import { socketPath, databasePath } from "../../agent/src/paths.js";
 import { formatPtyInstructionInput } from "./pty_input.js";
 import { extractPtyIdleReport } from "./pty_idle.js";
 import { startCodexSessionReader } from "./codex_session_reader.js";
@@ -357,9 +358,15 @@ function ensureClaudeHooksInstalled() {
   if (isClaudeHookInstalled()) return;
   try {
     const settingsPath = installClaudeHooks();
-    process.stderr.write(`[steer] installed Claude Stop/Notification hooks at ${settingsPath}\n`);
+    process.stderr.write(
+      `[steer] installed Claude Stop/Notification hooks at ${settingsPath}\n` +
+      `[steer] (hooks let Steer show clean stop reports instead of guessing from PTY output)\n`
+    );
   } catch (error) {
-    process.stderr.write(`[steer] could not install Claude hooks (${error.message}); cards will fall back to PTY heuristic\n`);
+    process.stderr.write(
+      `[steer] could not install Claude hooks (${error.message})\n` +
+      `[steer] cards will fall back to PTY heuristic; run 'steer install-claude-hooks' manually to fix\n`
+    );
   }
 }
 
@@ -665,8 +672,6 @@ async function listSessions() {
 }
 
 async function printStats() {
-  const { DatabaseSync } = await import("node:sqlite");
-  const { databasePath } = await import("../../agent/src/paths.js");
   if (!fs.existsSync(databasePath)) {
     console.log("No Steer database yet. Start a session with `steer codex` or `steer claude`.");
     return;

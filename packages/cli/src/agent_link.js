@@ -77,7 +77,11 @@ export function createAgentLink({ agentEntryPath }) {
         return;
       }
       buffer.push(message);
-      if (buffer.length > 1024) buffer.shift();
+      if (buffer.length > 1024) {
+        const dropIndex = buffer.findIndex((m) => !isPriorityMessage(m));
+        if (dropIndex >= 0) buffer.splice(dropIndex, 1);
+        else buffer.shift();
+      }
       void connect();
     },
     end() {
@@ -85,6 +89,13 @@ export function createAgentLink({ agentEntryPath }) {
       if (socket) socket.end();
     }
   };
+}
+
+function isPriorityMessage(message) {
+  if (message?.type === "state") return true;
+  if (message?.type === "ack") return true;
+  if (message?.type === "output" && (message.stream === "report" || message.stream === "stdout" || message.stream === "stderr")) return true;
+  return false;
 }
 
 function openSocket() {
@@ -99,13 +110,17 @@ async function startAgent(agentEntryPath) {
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
   const logPath = path.join(path.dirname(socketPath), "agent.log");
   const logFd = fs.openSync(logPath, "a");
-  const child = spawn(process.execPath, [agentEntryPath], {
-    cwd: process.cwd(),
-    env: process.env,
-    detached: true,
-    stdio: ["ignore", logFd, logFd]
-  });
-  child.unref();
+  try {
+    const child = spawn(process.execPath, [agentEntryPath], {
+      cwd: process.cwd(),
+      env: process.env,
+      detached: true,
+      stdio: ["ignore", logFd, logFd]
+    });
+    child.unref();
+  } finally {
+    fs.closeSync(logFd);
+  }
 
   const deadline = Date.now() + STARTUP_DEADLINE_MS;
   while (Date.now() < deadline) {

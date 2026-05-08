@@ -43,6 +43,12 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <true/>
   <key>NSUserNotificationAlertStyle</key>
   <string>alert</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Steer reads your wrapped CLI session metadata to surface action cards.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Steer reads CLI session metadata when you start sessions from your Desktop.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Steer reads CLI session metadata when you start sessions from Downloads.</string>
 </dict>
 </plist>
 PLIST

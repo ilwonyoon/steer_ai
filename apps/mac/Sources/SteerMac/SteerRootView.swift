@@ -3,6 +3,7 @@ import SwiftUI
 struct SteerRootView: View {
     private let store = LocalSteerStore()
     private let notificationService = ActionNotificationService.shared
+    @ObservedObject private var status = SteerAppDelegate.status
 
     @State private var cards: [ActionCard] = []
     @State private var liveChips: [LiveSessionChip] = []
@@ -31,7 +32,7 @@ struct SteerRootView: View {
                     ErrorBanner(message: lastError, onDismiss: { self.lastError = nil })
                 }
 
-                if liveChips.count > 0 && currentCard != nil {
+                if liveChips.count > 0 {
                     HStack {
                         RunningBadge(count: liveChips.count)
                         Spacer(minLength: 0)
@@ -64,6 +65,15 @@ struct SteerRootView: View {
         .background(keyboardShortcuts)
         .animation(.snappy(duration: 0.22), value: currentIndex)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))
+        .onChange(of: status.pendingFocusSessionId) { _, newValue in
+            guard let sessionId = newValue else { return }
+            if let index = cards.firstIndex(where: { $0.sessionId == sessionId }) {
+                withAnimation(.snappy(duration: 0.24)) {
+                    currentIndex = index
+                }
+            }
+            status.pendingFocusSessionId = nil
+        }
         .task {
             await refreshLoop()
         }
@@ -241,7 +251,7 @@ struct SteerRootView: View {
         if !loadedCards.isEmpty || !loadedChips.isEmpty {
             lastError = nil
         }
-        SteerAppDelegate.shared.waitingCount = loadedCards.count
+        SteerAppDelegate.status.waitingCount = loadedCards.count
     }
 
     private func notifyForNewCards(_ loadedCards: [ActionCard]) async {

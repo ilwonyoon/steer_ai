@@ -83,13 +83,6 @@ export function createStore(filePath = databasePath) {
       FROM sessions
       WHERE run_state IN ('running', 'waiting', 'blocked')
     `),
-    selectRecentTranscriptEntries: db.prepare(`
-      SELECT stream, chunk, timestamp
-      FROM transcript_entries
-      WHERE session_id = ?
-      ORDER BY timestamp DESC
-      LIMIT 24
-    `),
     selectRecentTrustedEntries: db.prepare(`
       SELECT stream, chunk, timestamp, rowid AS rid
       FROM transcript_entries

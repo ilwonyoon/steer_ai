@@ -19,5 +19,9 @@ struct SteerMacApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 375, height: 812)
+
+        Settings {
+            SteerSettingsView()
+        }
     }
 }

@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-06
+Last updated: 2026-05-08 (Settings Phase 1)
 
 ## Purpose
 
@@ -14,6 +14,8 @@ Steer is a macOS-first AI action queue for CLI coding agents. The core loop is s
 - `AGENTS.md`: contributor and agent workflow guide.
 - `docs/CLASSIFIER_CONTRACT.md`: card classifier input/output and lifecycle rules.
 - `docs/MAC_UI_E2E.md`: current Mac UI end-to-end validation notes.
+- `docs/DOGFOOD_NOTES.md`: living log of observations during the dogfood week.
+- `docs/SETTINGS_PLAN.md`: phased settings/UX backlog and iOS sync prerequisites.
 - Backtick Memory `Steer / prd`: product requirements and positioning.
 - Backtick Memory `Steer / tech-spec`: technical architecture and implementation notes.
 
@@ -104,7 +106,7 @@ Goal: centralize session state, messages, and instruction delivery.
 - [x] Stream wrapper events into the agent.
 - [x] Persist session state transitions.
 - [x] Persist pending/injected/failed instruction status.
-- [ ] Add crash/reconnect behavior for wrapper processes.
+- [x] Add crash/reconnect behavior for wrapper processes. *(agent_link with auto-reconnect, register replay, priority-aware buffer)*
 
 Exit criteria:
 - Multiple wrapped sessions can stream into one local store.
@@ -128,6 +130,18 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] Verify card composer Enter key sends through the real Mac UI path.
 - [x] Add macOS notifications for new active action cards.
 - [x] Add local `.app` bundle script for notification-capable dogfooding.
+- [x] Compact action card carousel for waiting cards (replaces live-session chip strip).
+- [x] Per-cwd accent hue strip on card header + compact preview header (light/dark aware).
+- [x] Git branch label on session header (worktree-aware).
+- [x] Menu bar count badge ("Steer · N waiting"); left click activates, right click opens menu.
+- [x] Multi-line reply box that grows upward (Shift+Enter newline, Enter sends).
+- [x] Inline error banner above the card on send/load failures.
+- [x] EmptyState with explicit `cd ~/your/project && steer codex` recipe.
+- [x] RunningBadge above main card while live sessions exist.
+- [x] Keyboard shortcuts: Cmd+Shift+[ / ] for prev/next card, Cmd+R refresh.
+- [x] Document folder TCC handling: spawn sub-processes with `/tmp` cwd + `NSDocumentsFolderUsageDescription` in Info.plist.
+- [x] Notification click jumps to that session's card.
+- [x] Settings sheet (Cmd+,) for notifications/sound/categories/DND/Always-on-top/Run-at-login. Menu bar Settings… and Open agent log. See `docs/SETTINGS_PLAN.md` Phase 1.
 
 Exit criteria:
 - User can monitor multiple sessions and send a reply/instruction from the Mac UI.
@@ -142,20 +156,31 @@ Goal: make reports actionable without becoming noisy.
 - [x] Add regression tests for real Codex chrome/noise and answered-card lifecycle failures.
 - [x] Add regression coverage for Claude Stop hook -> active action card creation.
 - [x] Stop treating raw interactive PTY repaint bytes as authoritative action-card content.
+- [x] Replace codex PTY heuristic with `~/.codex/sessions/*.jsonl` reader matched by spawn timestamp; emit `event_msg` `agent_message` `final_answer` as `stream:"report"`.
+- [x] Auto-install Claude Stop/Notification hooks on first `steer claude` (was opt-in).
+- [x] Stream-aware transcript queries (rowid-ordered) so high-volume PTY chunks no longer crowd out trusted entries.
+- [x] Debounce action card refresh (200ms) for pty/stdout, flush immediately for report/user.
+- [x] Auto-reap zombie sessions and stale active cards on agent startup.
+- [x] `steer stats` CLI for session/card/instruction summary + avg reply→inject latency.
 - [ ] Run classifier against a broader real transcript sample set.
-- [ ] Track false positive and false negative notifications.
-- [ ] Tune prompts for high precision on `requiresAction`.
+- [ ] Track false positive and false negative notifications. *(dogfood-driven)*
+- [ ] Tune prompts for high precision on `requiresAction`. *(dogfood-driven)*
 
 Exit criteria:
 - Classifier reliably separates silent progress from user-action-needed items.
 
 ### Phase 5: Dogfooding
 
-Goal: prove Steer reduces operational latency.
+Goal: prove Steer reduces operational latency. Tools and template are ready
+(`steer stats`, `docs/DOGFOOD_NOTES.md`); pending is one week of real use.
 
-- [ ] Use Steer for real coding sessions for one week.
-- [ ] Track average answer latency.
-- [ ] Track average instruction latency.
+- [ ] Use Steer for real coding sessions for one week. *(in progress, see DOGFOOD_NOTES.md)*
+- [x] Tooling for tracking latency/usage available (`steer stats` shows
+  session run states, card category × state, last-7-day instruction status,
+  avg reply→inject latency).
+- [ ] Track false positive and false negative notifications. *(populate via DOGFOOD_NOTES)*
+- [ ] Track average answer latency. *(read from `steer stats`)*
+- [ ] Track average instruction latency. *(read from `steer stats`)*
 - [ ] Track waiting/block duration.
 - [ ] Track quick action usage.
 - [ ] Track session continuation after intervention.
@@ -163,6 +188,7 @@ Goal: prove Steer reduces operational latency.
 
 Exit criteria:
 - Clear evidence that Steer helps keep multiple AI sessions moving.
+- Triaged dogfood notes split into immediate-fix / backlog / deferred.
 
 ## Current Backlog
 
@@ -244,6 +270,18 @@ CLI commands now auto-start `SteerAgent` in the background when the local socket
 ### 2026-05-06: macOS Strategy
 
 v1 should be a notarized direct-distribution Mac app, not App Store-first. Avoid Accessibility/Input Monitoring by owning the pty through the wrapper.
+
+### 2026-05-07: Codex Session Log Reader
+
+The PTY screen-scraping heuristic for codex (`pty_idle.js`) was structurally fragile: codex output mixes spinner repaints, chrome lines, and the actual model answer in the same byte stream, and any regex that filters chrome ends up either letting noise through or blocking real content. We now read codex's own `~/.codex/sessions/<date>/rollout-<timestamp>-<uuid>.jsonl` file. The wrapper finds the matching jsonl by filename timestamp (within ±30s of `spawnedAt`, immune to other concurrent codex sessions) and emits each `event_msg / agent_message / phase: final_answer` line as `stream:"report"`. The PTY heuristic is disabled for codex; claude still uses Stop hooks (now auto-installed) with PTY heuristic as a fallback.
+
+### 2026-05-07: Workspace Layout Cleanup
+
+The repo previously sat at `~/Documents/Steer_ai/repo/` with stale doc copies in the parent. We collapsed the wrapper directory so the git repo root is `~/Documents/Steer_ai/` directly, repointed `npm link` so `/opt/homebrew/bin/steer` resolves to the Documents copy, and reset `~/Developer/steer_ai` (the abandoned older clone) to clean main. A backup of the pre-move state lives at `~/Documents/Steer_ai_backup_20260507/` for one-week safety.
+
+### 2026-05-08: Document Folder TCC
+
+Sub-processes spawned by SteerMac (sqlite3, `steer send`) inherited the app's working directory under `~/Documents`, which triggered a macOS TCC consent dialog the first time the app actually accessed any file there. We now spawn those sub-processes with `currentDirectoryURL = /tmp` and declare `NSDocumentsFolderUsageDescription` (plus Desktop/Downloads) in the bundle's Info.plist so the consent persists once granted. `tccutil reset SystemPolicyDocumentsFolder ai.steer.mac` is the recovery step if a prior decision is cached.
 
 ## Open Questions
 

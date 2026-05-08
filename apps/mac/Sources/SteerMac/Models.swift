@@ -117,6 +117,7 @@ struct ActionCard: Identifiable {
     let terminalLines: [TerminalLine]
     let chips: [String]
     let shouldNotify: Bool
+    let category: String
     let accentHue: Double
     let branchLabel: String?
     var thread: [ThreadMessage]
@@ -134,6 +135,7 @@ struct ActionCard: Identifiable {
         terminalLines: [TerminalLine],
         chips: [String],
         shouldNotify: Bool = false,
+        category: String = "",
         accentHue: Double = 0,
         branchLabel: String? = nil,
         thread: [ThreadMessage]
@@ -150,6 +152,7 @@ struct ActionCard: Identifiable {
         self.terminalLines = terminalLines
         self.chips = chips
         self.shouldNotify = shouldNotify
+        self.category = category
         self.accentHue = accentHue
         self.branchLabel = branchLabel
         self.thread = thread

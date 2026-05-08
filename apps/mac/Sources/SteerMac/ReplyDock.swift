@@ -61,20 +61,28 @@ struct ReplyDock: View {
     }
 
     private var inputField: some View {
-        ZStack(alignment: .trailing) {
-            TextField("reply to this session", text: $reply)
+        ZStack(alignment: .bottomTrailing) {
+            TextField("reply to this session", text: $reply, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: .monospaced))
                 .foregroundStyle(SteerColors.ink)
-                .onSubmit(submitReply)
+                .lineLimit(1...8)
                 .accessibilityIdentifier("reply-input")
                 .padding(.leading, 14)
                 .padding(.trailing, 46)
-                .frame(height: 42)
+                .padding(.vertical, 12)
+                .frame(minHeight: 42)
                 .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(SteerColors.softSeparator, lineWidth: 1)
+                }
+                .onKeyPress(keys: [.return], phases: .down) { keyPress in
+                    if keyPress.modifiers.contains(.shift) {
+                        return .ignored
+                    }
+                    submitReply()
+                    return .handled
                 }
 
             if !trimmedReply.isEmpty {
@@ -88,6 +96,7 @@ struct ReplyDock: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("reply-send")
                 .padding(.trailing, 6)
+                .padding(.bottom, 5)
                 .transition(.scale.combined(with: .opacity))
                 .accessibilityLabel("Send reply")
             }

@@ -22,12 +22,13 @@ final class ActionNotificationService {
 
     func notify(card: ActionCard) async {
         guard canUseNotificationCenter else { return }
+        guard SteerSettings.shared.shouldNotify(category: card.category) else { return }
         guard await ensureAuthorization() else { return }
 
         let content = UNMutableNotificationContent()
         content.title = card.title
         content.body = card.summary
-        content.sound = .default
+        content.sound = SteerSettings.shared.soundEnabled ? .default : nil
         content.userInfo = [
             "cardId": card.id,
             "sessionId": card.sessionId
@@ -87,11 +88,15 @@ private final class SteerNotificationDelegate: NSObject, UNUserNotificationCente
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        let sessionId = response.notification.request.content.userInfo["sessionId"] as? String
         await MainActor.run {
             NSApplication.shared.activate(ignoringOtherApps: true)
             for window in NSApplication.shared.windows where window.canBecomeKey {
                 window.deminiaturize(nil)
                 window.makeKeyAndOrderFront(nil)
+            }
+            if let sessionId {
+                SteerAppDelegate.status.pendingFocusSessionId = sessionId
             }
         }
     }

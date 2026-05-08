@@ -42,6 +42,7 @@ struct LocalSteerStore {
             process.executableURL = URL(fileURLWithPath: steerExecutablePath())
             process.arguments = ["send", sessionId, text]
             process.environment = processEnvironment()
+            process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
             let errorPipe = Pipe()
             process.standardError = errorPipe
 
@@ -243,6 +244,7 @@ private func runSQLiteJSON<T: Decodable>(databaseURL: URL, sql: String) throws -
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
     process.arguments = ["-cmd", ".timeout 1000", "-json", databaseURL.path, sql]
+    process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
 
     let outputPipe = Pipe()
     let errorPipe = Pipe()
@@ -290,6 +292,7 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
         terminalLines: terminalLines,
         chips: decodeStringArray(row.optionsJSON).ifEmpty(defaultChips(for: state)),
         shouldNotify: isNotifiableActionCategory(row.category),
+        category: row.category,
         accentHue: hueForCwd(row.cwd),
         branchLabel: gitBranchLabel(for: row.cwd),
         thread: []
