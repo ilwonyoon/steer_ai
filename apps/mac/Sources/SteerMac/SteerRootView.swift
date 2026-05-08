@@ -527,8 +527,14 @@ private struct CompactActionCardView: View {
         .frame(width: 132, alignment: .leading)
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isCurrent ? Color.accentColor.opacity(0.55) : SteerColors.softSeparator, lineWidth: isCurrent ? 1.4 : 1)
+                .stroke(SteerColors.softSeparator, lineWidth: 1)
         }
+        .shadow(
+            color: isCurrent ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.06),
+            radius: isCurrent ? 10 : 4,
+            x: 0,
+            y: isCurrent ? 4 : 2
+        )
     }
 }
 
