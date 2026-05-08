@@ -13,6 +13,7 @@ struct SteerRootView: View {
     @State private var lastError: String?
     @State private var didLoadInitialCards = false
     @State private var notifiedCardFingerprints = Set<String>()
+    @State private var liveChipsExpanded = false
     @Namespace private var sessionTransition
 
     private var currentCard: ActionCard? {
@@ -33,8 +34,11 @@ struct SteerRootView: View {
                 }
 
                 if !liveChips.isEmpty {
-                    LiveSessionChipRow(chips: liveChips)
-                        .padding(.leading, 4)
+                    LiveSessionChipRow(
+                        chips: liveChips,
+                        isExpanded: $liveChipsExpanded
+                    )
+                    .padding(.leading, 4)
                 }
 
                 cardStack
@@ -323,18 +327,59 @@ private struct ErrorBanner: View {
 
 private struct LiveSessionChipRow: View {
     let chips: [LiveSessionChip]
+    @Binding var isExpanded: Bool
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(chips) { chip in
-                    LiveSessionChipPill(chip: chip)
+        ZStack(alignment: .leading) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(chips) { chip in
+                        LiveSessionChipPill(chip: chip)
+                    }
+                    Spacer(minLength: 0)
                 }
+                .padding(.trailing, 4)
+            }
+            .opacity(isExpanded ? 1 : 0)
+            .allowsHitTesting(isExpanded)
+
+            HStack {
+                RunningBadge(count: chips.count)
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 2)
-            .padding(.trailing, 4)
+            .opacity(isExpanded ? 0 : 1)
+            .allowsHitTesting(!isExpanded)
         }
+        .frame(height: 28)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
+        }
+    }
+}
+
+private struct RunningBadge: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(SteerColors.running)
+                .frame(width: 6, height: 6)
+            Text("\(count) running")
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(SteerColors.secondaryInk)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(SteerColors.cardBackground, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(SteerColors.softSeparator, lineWidth: 1)
+        }
+        .shadow(color: SteerColors.cardShadow.opacity(0.5), radius: 6, y: 2)
+        .accessibilityLabel("\(count) running session\(count == 1 ? "" : "s")")
+        .accessibilityHint("Tap to expand")
     }
 }
 
