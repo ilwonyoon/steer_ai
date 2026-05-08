@@ -4,6 +4,7 @@ import AppKit
 @main
 struct SteerMacApp: App {
     @NSApplicationDelegateAdaptor(SteerAppDelegate.self) private var appDelegate
+    @State private var hasCompletedOnboarding = OnboardingController.hasCompleted
 
     init() {
         NSApplication.shared.setActivationPolicy(.regular)
@@ -12,9 +13,19 @@ struct SteerMacApp: App {
 
     var body: some Scene {
         WindowGroup {
-            SteerRootView()
-                .frame(width: 375, height: 812)
-                .fixedSize()
+            Group {
+                if hasCompletedOnboarding {
+                    SteerRootView()
+                        .frame(width: 375, height: 812)
+                        .fixedSize()
+                } else {
+                    OnboardingView {
+                        hasCompletedOnboarding = true
+                    }
+                    .frame(width: 540, height: 560)
+                    .fixedSize()
+                }
+            }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)

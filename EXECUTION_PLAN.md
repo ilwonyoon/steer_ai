@@ -210,9 +210,9 @@ Goal: ship Steer to non-developer Mac users without joining the Mac App Store. T
 
 #### P0 — first-run UX without which the product cannot run
 
-- [ ] First-run check: detect whether `steer` CLI is on PATH. If not, offer to install a symlink to `/usr/local/bin/steer` (or `~/.local/bin/steer`). Use an `NSAppleScript` admin elevation only if the user picks the system path.
-- [ ] First-run check: detect whether the Claude Stop/Notification hooks are installed; if not, offer to run `steer install-claude-hooks`.
-- [ ] First-run check: prompt the macOS Notification authorization (`UNUserNotificationCenter.requestAuthorization`).
+- [x] First-run check: detect whether `steer` CLI is on PATH. If not, offer to install a symlink to `~/.local/bin/steer`. (System-path symlink with admin elevation deferred — userland path is the safe default.)
+- [x] First-run check: detect whether the Claude Stop/Notification hooks are installed; if not, offer to run `steer install-claude-hooks`. Implemented as a status check (parses `~/.claude/settings.local.json` for a steer hook command) plus a button that runs `steer install-claude-hooks` directly.
+- [x] First-run check: prompt the macOS Notification authorization (`UNUserNotificationCenter.requestAuthorization`).
 - [ ] First-run check: if the bundled launch path needs Documents folder access, trigger the TCC dialog explicitly (already partially done — verify it survives notarization).
 
 #### P1 — needed for sustainable distribution
