@@ -1,6 +1,6 @@
 export function classifyTranscript({ session, entries }) {
   const timing = transcriptTiming(entries);
-  const cardEntries = selectActionSourceEntries(session, entries, timing.latestUserAt);
+  const cardEntries = selectActionSourceEntries(session, entries, timing.latestUserIndex);
   const rawText = cardEntries.map((entry) => entry.chunk).join("");
   const displayLines = transcriptDisplayLines(rawText);
   const card = classifyActionCard(session, displayLines, timing);
@@ -8,10 +8,12 @@ export function classifyTranscript({ session, entries }) {
   return { rawText, displayLines, card };
 }
 
-function selectActionSourceEntries(session, entries, latestUserAt) {
-  const candidates = latestUserAt
-    ? entries.filter((entry) => entry.stream !== "user" && entry.timestamp > latestUserAt)
-    : entries.filter((entry) => entry.stream !== "user");
+function selectActionSourceEntries(session, entries, latestUserIndex) {
+  const userCutoff = (latestUserIndex !== null && latestUserIndex !== undefined) ? latestUserIndex : -1;
+  const candidates = entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry, index }) => entry.stream !== "user" && index > userCutoff)
+    .map(({ entry }) => entry);
   const reports = candidates.filter((entry) => entry.stream === "report");
   if (reports.length > 0) return reports;
 

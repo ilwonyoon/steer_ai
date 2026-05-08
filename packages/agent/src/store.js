@@ -91,27 +91,27 @@ export function createStore(filePath = databasePath) {
       LIMIT 24
     `),
     selectRecentTrustedEntries: db.prepare(`
-      SELECT stream, chunk, timestamp
+      SELECT stream, chunk, timestamp, rowid AS rid
       FROM transcript_entries
       WHERE session_id = ?
         AND stream IN ('report', 'stdout', 'stderr')
-      ORDER BY timestamp DESC
+      ORDER BY rowid DESC
       LIMIT 24
     `),
     selectRecentUserEntries: db.prepare(`
-      SELECT stream, chunk, timestamp
+      SELECT stream, chunk, timestamp, rowid AS rid
       FROM transcript_entries
       WHERE session_id = ?
         AND stream = 'user'
-      ORDER BY timestamp DESC
+      ORDER BY rowid DESC
       LIMIT 8
     `),
     selectRecentPtyEntries: db.prepare(`
-      SELECT stream, chunk, timestamp
+      SELECT stream, chunk, timestamp, rowid AS rid
       FROM transcript_entries
       WHERE session_id = ?
         AND stream = 'pty'
-      ORDER BY timestamp DESC
+      ORDER BY rowid DESC
       LIMIT 24
     `),
     upsertTerminalExcerpt: db.prepare(`
@@ -337,11 +337,7 @@ export function createStore(filePath = databasePath) {
     const trusted = statements.selectRecentTrustedEntries.all(sessionId);
     const users = statements.selectRecentUserEntries.all(sessionId);
     const pty = trusted.length === 0 ? statements.selectRecentPtyEntries.all(sessionId) : [];
-    const entries = [...trusted, ...users, ...pty].sort((a, b) => {
-      if (a.timestamp < b.timestamp) return -1;
-      if (a.timestamp > b.timestamp) return 1;
-      return 0;
-    });
+    const entries = [...trusted, ...users, ...pty].sort((a, b) => a.rid - b.rid);
     const { rawText, displayLines, card } = classifyTranscript({ session, entries });
     const now = new Date().toISOString();
     const excerptId = `excerpt-${sessionId}`;

@@ -12,6 +12,7 @@ import { socketPath } from "../../agent/src/paths.js";
 import { formatPtyInstructionInput } from "./pty_input.js";
 import { extractPtyIdleReport } from "./pty_idle.js";
 import { startCodexSessionReader } from "./codex_session_reader.js";
+import { createAgentLink } from "./agent_link.js";
 import { installClaudeHooks, normalizeHookPayload, parseHookInput } from "./hooks.js";
 
 const [, , command, ...args] = process.argv;
@@ -42,6 +43,9 @@ switch (command) {
     break;
   case "sessions":
     await listSessions();
+    break;
+  case "stats":
+    await printStats();
     break;
   default:
     printUsage();
@@ -125,7 +129,6 @@ async function wrapProvider(provider, childCommand, childArgs) {
 
 async function wrapPtyProvider(provider, childCommand, childArgs) {
   const sessionId = `${provider}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const agent = await connectToAgent();
   const pendingInstructions = [];
   let ptyReady = provider === "custom";
   let instructionInFlight = false;
@@ -138,7 +141,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   const spawnedAt = new Date();
   const ptyProcess = spawnInteractivePtyProcess(provider, sessionId, childCommand, childArgs);
 
-  agent.write(encodeMessage({
+  const registerMessage = {
     type: "register",
     sessionId,
     provider,
@@ -147,15 +150,24 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     args: childArgs,
     cwd: process.cwd(),
     pid: ptyProcess.pid
-  }));
+  };
+
+  const agent = createAgentLink({ agentEntryPath });
+  await agent.start({
+    register: registerMessage,
+    onInstruction: (message) => {
+      pendingInstructions.push(message);
+      processInstructionQueue();
+    }
+  });
 
   let codexReader = null;
   if (provider === "codex") {
     codexReader = startCodexSessionReader({
       spawnedAt,
       onAgentMessage: (message) => {
-        agent.write(encodeMessage({ type: "output", sessionId, stream: "report", chunk: `${message}\n` }));
-        agent.write(encodeMessage({ type: "state", sessionId, runState: "waiting" }));
+        agent.write({ type: "output", sessionId, stream: "report", chunk: `${message}\n` });
+        agent.write({ type: "state", sessionId, runState: "waiting" });
       },
       onError: (error) => {
         process.stderr.write(`[steer] codex session log reader: ${error.message}\n`);
@@ -200,7 +212,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     process.stdout.write(data);
     setImmediate(() => {
       ptyBuffer = (ptyBuffer + data).slice(-120_000);
-      agent.write(encodeMessage({ type: "output", sessionId, stream: "pty", chunk: data }));
+      agent.write({ type: "output", sessionId, stream: "pty", chunk: data });
       observePtyReadiness(provider, data, markPtyReady);
       schedulePtyIdleReport(provider);
     });
@@ -212,35 +224,28 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   syncPtySize();
   process.stdout.on("resize", syncPtySize);
 
-  agent.on("data", createLineDecoder((message) => {
-    if (message.type !== "instruction") return;
-
-    pendingInstructions.push(message);
-    processInstructionQueue();
-  }));
-
   ptyProcess.onExit(({ exitCode }) => {
     clearTimeout(readinessTimer);
     clearTimeout(idleReportTimer);
     codexReader?.stop();
     restoreInput();
-    agent.write(encodeMessage({ type: "state", sessionId, runState: "ended", exitCode }));
+    agent.write({ type: "state", sessionId, runState: "ended", exitCode });
     agent.end();
     process.exit(exitCode ?? 0);
   });
 
   function submitPtyInstruction(message, done) {
-    agent.write(encodeMessage({ type: "state", sessionId, runState: "running" }));
+    agent.write({ type: "state", sessionId, runState: "running" });
     const input = formatPtyInstructionInput(provider, message.text);
     ptyProcess.write(input);
     setTimeout(() => {
       ptyProcess.write("\r");
-      agent.write(encodeMessage({
+      agent.write({
         type: "ack",
         sessionId,
         instructionId: message.instructionId,
         status: "injected"
-      }));
+      });
       done();
     }, 50);
   }
@@ -257,8 +262,8 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
       }
 
       lastIdleReport = report;
-      agent.write(encodeMessage({ type: "output", sessionId, stream: "report", chunk: `${report}\n` }));
-      agent.write(encodeMessage({ type: "state", sessionId, runState: "waiting" }));
+      agent.write({ type: "output", sessionId, stream: "report", chunk: `${report}\n` });
+      agent.write({ type: "state", sessionId, runState: "waiting" });
     }, 900);
     idleReportTimer.unref?.();
   }
@@ -648,6 +653,78 @@ async function listSessions() {
   console.log(JSON.stringify(response.sessions ?? [], null, 2));
 }
 
+async function printStats() {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { databasePath } = await import("../../agent/src/paths.js");
+  if (!fs.existsSync(databasePath)) {
+    console.log("No Steer database yet. Start a session with `steer codex` or `steer claude`.");
+    return;
+  }
+  const db = new DatabaseSync(databasePath);
+
+  const sessionRows = db.prepare(`
+    SELECT run_state, COUNT(*) AS n
+    FROM sessions
+    GROUP BY run_state
+  `).all();
+
+  const cardRows = db.prepare(`
+    SELECT category, state, COUNT(*) AS n
+    FROM action_cards
+    GROUP BY category, state
+    ORDER BY category, state
+  `).all();
+
+  const recentInstructions = db.prepare(`
+    SELECT status, COUNT(*) AS n
+    FROM instructions
+    WHERE created_at > datetime('now', '-7 days')
+    GROUP BY status
+  `).all();
+
+  const replyLatency = db.prepare(`
+    SELECT
+      AVG((julianday(injected_at) - julianday(created_at)) * 86400.0) AS avg_seconds,
+      COUNT(*) AS n
+    FROM instructions
+    WHERE injected_at IS NOT NULL
+      AND created_at > datetime('now', '-7 days')
+  `).get();
+
+  console.log("Sessions");
+  if (sessionRows.length === 0) {
+    console.log("  (none)");
+  } else {
+    for (const row of sessionRows) {
+      console.log(`  ${row.run_state.padEnd(14)} ${row.n}`);
+    }
+  }
+
+  console.log("\nAction cards by category × state");
+  if (cardRows.length === 0) {
+    console.log("  (none)");
+  } else {
+    for (const row of cardRows) {
+      console.log(`  ${(row.category + " · " + row.state).padEnd(28)} ${row.n}`);
+    }
+  }
+
+  console.log("\nInstructions (last 7 days)");
+  if (recentInstructions.length === 0) {
+    console.log("  (none)");
+  } else {
+    for (const row of recentInstructions) {
+      console.log(`  ${row.status.padEnd(14)} ${row.n}`);
+    }
+    if (replyLatency?.n > 0) {
+      const avg = replyLatency.avg_seconds.toFixed(2);
+      console.log(`  avg reply→inject ${avg}s (${replyLatency.n} samples)`);
+    }
+  }
+
+  db.close();
+}
+
 async function connectToAgent() {
   if (fs.existsSync(socketPath)) {
     try {
@@ -717,6 +794,7 @@ function printUsage() {
   steer codex --headless [--model <model>] [--approval-policy <policy>] [--sandbox <mode>]
   steer codex --raw [...codex interactive args]
   steer sessions
+  steer stats
   steer send <sessionId> <instruction>
   steer hook <provider> <eventName>
   steer install-claude-hooks
