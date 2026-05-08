@@ -344,7 +344,7 @@ private struct LiveSessionChipRow: View {
             .allowsHitTesting(isExpanded)
 
             HStack {
-                RunningBadge(count: chips.count)
+                RunningBadge(chips: chips)
                 Spacer(minLength: 0)
             }
             .opacity(isExpanded ? 0 : 1)
@@ -359,16 +359,41 @@ private struct LiveSessionChipRow: View {
 }
 
 private struct RunningBadge: View {
-    let count: Int
+    let chips: [LiveSessionChip]
+
+    private var runningCount: Int {
+        chips.filter { $0.runState == "running" }.count
+    }
+    private var waitingCount: Int {
+        chips.filter { $0.runState == "waiting" }.count
+    }
+    private var blockedCount: Int {
+        chips.filter { $0.runState == "blocked" }.count
+    }
+
+    private var dominantColor: Color {
+        if blockedCount > 0 { return SteerColors.blocked }
+        if runningCount > 0 { return SteerColors.running }
+        return SteerColors.waiting
+    }
+
+    private var label: String {
+        var parts: [String] = []
+        if runningCount > 0 { parts.append("\(runningCount) running") }
+        if waitingCount > 0 { parts.append("\(waitingCount) waiting") }
+        if blockedCount > 0 { parts.append("\(blockedCount) blocked") }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(SteerColors.running)
+                .fill(dominantColor)
                 .frame(width: 6, height: 6)
-            Text("\(count) running")
+            Text(label)
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
+                .lineLimit(1)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
@@ -378,7 +403,7 @@ private struct RunningBadge: View {
                 .stroke(SteerColors.softSeparator, lineWidth: 1)
         }
         .shadow(color: SteerColors.cardShadow.opacity(0.5), radius: 6, y: 2)
-        .accessibilityLabel("\(count) running session\(count == 1 ? "" : "s")")
+        .accessibilityLabel("\(chips.count) live session\(chips.count == 1 ? "" : "s"); \(label)")
         .accessibilityHint("Tap to expand")
     }
 }
