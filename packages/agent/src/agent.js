@@ -248,6 +248,7 @@ function routeInstruction(message, send) {
     stream: "user",
     chunk: `[user] ${message.text}\n`
   });
+  updateState({ sessionId: message.sessionId, runState: "running" });
   send({ type: "queued", sessionId: message.sessionId, instructionId });
 }
 

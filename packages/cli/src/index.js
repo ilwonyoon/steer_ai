@@ -113,6 +113,7 @@ async function wrapProvider(provider, childCommand, childArgs) {
     if (message.type !== "instruction") return;
 
     child.stdin.write(`${message.text}\n`);
+    agent.write(encodeMessage({ type: "state", sessionId, runState: "running" }));
     agent.write(encodeMessage({
       type: "ack",
       sessionId,
