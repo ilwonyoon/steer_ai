@@ -48,7 +48,7 @@ struct SteerRootView: View {
                 }
 
                 cardStack
-                    .frame(maxWidth: .infinity, maxHeight: 480)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 ActionCardCarousel(
                     cards: cards,
@@ -61,14 +61,12 @@ struct SteerRootView: View {
                         }
                     }
                 )
-
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
             .padding(.top, 36)
             .padding(.bottom, 12)
         }
-        .frame(width: 375, height: 720)
+        .frame(width: 375, height: 640)
         .background(keyboardShortcuts)
         .animation(.snappy(duration: 0.22), value: currentIndex)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))
@@ -481,6 +479,7 @@ private struct CompactActionCardView: View {
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(SteerColors.ink)
                     .lineLimit(1)
+                    .truncationMode(.head)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
