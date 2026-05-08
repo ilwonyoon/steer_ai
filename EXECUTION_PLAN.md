@@ -192,6 +192,55 @@ Exit criteria:
 - Clear evidence that Steer helps keep multiple AI sessions moving.
 - Triaged dogfood notes split into immediate-fix / backlog / deferred.
 
+### Phase 6: Direct Distribution (Notarized .dmg)
+
+Goal: ship Steer to non-developer Mac users without joining the Mac App Store. The current "no App Store sandbox in v1" rule stays in effect; this phase builds out the notarize / sign / auto-update / first-run pipeline that direct distribution requires. Mac App Store is explicitly out of scope here — see "MAS Out of Scope" in the Decision Log.
+
+#### P0 — required to release at all
+
+- [ ] Apple Developer Program membership active; record Team ID in `docs/RELEASE.md` (new file).
+- [ ] Generate a *Developer ID Application* signing certificate (not the MAS variant) and import into the keychain used by the release machine.
+- [ ] Generate an app-specific password for `notarytool` and store it in keychain via `xcrun notarytool store-credentials steer-notary`.
+- [ ] Author `apps/mac/Steer.entitlements` with hardened-runtime entitlements: `com.apple.security.cs.allow-jit`, `com.apple.security.cs.allow-unsigned-executable-memory`, `com.apple.security.cs.disable-library-validation` *(only if node-pty's `spawn-helper` actually fails under hardened runtime — verify before adding)*.
+- [ ] Extend `scripts/build-mac-app.sh` (or split into `scripts/release-mac.sh`) to: deep-sign the bundle with `codesign --options runtime --timestamp`, submit with `xcrun notarytool submit ... --wait`, and `xcrun stapler staple` the result.
+- [ ] Build the `.dmg` (prefer `create-dmg` for the layout; fallback `hdiutil create`). Sign + staple the `.dmg` itself, not just the inner `.app`.
+- [ ] Drive `CFBundleShortVersionString` and `CFBundleVersion` from the current git tag at build time so each release has a unique build number.
+- [ ] Verify spawn paths under hardened runtime: `node-pty` `spawn-helper`, `node packages/agent/src/agent.js`, `steer send`, `sqlite3`. Capture which entitlements are actually needed in `docs/RELEASE.md`.
+- [ ] Provide a 1024×1024 master icon and generate the `.iconset` / `AppIcon.icns`. Replace the current placeholder.
+
+#### P0 — first-run UX without which the product cannot run
+
+- [ ] First-run check: detect whether `steer` CLI is on PATH. If not, offer to install a symlink to `/usr/local/bin/steer` (or `~/.local/bin/steer`). Use an `NSAppleScript` admin elevation only if the user picks the system path.
+- [ ] First-run check: detect whether the Claude Stop/Notification hooks are installed; if not, offer to run `steer install-claude-hooks`.
+- [ ] First-run check: prompt the macOS Notification authorization (`UNUserNotificationCenter.requestAuthorization`).
+- [ ] First-run check: if the bundled launch path needs Documents folder access, trigger the TCC dialog explicitly (already partially done — verify it survives notarization).
+
+#### P1 — needed for sustainable distribution
+
+- [ ] Integrate Sparkle (Swift Package): generate EdDSA key pair, ship the public key in the bundle, keep the private key only on the release machine.
+- [ ] Host `appcast.xml` and the `.dmg` artifacts on GitHub Releases. The release script uploads both and runs `generate_appcast` to produce a signed entry.
+- [ ] Wire a "Check for Updates…" menu item into the existing status menu and trigger Sparkle's update check on launch (silent if no update).
+- [ ] Crash + telemetry: opt-in MetricKit collector that writes to `~/.steer/diagnostics/`. Defer Sentry until we have a real install base.
+- [ ] About window: surface app version, agent version, link to `~/.steer/` log folder ("Reveal in Finder"), and a "Copy diagnostics" button that bundles the last N session logs.
+- [ ] Privacy + Terms static pages hosted at a stable URL (steer.ai or a GitHub Pages fallback). Sparkle's network call alone is enough that we should publish a one-page privacy statement.
+
+#### P1 — code health for shipping
+
+- [ ] Decide whether to keep the Python `pty_bridge.py` fallback. If we ship to non-developers, the system Python is unreliable; the cleaner path is to drop the fallback and treat node-pty as required. Track the decision and the deletion as one item.
+- [ ] Verify `SMAppService` "open at login" works for the notarized bundle (it should, but it has historically been brittle; needs a clean-machine test).
+- [ ] Add a `make release` (or `npm run release`) entry point that orchestrates: bump version → build → sign → notarize → staple → build dmg → upload to GitHub Releases → regenerate appcast.
+
+#### P2 — polish, not blockers
+
+- [ ] Korean localization of the Settings, status menu, and first-run flow.
+- [ ] Marketing page (steer.ai landing) with download link and short demo loop.
+- [ ] Optional analytics opt-in: aggregate counters for session count and reply latency, never raw transcripts. Stay aligned with the operating rule "Don't send raw transcripts to remote services without an explicit user-controlled setting."
+
+Exit criteria:
+
+- A non-developer Mac user can download a notarized `.dmg`, drag-install, run through first-run, and receive their first card from a `steer codex` session — all without the terminal or developer tooling being involved beyond installing the CLI symlink.
+- An update can be shipped end-to-end (bump → sign → notarize → appcast → user receives prompt → user installs) on the release machine in under 30 minutes of human time.
+
 ## Current Backlog
 
 - [x] Create `README.md`.
@@ -301,6 +350,12 @@ Implementation:
 3. Agent: removed `user_input` handler and the synthetic `[user] (typed in terminal)` transcript entry. Visibility is now derived from `run_state` + traffic existence, not from injected fake transcript rows.
 
 Validated by direct SQL gate exercise on a sample DB: running+no-traffic shows ready card, running+pty-traffic hides it, waiting/blocked always show, and Stop transition restores visibility even when traffic rows already exist.
+
+### 2026-05-08: MAS Out Of Scope For v1
+
+We are not pursuing the Mac App Store for v1. The v1 architecture intentionally relies on capabilities the App Sandbox forbids or makes very awkward: spawning `steer send` and `sqlite3` from the app, free filesystem access under `~/.steer/`, modifying `~/.claude/settings.local.json` to install hooks, and a long-lived Unix domain socket shared with arbitrary wrapped CLI processes. Refactoring to satisfy the sandbox would require a separate XPC daemon, a group container relocation of the SQLite store and socket, an entitlements rework, and a sandbox-friendly hook installation flow — that is roughly the scope of a v1.5 architecture rewrite, not a polish pass.
+
+The decision: ship v1 as a Developer ID-signed, notarized direct-distribution app with Sparkle auto-update (Phase 6 above). Revisit MAS once dogfooding has validated the product loop and there is real user demand to install through the Store. If we do come back to MAS, the rewrite plan should start from a daemon split and the question "what state actually needs to live outside the container."
 
 ### 2026-05-08: Document Folder TCC
 
