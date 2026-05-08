@@ -198,15 +198,15 @@ Goal: ship Steer to non-developer Mac users without joining the Mac App Store. T
 
 #### P0 — required to release at all
 
-- [ ] Apple Developer Program membership active; record Team ID in `docs/RELEASE.md` (new file).
-- [ ] Generate a *Developer ID Application* signing certificate (not the MAS variant) and import into the keychain used by the release machine.
-- [ ] Generate an app-specific password for `notarytool` and store it in keychain via `xcrun notarytool store-credentials steer-notary`.
-- [ ] Author `apps/mac/Steer.entitlements` with hardened-runtime entitlements: `com.apple.security.cs.allow-jit`, `com.apple.security.cs.allow-unsigned-executable-memory`, `com.apple.security.cs.disable-library-validation` *(only if node-pty's `spawn-helper` actually fails under hardened runtime — verify before adding)*.
-- [ ] Extend `scripts/build-mac-app.sh` (or split into `scripts/release-mac.sh`) to: deep-sign the bundle with `codesign --options runtime --timestamp`, submit with `xcrun notarytool submit ... --wait`, and `xcrun stapler staple` the result.
-- [ ] Build the `.dmg` (prefer `create-dmg` for the layout; fallback `hdiutil create`). Sign + staple the `.dmg` itself, not just the inner `.app`.
-- [ ] Drive `CFBundleShortVersionString` and `CFBundleVersion` from the current git tag at build time so each release has a unique build number.
-- [ ] Verify spawn paths under hardened runtime: `node-pty` `spawn-helper`, `node packages/agent/src/agent.js`, `steer send`, `sqlite3`. Capture which entitlements are actually needed in `docs/RELEASE.md`.
-- [ ] Provide a 1024×1024 master icon and generate the `.iconset` / `AppIcon.icns`. Replace the current placeholder.
+- [ ] Apple Developer Program membership active; record Team ID in `docs/RELEASE.md`. *(scaffold landed; user must enroll)*
+- [ ] Generate a *Developer ID Application* signing certificate (not the MAS variant) and import into the keychain used by the release machine. *(blocked on enrollment)*
+- [ ] Generate an app-specific password for `notarytool` and store it in keychain via `xcrun notarytool store-credentials steer-notary`. *(blocked on enrollment)*
+- [x] Author `apps/mac/Steer.entitlements` with the minimal hardened-runtime entitlements (`allow-jit`, `allow-unsigned-executable-memory`). Escalation path (`disable-library-validation`) is documented in `docs/RELEASE.md` for when something actually fails under hardened runtime.
+- [x] Extend `scripts/build-mac-app.sh` for hardened-runtime signing + entitlements + version-from-git-tag, and add `scripts/release-mac.sh` that wraps build, signs with the Developer ID identity, runs `xcrun notarytool submit --wait`, and `xcrun stapler staple`s the bundle.
+- [x] Build the `.dmg` (`create-dmg` with `hdiutil` fallback) inside `scripts/release-mac.sh`, sign + notarize + staple the dmg as well as the inner `.app`.
+- [x] Drive `CFBundleShortVersionString` and `CFBundleVersion` from `git describe --tags --abbrev=0` and `git rev-list --count HEAD` at build time so each release has a unique build number.
+- [ ] Verify spawn paths under hardened runtime: `node-pty` `spawn-helper`, `node packages/agent/src/agent.js`, `steer send`, `sqlite3`. Capture which entitlements are actually needed in `docs/RELEASE.md`. *(needs the first signed build to actually exercise.)*
+- [x] Provide a 1024×1024 master icon and an `iconutil`-driven `.icns` generator (`scripts/generate-app-icon.sh`). A placeholder master is committed; replace `apps/mac/Resources/AppIcon-master.png` with final art before any release.
 
 #### P0 — first-run UX without which the product cannot run
 
