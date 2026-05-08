@@ -15,6 +15,7 @@ import { extractPtyIdleReport } from "./pty_idle.js";
 import { startCodexSessionReader } from "./codex_session_reader.js";
 import { createAgentLink } from "./agent_link.js";
 import { installClaudeHooks, isClaudeHookInstalled, normalizeHookPayload, parseHookInput } from "./hooks.js";
+import { isCancelChunk } from "./cancel_keys.js";
 
 const [, , command, ...args] = process.argv;
 const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
@@ -207,8 +208,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   };
   process.stdin.on("data", (chunk) => {
     ptyProcess.write(chunk);
-    const isCancelKey = chunk.length === 1 && (chunk[0] === 0x1B || chunk[0] === 0x03);
-    if (isCancelKey) {
+    if (isCancelChunk(chunk)) {
       sendRunState("waiting");
       return;
     }
@@ -982,3 +982,4 @@ function handleClaudeStream(raw, agent, sessionId) {
     }
   }
 }
+
