@@ -5,12 +5,14 @@ struct SteerRootView: View {
     private let notificationService = ActionNotificationService.shared
 
     @State private var cards: [ActionCard] = []
+    @State private var liveChips: [LiveSessionChip] = []
     @State private var currentIndex = 0
     @State private var cardDragOffset: CGFloat = 0
     @State private var isLoading = true
     @State private var lastError: String?
     @State private var didLoadInitialCards = false
     @State private var notifiedCardFingerprints = Set<String>()
+    @Namespace private var sessionTransition
 
     private var currentCard: ActionCard? {
         guard cards.indices.contains(currentIndex) else { return nil }
@@ -22,19 +24,41 @@ struct SteerRootView: View {
             SteerColors.appBackground
                 .ignoresSafeArea()
 
-            VStack(spacing: 12) {
+            VStack(spacing: 16) {
                 topBar
 
-                cardStack
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if liveChips.count > 0 && currentCard != nil {
+                    HStack {
+                        RunningBadge(count: liveChips.count)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 4)
+                }
 
-                PageDots(count: cards.count, index: currentIndex)
-                    .padding(.bottom, 8)
+                cardStack
+                    .frame(maxWidth: .infinity, maxHeight: 540)
+
+                ActionCardCarousel(
+                    cards: cards,
+                    currentIndex: currentIndex,
+                    namespace: sessionTransition,
+                    onSelect: { tappedIndex in
+                        guard cards.indices.contains(tappedIndex) else { return }
+                        withAnimation(.snappy(duration: 0.24)) {
+                            currentIndex = tappedIndex
+                        }
+                    }
+                )
+
+                Spacer(minLength: 0)
             }
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
         }
         .frame(width: 375, height: 812)
         .animation(.snappy(duration: 0.22), value: currentIndex)
+        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))
         .task {
             await refreshLoop()
         }
@@ -71,22 +95,35 @@ struct SteerRootView: View {
             ProgressView()
                 .controlSize(.small)
         } else if let currentCard {
-            ZStack {
-                CardBackplate(offset: 34, scale: 0.92, opacity: 0.20)
-                CardBackplate(offset: 18, scale: 0.96, opacity: 0.42)
-
-                ActionCardView(
-                    card: currentCard,
-                    onSend: { text in sendFromCard(text) }
-                )
-                .id(currentCard.id)
-                .offset(x: cardDragOffset)
-                .rotationEffect(.degrees(cardDragOffset / 34))
-                .gesture(cardSwipeGesture)
-            }
+            ActionCardView(
+                card: currentCard,
+                onSend: { text in sendFromCard(text) }
+            )
+            .matchedGeometryEffect(id: currentCard.sessionId, in: sessionTransition)
+            .id(currentCard.id)
+            .offset(x: cardDragOffset)
+            .rotationEffect(.degrees(cardDragOffset / 34))
+            .gesture(cardSwipeGesture)
         } else {
-            EmptyStateView(message: lastError ?? "No Steer sessions yet")
+            EmptyStateView(message: emptyStateMessage, detail: emptyStateDetail)
         }
+    }
+
+    private var emptyStateMessage: String {
+        if let lastError {
+            return lastError
+        }
+        if !liveChips.isEmpty {
+            return "No waiting actions"
+        }
+        return "No Steer sessions yet"
+    }
+
+    private var emptyStateDetail: String {
+        if !liveChips.isEmpty {
+            return "Running sessions appear here when they stop."
+        }
+        return "Run steer claude or steer codex in a terminal."
     }
 
     private var statusText: String {
@@ -94,7 +131,13 @@ struct SteerRootView: View {
             return lastError
         }
         if cards.isEmpty {
-            return isLoading ? "loading sessions" : "no active sessions"
+            if isLoading {
+                return "loading sessions"
+            }
+            if !liveChips.isEmpty {
+                return "\(liveChips.count) running \(liveChips.count == 1 ? "session" : "sessions")"
+            }
+            return "no active sessions"
         }
         return "\(cards.count) sessions"
     }
@@ -166,12 +209,15 @@ struct SteerRootView: View {
     private func reload() async {
         let loadedCards = await store.loadCards()
         await notifyForNewCards(loadedCards)
+        let activeSessionIds = Set(loadedCards.map(\.sessionId))
+        let loadedChips = await store.loadLiveSessions(excluding: activeSessionIds)
         cards = loadedCards
+        liveChips = loadedChips
         isLoading = false
         if currentIndex >= cards.count {
             currentIndex = max(cards.count - 1, 0)
         }
-        if !loadedCards.isEmpty {
+        if !loadedCards.isEmpty || !loadedChips.isEmpty {
             lastError = nil
         }
     }
@@ -252,8 +298,116 @@ private struct PageDots: View {
     }
 }
 
+private struct RunningBadge: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(SteerColors.running)
+                .frame(width: 6, height: 6)
+            Text("\(count) running")
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(SteerColors.secondaryInk)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(SteerColors.cardBackground, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(SteerColors.softSeparator, lineWidth: 1)
+        }
+        .shadow(color: SteerColors.cardShadow.opacity(0.5), radius: 6, y: 2)
+        .accessibilityLabel("\(count) running session\(count == 1 ? "" : "s")")
+    }
+}
+
+private struct ActionCardCarousel: View {
+    let cards: [ActionCard]
+    let currentIndex: Int
+    let namespace: Namespace.ID
+    let onSelect: (Int) -> Void
+
+    var body: some View {
+        if cards.isEmpty {
+            Color.clear.frame(height: 0)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Waiting \(cards.count)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(SteerColors.tertiaryInk)
+                    .padding(.leading, 4)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                            CompactActionCardView(card: card, isCurrent: index == currentIndex)
+                                .onTapGesture { onSelect(index) }
+                                .transition(.asymmetric(
+                                    insertion: .scale(scale: 0.9).combined(with: .opacity),
+                                    removal: .scale(scale: 0.95).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .padding(.trailing, 18)
+                }
+                .frame(height: 110)
+            }
+        }
+    }
+}
+
+private struct CompactActionCardView: View {
+    let card: ActionCard
+    let isCurrent: Bool
+
+    private var headerTint: Color {
+        SteerColors.hueTint(hue: card.accentHue, intensity: 1.0)
+    }
+
+    private var summaryLine: String {
+        let trimmed = card.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? card.title : trimmed
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                ProviderMark(provider: card.provider, size: 11)
+                Text(card.project)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(SteerColors.ink)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(headerTint)
+
+            Text(summaryLine)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(SteerColors.secondaryInk)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 11)
+                .background(SteerColors.cardBackground)
+        }
+        .frame(width: 132, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isCurrent ? Color.accentColor.opacity(0.55) : SteerColors.softSeparator, lineWidth: isCurrent ? 1.4 : 1)
+        }
+    }
+}
+
 private struct EmptyStateView: View {
     let message: String
+    let detail: String
 
     var body: some View {
         VStack(spacing: 10) {
@@ -263,11 +417,11 @@ private struct EmptyStateView: View {
             Text(message)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
-            Text("Run steer claude or steer codex in a terminal.")
+            Text(detail)
                 .font(.system(size: 11.5, design: .monospaced))
                 .foregroundStyle(SteerColors.tertiaryInk)
         }
-        .frame(maxWidth: .infinity, maxHeight: 590)
+        .frame(maxWidth: .infinity, maxHeight: 540)
         .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)

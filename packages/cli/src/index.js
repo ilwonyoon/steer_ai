@@ -11,6 +11,7 @@ import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
 import { socketPath } from "../../agent/src/paths.js";
 import { formatPtyInstructionInput } from "./pty_input.js";
 import { extractPtyIdleReport } from "./pty_idle.js";
+import { startCodexSessionReader } from "./codex_session_reader.js";
 import { installClaudeHooks, normalizeHookPayload, parseHookInput } from "./hooks.js";
 
 const [, , command, ...args] = process.argv;
@@ -91,12 +92,16 @@ async function wrapProvider(provider, childCommand, childArgs) {
 
   child.stdout.on("data", (chunk) => {
     process.stdout.write(chunk);
-    agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: chunk.toString("utf8") }));
+    setImmediate(() => {
+      agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: chunk.toString("utf8") }));
+    });
   });
 
   child.stderr.on("data", (chunk) => {
     process.stderr.write(chunk);
-    agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: chunk.toString("utf8") }));
+    setImmediate(() => {
+      agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: chunk.toString("utf8") }));
+    });
   });
 
   agent.on("data", createLineDecoder((message) => {
@@ -127,6 +132,10 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   let ptyBuffer = "";
   let idleReportTimer = null;
   let lastIdleReport = "";
+  process.stderr.write(`[steer] ${provider} session ${sessionId}\n`);
+  process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
+
+  const spawnedAt = new Date();
   const ptyProcess = spawnInteractivePtyProcess(provider, sessionId, childCommand, childArgs);
 
   agent.write(encodeMessage({
@@ -140,8 +149,19 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     pid: ptyProcess.pid
   }));
 
-  process.stderr.write(`[steer] ${provider} session ${sessionId}\n`);
-  process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
+  let codexReader = null;
+  if (provider === "codex") {
+    codexReader = startCodexSessionReader({
+      spawnedAt,
+      onAgentMessage: (message) => {
+        agent.write(encodeMessage({ type: "output", sessionId, stream: "report", chunk: `${message}\n` }));
+        agent.write(encodeMessage({ type: "state", sessionId, runState: "waiting" }));
+      },
+      onError: (error) => {
+        process.stderr.write(`[steer] codex session log reader: ${error.message}\n`);
+      }
+    });
+  }
 
   const processInstructionQueue = () => {
     if (!ptyReady || instructionInFlight || pendingInstructions.length === 0) return;
@@ -165,7 +185,10 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
   process.stdin.on("data", (chunk) => {
-    ptyProcess.write(chunk.toString("utf8"));
+    ptyProcess.write(chunk);
+  });
+  process.stdin.on("end", () => {
+    ptyProcess.write("\x04");
   });
 
   const restoreInput = () => {
@@ -175,15 +198,19 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   ptyProcess.onData((data) => {
     process.stdout.write(data);
-    ptyBuffer = (ptyBuffer + data).slice(-120_000);
-    agent.write(encodeMessage({ type: "output", sessionId, stream: "pty", chunk: data }));
-    observePtyReadiness(provider, data, markPtyReady);
-    schedulePtyIdleReport(provider);
+    setImmediate(() => {
+      ptyBuffer = (ptyBuffer + data).slice(-120_000);
+      agent.write(encodeMessage({ type: "output", sessionId, stream: "pty", chunk: data }));
+      observePtyReadiness(provider, data, markPtyReady);
+      schedulePtyIdleReport(provider);
+    });
   });
 
-  process.stdout.on("resize", () => {
+  const syncPtySize = () => {
     ptyProcess.resize(process.stdout.columns || 80, process.stdout.rows || 24);
-  });
+  };
+  syncPtySize();
+  process.stdout.on("resize", syncPtySize);
 
   agent.on("data", createLineDecoder((message) => {
     if (message.type !== "instruction") return;
@@ -195,6 +222,7 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   ptyProcess.onExit(({ exitCode }) => {
     clearTimeout(readinessTimer);
     clearTimeout(idleReportTimer);
+    codexReader?.stop();
     restoreInput();
     agent.write(encodeMessage({ type: "state", sessionId, runState: "ended", exitCode }));
     agent.end();
@@ -218,11 +246,15 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   }
 
   function schedulePtyIdleReport(currentProvider) {
-    if (!["codex", "claude"].includes(currentProvider)) return;
+    if (currentProvider !== "claude") return;
     clearTimeout(idleReportTimer);
     idleReportTimer = setTimeout(() => {
       const report = extractPtyIdleReport(currentProvider, ptyBuffer);
-      if (!report || report === lastIdleReport) return;
+      if (!report) return;
+      if (report === lastIdleReport) return;
+      if (lastIdleReport && lastIdleReport.length > report.length && lastIdleReport.startsWith(report)) {
+        return;
+      }
 
       lastIdleReport = report;
       agent.write(encodeMessage({ type: "output", sessionId, stream: "report", chunk: `${report}\n` }));
@@ -356,14 +388,18 @@ async function runClaudeHeadlessAdapter(args) {
 
   child.stdout.on("data", (chunk) => {
     const raw = chunk.toString("utf8");
-    agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: raw }));
     handleClaudeStream(raw, agent, sessionId);
+    setImmediate(() => {
+      agent.write(encodeMessage({ type: "output", sessionId, stream: "stdout", chunk: raw }));
+    });
   });
 
   child.stderr.on("data", (chunk) => {
     const raw = chunk.toString("utf8");
     process.stderr.write(raw);
-    agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: raw }));
+    setImmediate(() => {
+      agent.write(encodeMessage({ type: "output", sessionId, stream: "stderr", chunk: raw }));
+    });
   });
 
   agent.on("data", createLineDecoder((message) => {
@@ -417,8 +453,11 @@ async function runCodexHeadlessAdapter(args) {
   let printedDelta = false;
 
   const writeAgent = (message) => agent.write(encodeMessage(message));
+  const writeAgentLater = (message) => {
+    setImmediate(() => agent.write(encodeMessage(message)));
+  };
   const writeOutput = (stream, chunk) => {
-    writeAgent({ type: "output", sessionId, stream, chunk });
+    writeAgentLater({ type: "output", sessionId, stream, chunk });
   };
   const setState = (nextState) => {
     runState = nextState;
@@ -648,11 +687,13 @@ function openAgentSocket() {
 
 async function startAgent() {
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
+  const logPath = path.join(path.dirname(socketPath), "agent.log");
+  const logFd = fs.openSync(logPath, "a");
   const child = spawn(process.execPath, [agentEntryPath], {
     cwd: process.cwd(),
     env: process.env,
     detached: true,
-    stdio: "ignore"
+    stdio: ["ignore", logFd, logFd]
   });
   child.unref();
 
@@ -820,7 +861,9 @@ function handleClaudeStream(raw, agent, sessionId) {
       if (textDelta) process.stdout.write(textDelta);
       else if (result) {
         process.stdout.write(`${result}\n`);
-        agent.write(encodeMessage({ type: "state", sessionId, runState: "waiting" }));
+        setImmediate(() => {
+          agent.write(encodeMessage({ type: "state", sessionId, runState: "waiting" }));
+        });
       }
       else if (userText) process.stderr.write(`[user] ${userText}\n`);
     } catch {

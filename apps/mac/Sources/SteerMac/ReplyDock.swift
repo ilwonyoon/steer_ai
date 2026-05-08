@@ -4,12 +4,10 @@ struct ReplyDock: View {
     let chips: [String]
     @Binding var reply: String
     let onSend: (String) -> Void
+    var tint: Color = SteerColors.inputFill
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            chipScroller
-            inputField
-        }
+        inputField
     }
 
     private var trimmedReply: String {
@@ -73,7 +71,7 @@ struct ReplyDock: View {
                 .padding(.leading, 14)
                 .padding(.trailing, 46)
                 .frame(height: 42)
-                .background(SteerColors.inputFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(SteerColors.softSeparator, lineWidth: 1)

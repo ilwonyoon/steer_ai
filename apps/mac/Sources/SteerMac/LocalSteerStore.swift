@@ -22,6 +22,20 @@ struct LocalSteerStore {
         }.value
     }
 
+    func loadLiveSessions(excluding excludedSessionIds: Set<String>) async -> [LiveSessionChip] {
+        await Task.detached {
+            guard FileManager.default.fileExists(atPath: databaseURL.path) else {
+                return []
+            }
+
+            do {
+                return try loadLiveSessionChips(databaseURL: databaseURL, excluding: excludedSessionIds)
+            } catch {
+                return []
+            }
+        }.value
+    }
+
     func send(_ text: String, to sessionId: String) async throws {
         try await Task.detached {
             let process = Process()
@@ -153,6 +167,71 @@ private func isLiveActionCardRow(_ row: ActionCardRow) -> Bool {
     return isLiveProcess(pid: row.pid)
 }
 
+private struct LiveSessionRow: Decodable {
+    let sessionId: String
+    let provider: String
+    let cwd: String?
+    let pid: Int?
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "id"
+        case provider
+        case cwd
+        case pid
+        case updatedAt = "updated_at"
+    }
+}
+
+private func loadLiveSessionChips(databaseURL: URL, excluding excludedSessionIds: Set<String>) throws -> [LiveSessionChip] {
+    let exclusionClause: String
+    if excludedSessionIds.isEmpty {
+        exclusionClause = ""
+    } else {
+        let quotedIds = excludedSessionIds
+            .map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
+            .joined(separator: ",")
+        exclusionClause = "AND id NOT IN (\(quotedIds))"
+    }
+
+    let rows: [LiveSessionRow] = try runSQLiteJSON(
+        databaseURL: databaseURL,
+        sql: """
+        SELECT id, provider, cwd, pid, updated_at
+        FROM sessions
+        WHERE run_state IN ('running', 'waiting', 'blocked')
+          \(exclusionClause)
+        ORDER BY updated_at DESC
+        LIMIT 24;
+        """
+    )
+
+    return rows
+        .filter { isLiveProcess(pid: $0.pid) }
+        .map(makeLiveSessionChip(row:))
+}
+
+private func makeLiveSessionChip(row: LiveSessionRow) -> LiveSessionChip {
+    LiveSessionChip(
+        sessionId: row.sessionId,
+        provider: ProviderKind(rawValue: row.provider) ?? .custom,
+        project: projectName(from: row.cwd),
+        lastActivityAt: parseISODate(row.updatedAt) ?? Date()
+    )
+}
+
+private func parseISODate(_ value: String) -> Date? {
+    let withFractional = ISO8601DateFormatter()
+    withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = withFractional.date(from: value) {
+        return date
+    }
+
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    return plain.date(from: value)
+}
+
 private func isLiveProcess(pid: Int?) -> Bool {
     guard let pid, pid > 0 else {
         return true
@@ -192,7 +271,7 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
     let state = mapState(row.runState)
     let project = projectName(from: row.cwd)
     let displayLines = decodeStringArray(row.displayLinesJSON)
-    let terminalLines = makeTerminalLines(from: displayLines, category: row.category)
+    let terminalLines = makeTerminalLines(from: displayLines)
     let normalizedSummary = normalizeTerminalDisplayLine(row.summary)
     let summary = isMeaningfulTerminalLine(normalizedSummary)
         ? normalizedSummary
@@ -211,6 +290,8 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
         terminalLines: terminalLines,
         chips: decodeStringArray(row.optionsJSON).ifEmpty(defaultChips(for: state)),
         shouldNotify: isNotifiableActionCategory(row.category),
+        accentHue: hueForCwd(row.cwd),
+        branchLabel: gitBranchLabel(for: row.cwd),
         thread: []
     )
 }
@@ -230,9 +311,80 @@ private func mapState(_ value: String) -> SessionState {
     }
 }
 
+private func gitBranchLabel(for cwd: String?) -> String? {
+    guard let cwd, !cwd.isEmpty else { return nil }
+    let fm = FileManager.default
+    var current = URL(fileURLWithPath: cwd).standardizedFileURL
+
+    for _ in 0..<32 {
+        let dotGit = current.appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: dotGit.path, isDirectory: &isDir) {
+            let gitDir: URL
+            if isDir.boolValue {
+                gitDir = dotGit
+            } else {
+                guard let contents = try? String(contentsOf: dotGit, encoding: .utf8) else { return nil }
+                let prefix = "gitdir:"
+                let trimmed = contents.split(separator: "\n").first?.trimmingCharacters(in: .whitespaces) ?? ""
+                guard trimmed.hasPrefix(prefix) else { return nil }
+                let path = trimmed.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                gitDir = URL(fileURLWithPath: path)
+            }
+
+            return readBranchLabel(gitDir: gitDir, worktreeURL: current)
+        }
+
+        let parent = current.deletingLastPathComponent()
+        if parent.path == current.path { return nil }
+        current = parent
+    }
+    return nil
+}
+
+private func readBranchLabel(gitDir: URL, worktreeURL: URL) -> String? {
+    let head = gitDir.appendingPathComponent("HEAD")
+    guard let raw = try? String(contentsOf: head, encoding: .utf8) else { return nil }
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    let worktreeName = gitDir.path.contains("/worktrees/") ? gitDir.lastPathComponent : nil
+
+    if trimmed.hasPrefix("ref: refs/heads/") {
+        let branch = String(trimmed.dropFirst("ref: refs/heads/".count))
+        if let worktreeName, worktreeName != branch {
+            return "\(branch) · \(worktreeName)"
+        }
+        return branch
+    }
+
+    let shortHash = String(trimmed.prefix(7))
+    if let worktreeName {
+        return "(\(shortHash)) · \(worktreeName)"
+    }
+    return "(\(shortHash))"
+}
+
+private func hueForCwd(_ cwd: String?) -> Double {
+    guard let cwd, !cwd.isEmpty else { return 0 }
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for byte in cwd.utf8 {
+        hash ^= UInt64(byte)
+        hash = hash &* 1_099_511_628_211
+    }
+    let goldenStep = 137.508
+    let bucket = Double(hash % 1024)
+    return (bucket * goldenStep).truncatingRemainder(dividingBy: 360)
+}
+
 private func projectName(from cwd: String?) -> String {
     guard let cwd, !cwd.isEmpty else { return "unknown-project" }
-    return URL(fileURLWithPath: cwd).lastPathComponent
+    let url = URL(fileURLWithPath: cwd)
+    let last = url.lastPathComponent
+    let parent = url.deletingLastPathComponent().lastPathComponent
+    if parent.isEmpty || parent == "/" || last.isEmpty {
+        return last.isEmpty ? "unknown-project" : last
+    }
+    return "\(parent)/\(last)"
 }
 
 private func defaultChips(for state: SessionState) -> [String] {
@@ -250,16 +402,24 @@ private func defaultChips(for state: SessionState) -> [String] {
     }
 }
 
-private func makeTerminalLines(from displayLines: [String], category: String) -> [TerminalLine] {
-    let fallbackKind: TerminalLineKind = switch category {
-    case "blocker": .warning
-    case "completion": .success
-    default: .standard
+private func makeTerminalLines(from displayLines: [String]) -> [TerminalLine] {
+    let fallbackKind: TerminalLineKind = .standard
+    let normalizedLines = displayLines.map { normalizeTerminalDisplayLine($0) }
+    var lines: [TerminalLine] = []
+
+    for (index, line) in normalizedLines.enumerated() {
+        if isMeaningfulTerminalLine(line) {
+            lines.append(TerminalLine(line, kind: kind(forTerminalLine: line, fallback: fallbackKind)))
+            continue
+        }
+
+        if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !lines.isEmpty,
+           lines.last?.text.isEmpty == false,
+           normalizedLines[(index + 1)...].contains(where: isMeaningfulTerminalLine) {
+            lines.append(TerminalLine("", kind: .muted))
+        }
     }
-    let lines = displayLines
-        .map { normalizeTerminalDisplayLine($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        .filter(isMeaningfulTerminalLine)
-        .map { TerminalLine($0, kind: kind(forTerminalLine: $0, fallback: fallbackKind)) }
 
     return lines.ifEmpty([TerminalLine("[no transcript yet]", kind: .muted)])
 }
@@ -302,28 +462,10 @@ private func terminalDisplayLines(from rawText: String) -> [String] {
 }
 
 private func kind(forTerminalLine line: String, fallback: TerminalLineKind) -> TerminalLineKind {
-    if line.contains("⚠") || line.localizedCaseInsensitiveContains("failed") || line.localizedCaseInsensitiveContains("error") {
-        return .warning
-    }
-    if line.localizedCaseInsensitiveContains("어려워요") || line.localizedCaseInsensitiveContains("blocked") {
-        return .warning
-    }
-    if line.localizedCaseInsensitiveContains("complete") || line.localizedCaseInsensitiveContains("success") {
-        return .success
-    }
-    if line.localizedCaseInsensitiveContains("쉬워요") || line.localizedCaseInsensitiveContains("saved") {
-        return .success
-    }
-    if line.hasPrefix("›") || line.hasPrefix(">") {
+    if line.hasPrefix("> ") || line.hasPrefix("›") {
         return .accent
     }
-    if line.hasSuffix("?") || line.hasSuffix("까요?") {
-        return .accent
-    }
-    if line.range(of: "^(Decision needed|Next|Question|Blocked|옵션\\s*\\d+):?", options: [.regularExpression, .caseInsensitive]) != nil {
-        return .accent
-    }
-    if line.hasPrefix("•") || line.hasPrefix("- ") || line.hasPrefix("* ") {
+    if line.hasPrefix("```") {
         return .muted
     }
     if line.hasPrefix("gpt-") {
@@ -364,131 +506,131 @@ private func collapseTerminalWhitespace(_ value: String) -> String {
 }
 
 private func normalizeTerminalDisplayLine(_ value: String) -> String {
-    collapseTerminalWhitespace(
-        value.replacingOccurrences(
-            of: "\\?•Work(?:ing)?\\b.*$",
-            with: "?",
-            options: [.regularExpression, .caseInsensitive]
-        )
+    value.replacingOccurrences(
+        of: "\\?•Work(?:ing)?\\b.*$",
+        with: "?",
+        options: [.regularExpression, .caseInsensitive]
     )
+    .trimmingCharacters(in: .newlines)
 }
 
 private func isMeaningfulTerminalLine(_ line: String) -> Bool {
-    guard !line.isEmpty else { return false }
-    guard line.range(of: "[A-Za-z0-9가-힣⚠✖✔›>]", options: .regularExpression) != nil else {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    guard trimmed.range(of: "[A-Za-z0-9가-힣⚠✖✔›>]", options: .regularExpression) != nil else {
         return false
     }
-    if line.range(of: "^\\s*(?:\\[user\\]|\\[steer\\])", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "^(?:\\[user\\]|\\[steer\\])", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^\\s*›", options: .regularExpression) != nil {
+    if trimmed.range(of: "^›", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "^gpt-[\\w.-]+.*·", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "^gpt-[\\w.-]+.*·", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^\\s*[A-Za-z]{1,2}\\s*$", options: .regularExpression) != nil {
+    if trimmed.range(of: "^[A-Za-z]{1,2}$", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "^\\]1[01];\\?\\\\?$", options: .regularExpression) != nil {
+    if trimmed.range(of: "^\\]1[01];\\?\\\\?$", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "^Tip: Try the Codex App", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "^Tip: Try the Codex App", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "^https://chatgpt.com/codex", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "^https://chatgpt.com/codex", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Under-development features enabled", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Under-development features enabled", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "features are incomplete", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "features are incomplete", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "suppress_unstable_features_warning", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "suppress_unstable_features_warning", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "config.toml", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "config.toml", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "MCP client for `?pencil`? failed", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "MCP client for `?pencil`? failed", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "MCP startup failed", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "MCP startup failed", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "No such file or direc", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "No such file or direc", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "os error 2", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "os error 2", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "MCP startup incomplete", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "MCP startup incomplete", options: .caseInsensitive) != nil {
         return false
     }
-    if line.localizedCaseInsensitiveContains("esc to interr") {
+    if trimmed.localizedCaseInsensitiveContains("esc to interr") {
         return false
     }
-    if line.localizedCaseInsensitiveContains("esc again to edit previous message") {
+    if trimmed.localizedCaseInsensitiveContains("esc again to edit previous message") {
         return false
     }
-    if line.localizedCaseInsensitiveContains("tab to queue message") {
+    if trimmed.localizedCaseInsensitiveContains("tab to queue message") {
         return false
     }
-    if line.range(of: "auto mode on", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "auto mode on", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "shift\\+tab", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "shift\\+tab", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "esc to interrupt", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "esc to interrupt", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "tokens?\\)", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "tokens?\\)", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "running stop hooks", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "running stop hooks", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Worked for", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Worked for", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Cultivating", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Cultivating", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "Crunching", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Crunching", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "\\*?Worked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "\\*?Worked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "\\*?Baked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "\\*?Baked for \\d+", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^\\d+$", options: .regularExpression) != nil {
+    if trimmed.range(of: "^\\d+$", options: .regularExpression) != nil {
         return false
     }
-    if line.range(of: "Starting MCP servers", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "Starting MCP servers", options: .caseInsensitive) != nil {
         return false
     }
-    if line.range(of: "SStt|WWoorr|MMCC|rrvv|sseerr", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "SStt|WWoorr|MMCC|rrvv|sseerr", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "(Working[•. ]*){2,}", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "(Working[•. ]*){2,}", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "^Wo•Wor", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "^Wo•Wor", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "xcodebui.*xcodebuild.*•", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.range(of: "xcodebui.*xcodebuild.*•", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
-    if line.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,
-       line.range(of: "/permissions", options: .caseInsensitive) != nil {
+    if trimmed.range(of: "/model\\s+choose what model", options: [.regularExpression, .caseInsensitive]) != nil,
+       trimmed.range(of: "/permissions", options: .caseInsensitive) != nil {
         return false
     }
-    if line.count > 80,
-       line.range(of: "codex_a|xcodebui|xcodebuildmcp|context left", options: [.regularExpression, .caseInsensitive]) != nil {
+    if trimmed.count > 80,
+       trimmed.range(of: "codex_a|xcodebui|xcodebuildmcp|context left", options: [.regularExpression, .caseInsensitive]) != nil {
         return false
     }
     return true

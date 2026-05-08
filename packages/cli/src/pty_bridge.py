@@ -10,9 +10,22 @@ import tty
 import fcntl
 
 
-def set_pty_size(fd):
+def get_parent_pty_size():
+    for source_fd in (sys.stdin.fileno(), sys.stdout.fileno()):
+        try:
+            packed = fcntl.ioctl(source_fd, termios.TIOCGWINSZ, struct.pack("HHHH", 0, 0, 0, 0))
+            rows, cols, _, _ = struct.unpack("HHHH", packed)
+            if rows > 0 and cols > 0:
+                return rows, cols
+        except OSError:
+            continue
     rows = int(os.environ.get("STEER_PTY_ROWS", "24"))
     cols = int(os.environ.get("STEER_PTY_COLS", "80"))
+    return rows, cols
+
+
+def set_pty_size(fd):
+    rows, cols = get_parent_pty_size()
     size = struct.pack("HHHH", rows, cols, 0, 0)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, size)
 

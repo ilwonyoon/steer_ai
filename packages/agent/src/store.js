@@ -78,10 +78,39 @@ export function createStore(filePath = databasePath) {
       FROM sessions
       WHERE id = ?
     `),
+    selectLiveSessions: db.prepare(`
+      SELECT id, pid, run_state
+      FROM sessions
+      WHERE run_state IN ('running', 'waiting', 'blocked')
+    `),
     selectRecentTranscriptEntries: db.prepare(`
       SELECT stream, chunk, timestamp
       FROM transcript_entries
       WHERE session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT 24
+    `),
+    selectRecentTrustedEntries: db.prepare(`
+      SELECT stream, chunk, timestamp
+      FROM transcript_entries
+      WHERE session_id = ?
+        AND stream IN ('report', 'stdout', 'stderr')
+      ORDER BY timestamp DESC
+      LIMIT 24
+    `),
+    selectRecentUserEntries: db.prepare(`
+      SELECT stream, chunk, timestamp
+      FROM transcript_entries
+      WHERE session_id = ?
+        AND stream = 'user'
+      ORDER BY timestamp DESC
+      LIMIT 8
+    `),
+    selectRecentPtyEntries: db.prepare(`
+      SELECT stream, chunk, timestamp
+      FROM transcript_entries
+      WHERE session_id = ?
+        AND stream = 'pty'
       ORDER BY timestamp DESC
       LIMIT 24
     `),
@@ -136,10 +165,41 @@ export function createStore(filePath = databasePath) {
     );
   };
 
+  const refreshTimers = new Map();
+  const REFRESH_DEBOUNCE_MS = 200;
+
+  function scheduleRefresh(sessionId) {
+    const existing = refreshTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      refreshTimers.delete(sessionId);
+      refreshActionCard(sessionId);
+    }, REFRESH_DEBOUNCE_MS);
+    timer.unref?.();
+    refreshTimers.set(sessionId, timer);
+  }
+
+  function flushRefresh(sessionId) {
+    const existing = refreshTimers.get(sessionId);
+    if (existing) {
+      clearTimeout(existing);
+      refreshTimers.delete(sessionId);
+    }
+    refreshActionCard(sessionId);
+  }
+
   return {
     defaultRoomId: DEFAULT_ROOM_ID,
     close() {
+      for (const [sessionId, timer] of refreshTimers) {
+        clearTimeout(timer);
+        refreshActionCard(sessionId);
+      }
+      refreshTimers.clear();
       db.close();
+    },
+    listLiveSessions() {
+      return statements.selectLiveSessions.all();
     },
     upsertSession(session) {
       statements.upsertSession.run(
@@ -171,7 +231,7 @@ export function createStore(filePath = databasePath) {
         type: "state_changed",
         metadata: { runState, exitCode }
       });
-      refreshActionCard(sessionId);
+      flushRefresh(sessionId);
     },
     appendTranscript({ sessionId, stream, chunk }) {
       const timestamp = new Date().toISOString();
@@ -191,7 +251,11 @@ export function createStore(filePath = databasePath) {
         "normal",
         message.source
       );
-      refreshActionCard(sessionId);
+      if (stream === "report" || stream === "user") {
+        flushRefresh(sessionId);
+      } else {
+        scheduleRefresh(sessionId);
+      }
     },
     createInstruction({ id, sessionId, text }) {
       statements.insertInstruction.run(
@@ -223,6 +287,16 @@ export function createStore(filePath = databasePath) {
     },
     resolveActionCardsForSession(sessionId) {
       statements.resolveActionCardsForSession.run(new Date().toISOString(), sessionId);
+    },
+    resolveStaleDisconnectedCards() {
+      const now = new Date().toISOString();
+      const stmt = db.prepare(`
+        UPDATE action_cards
+        SET state = 'done', updated_at = ?
+        WHERE state = 'active'
+          AND session_id IN (SELECT id FROM sessions WHERE run_state = 'disconnected')
+      `);
+      return stmt.run(now).changes ?? 0;
     },
     recordHookEvent(event) {
       recordMetric({
@@ -260,7 +334,14 @@ export function createStore(filePath = databasePath) {
     const session = statements.selectSession.get(sessionId);
     if (!session) return;
 
-    const entries = statements.selectRecentTranscriptEntries.all(sessionId).reverse();
+    const trusted = statements.selectRecentTrustedEntries.all(sessionId);
+    const users = statements.selectRecentUserEntries.all(sessionId);
+    const pty = trusted.length === 0 ? statements.selectRecentPtyEntries.all(sessionId) : [];
+    const entries = [...trusted, ...users, ...pty].sort((a, b) => {
+      if (a.timestamp < b.timestamp) return -1;
+      if (a.timestamp > b.timestamp) return 1;
+      return 0;
+    });
     const { rawText, displayLines, card } = classifyTranscript({ session, entries });
     const now = new Date().toISOString();
     const excerptId = `excerpt-${sessionId}`;

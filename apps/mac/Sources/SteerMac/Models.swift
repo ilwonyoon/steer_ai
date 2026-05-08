@@ -88,6 +88,22 @@ struct TerminalLine: Identifiable {
     }
 }
 
+struct LiveSessionChip: Identifiable, Equatable {
+    let id: String
+    let sessionId: String
+    let provider: ProviderKind
+    let project: String
+    let lastActivityAt: Date
+
+    init(sessionId: String, provider: ProviderKind, project: String, lastActivityAt: Date) {
+        self.id = sessionId
+        self.sessionId = sessionId
+        self.provider = provider
+        self.project = project
+        self.lastActivityAt = lastActivityAt
+    }
+}
+
 struct ActionCard: Identifiable {
     let id: String
     let sessionId: String
@@ -101,6 +117,8 @@ struct ActionCard: Identifiable {
     let terminalLines: [TerminalLine]
     let chips: [String]
     let shouldNotify: Bool
+    let accentHue: Double
+    let branchLabel: String?
     var thread: [ThreadMessage]
 
     init(
@@ -116,6 +134,8 @@ struct ActionCard: Identifiable {
         terminalLines: [TerminalLine],
         chips: [String],
         shouldNotify: Bool = false,
+        accentHue: Double = 0,
+        branchLabel: String? = nil,
         thread: [ThreadMessage]
     ) {
         self.id = id
@@ -130,6 +150,8 @@ struct ActionCard: Identifiable {
         self.terminalLines = terminalLines
         self.chips = chips
         self.shouldNotify = shouldNotify
+        self.accentHue = accentHue
+        self.branchLabel = branchLabel
         self.thread = thread
     }
 }

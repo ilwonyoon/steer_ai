@@ -6,26 +6,37 @@ struct ActionCardView: View {
 
     @State private var reply = ""
 
+    private var headerTint: Color {
+        SteerColors.hueTint(hue: card.accentHue, intensity: 0.65)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SessionHeader(card: card)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 14)
+                .background(headerTint)
 
             Divider()
-                .padding(.vertical, 14)
 
             TerminalExcerptView(lines: card.terminalLines)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 16)
                 .layoutPriority(1)
 
             Divider()
-                .padding(.bottom, 12)
 
             ReplyDock(chips: card.chips, reply: $reply, onSend: onSend)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity)
-        .frame(height: 590)
-        .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SteerColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(SteerColors.separator, lineWidth: 1)
@@ -51,9 +62,11 @@ struct SessionHeader: View {
                         Circle()
                             .fill(card.state.color)
                             .frame(width: 6, height: 6)
-                        Text(card.provider.displayName)
-                            .font(.system(size: 12, design: .monospaced))
+                        Text(card.branchLabel ?? card.provider.displayName)
+                            .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(SteerColors.secondaryInk)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
             }
@@ -76,6 +89,7 @@ struct SessionHeader: View {
 
 struct ProviderMark: View {
     let provider: ProviderKind
+    var size: CGFloat = 24
 
     var body: some View {
         Group {
@@ -87,7 +101,7 @@ struct ProviderMark: View {
                     .scaledToFill()
             } else {
                 Text(provider.fallbackLetter)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: max(8, size * 0.46), weight: .bold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(
@@ -99,7 +113,7 @@ struct ProviderMark: View {
                     )
             }
         }
-        .frame(width: 24, height: 24)
+        .frame(width: size, height: size)
         .clipShape(Circle())
         .accessibilityLabel(provider.displayName)
     }

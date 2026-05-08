@@ -23,37 +23,87 @@ function selectActionSourceEntries(session, entries, latestUserAt) {
 }
 
 export function transcriptDisplayLines(rawText) {
-  const lines = terminalScreenText(rawText)
+  const splitLines = transcriptDisplayText(rawText)
     .replace(/\s+([⚠✖✔])\s*/g, "\n$1 ")
     .replace(/\s+([›>])\s+/g, "\n$1 ")
     .replace(/([^\n])›(?=\S)/g, "$1\n›")
     .replace(/\s*(\[(?:user|steer|codex|claude)\])/gi, "\n$1")
     .replace(/\s{2,}(gpt-[\w.-]+[^\n]*·[^\n]*)/g, "\n$1")
     .split("\n")
-    .flatMap(splitTerminalDisplayLine)
-    .map(normalizeTerminalDisplayLine)
-    .filter(isMeaningfulTerminalLine)
-    .slice(-28);
+    .flatMap(splitTerminalDisplayLine);
+  const normalizedLines = dedentDisplayLines(splitLines).map(normalizeTerminalDisplayLine);
+  const lines = retainReadableDisplayLines(normalizedLines);
 
   return lines.length > 0 ? lines : ["[no transcript yet]"];
+}
+
+function transcriptDisplayText(rawText) {
+  return shouldRenderAsTerminalScreen(rawText)
+    ? terminalScreenText(rawText)
+    : cleanTerminalText(rawText);
+}
+
+function shouldRenderAsTerminalScreen(rawText) {
+  return /\x1B\[[0-?]*[ -/]*[HfGJK]/.test(rawText) || /\r(?!\n)/.test(rawText);
+}
+
+function dedentDisplayLines(lines) {
+  const indents = lines
+    .filter((line) => line.trim().length > 0)
+    .map((line) => line.match(/^[ \t]*/)?.[0].length ?? 0)
+    .filter((indent) => indent > 0);
+  if (indents.length === 0) return lines;
+
+  const commonIndent = Math.min(...indents);
+  return lines.map((line) => line.startsWith(" ".repeat(commonIndent)) ? line.slice(commonIndent) : line);
+}
+
+function retainReadableDisplayLines(lines) {
+  const retained = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (isMeaningfulTerminalLine(line)) {
+      retained.push(line);
+      continue;
+    }
+
+    if (line.trim().length === 0 && retained.length > 0 && retained.at(-1) !== "" && hasLaterMeaningfulLine(lines, index + 1)) {
+      retained.push("");
+    }
+  }
+
+  while (retained.at(-1) === "") retained.pop();
+  return retained;
+}
+
+function hasLaterMeaningfulLine(lines, startIndex) {
+  for (let index = startIndex; index < lines.length; index += 1) {
+    if (isMeaningfulTerminalLine(lines[index])) return true;
+  }
+  return false;
 }
 
 function transcriptTiming(entries) {
   let latestUserAt = null;
   let latestOutputAt = null;
+  let latestUserIndex = null;
+  let latestOutputIndex = null;
 
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     if (entry.stream === "user") {
       latestUserAt = maxTimestamp(latestUserAt, entry.timestamp);
+      latestUserIndex = index;
       continue;
     }
 
     if (["report", "stdout", "stderr"].includes(entry.stream) && transcriptDisplayLines(entry.chunk).some(isContentLineForAction)) {
       latestOutputAt = maxTimestamp(latestOutputAt, entry.timestamp);
+      latestOutputIndex = index;
     }
   }
 
-  return { latestUserAt, latestOutputAt };
+  return { latestUserAt, latestOutputAt, latestUserIndex, latestOutputIndex };
 }
 
 function maxTimestamp(current, next) {
@@ -69,7 +119,9 @@ function classifyActionCard(session, displayLines, timing = {}) {
   const lower = body.toLowerCase();
   const summary = displayLines.at(-1) || "No transcript captured yet.";
   const titlePrefix = `${provider} · ${command}`;
-  const answered = timing.latestUserAt && (!timing.latestOutputAt || timing.latestUserAt >= timing.latestOutputAt);
+  const answered = timing.latestUserIndex !== null
+    && timing.latestUserIndex !== undefined
+    && (timing.latestOutputIndex === null || timing.latestOutputIndex === undefined || timing.latestUserIndex >= timing.latestOutputIndex);
 
   if (answered) {
     return {
@@ -372,54 +424,55 @@ function splitTerminalDisplayLine(line) {
 function normalizeTerminalDisplayLine(line) {
   return line
     .replace(/\?•Work(?:ing)?\b.*$/i, "?")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+    .replace(/\s+$/g, "");
 }
 
 function isMeaningfulTerminalLine(line) {
-  if (!line) return false;
-  if (!/[A-Za-z0-9가-힣⚠✖✔›>]/.test(line)) return false;
-  if (!isContentLineForAction(line)) return false;
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (!/[A-Za-z0-9가-힣⚠✖✔›>]/.test(trimmed)) return false;
+  if (!isContentLineForAction(trimmed)) return false;
   return true;
 }
 
 function isContentLineForAction(line) {
-  if (!line) return false;
-  if (/^\s*(?:\[user\]|\[steer\])/.test(line)) return false;
-  if (/^\s*›/.test(line)) return false;
-  if (/^gpt-[\w.-]+.*·/i.test(line)) return false;
-  if (/^\s*[A-Za-z]{1,2}\s*$/.test(line)) return false;
-  if (/^\]1[01];\?\\?$/.test(line)) return false;
-  if (/^Tip: Try the Codex App/i.test(line)) return false;
-  if (/^https:\/\/chatgpt\.com\/codex/i.test(line)) return false;
-  if (/Under-development features enabled/i.test(line)) return false;
-  if (/features are incomplete/i.test(line)) return false;
-  if (/suppress_unstable_features_warning/i.test(line)) return false;
-  if (/config\.toml/i.test(line)) return false;
-  if (/MCP client for `?pencil`? failed/i.test(line)) return false;
-  if (/MCP startup failed/i.test(line)) return false;
-  if (/No such file or direc/i.test(line)) return false;
-  if (/os error 2/i.test(line)) return false;
-  if (/MCP startup incomplete/i.test(line)) return false;
-  if (/esc to interr/i.test(line)) return false;
-  if (/esc again to edit previous message/i.test(line)) return false;
-  if (/tab to queue message/i.test(line)) return false;
-  if (/auto mode on/i.test(line)) return false;
-  if (/shift\+tab/i.test(line)) return false;
-  if (/esc to interrupt/i.test(line)) return false;
-  if (/tokens?\)/i.test(line)) return false;
-  if (/running stop hooks/i.test(line)) return false;
-  if (/Cultivating/i.test(line)) return false;
-  if (/Crunching/i.test(line)) return false;
-  if (/\*?Worked for \d+/i.test(line)) return false;
-  if (/\*?Baked for \d+/i.test(line)) return false;
-  if (/^\d+$/.test(line)) return false;
-  if (/Starting MCP servers/i.test(line)) return false;
-  if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(line)) return false;
-  if (/(Working[•. ]*){2,}/i.test(line)) return false;
-  if (/^Wo•Wor/i.test(line)) return false;
-  if (/xcodebui.*xcodebuild.*•/i.test(line)) return false;
-  if (/\/model\s+choose what model/i.test(line) && /\/permissions/i.test(line)) return false;
-  if (/codex_a|xcodebui|xcodebuildmcp|context left/i.test(line) && line.length > 80) return false;
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^(?:\[user\]|\[steer\])/.test(trimmed)) return false;
+  if (/^›/.test(trimmed)) return false;
+  if (/^gpt-[\w.-]+.*·/i.test(trimmed)) return false;
+  if (/^[A-Za-z]{1,2}$/.test(trimmed)) return false;
+  if (/^\]1[01];\?\\?$/.test(trimmed)) return false;
+  if (/^Tip: Try the Codex App/i.test(trimmed)) return false;
+  if (/^https:\/\/chatgpt\.com\/codex/i.test(trimmed)) return false;
+  if (/Under-development features enabled/i.test(trimmed)) return false;
+  if (/features are incomplete/i.test(trimmed)) return false;
+  if (/suppress_unstable_features_warning/i.test(trimmed)) return false;
+  if (/config\.toml/i.test(trimmed)) return false;
+  if (/MCP client for `?pencil`? failed/i.test(trimmed)) return false;
+  if (/MCP startup failed/i.test(trimmed)) return false;
+  if (/No such file or direc/i.test(trimmed)) return false;
+  if (/os error 2/i.test(trimmed)) return false;
+  if (/MCP startup incomplete/i.test(trimmed)) return false;
+  if (/esc to interr/i.test(trimmed)) return false;
+  if (/esc again to edit previous message/i.test(trimmed)) return false;
+  if (/tab to queue message/i.test(trimmed)) return false;
+  if (/auto mode on/i.test(trimmed)) return false;
+  if (/shift\+tab/i.test(trimmed)) return false;
+  if (/esc to interrupt/i.test(trimmed)) return false;
+  if (/tokens?\)/i.test(trimmed)) return false;
+  if (/running stop hooks/i.test(trimmed)) return false;
+  if (/Cultivating/i.test(trimmed)) return false;
+  if (/Crunching/i.test(trimmed)) return false;
+  if (/\*?Worked for \d+/i.test(trimmed)) return false;
+  if (/\*?Baked for \d+/i.test(trimmed)) return false;
+  if (/^\d+$/.test(trimmed)) return false;
+  if (/Starting MCP servers/i.test(trimmed)) return false;
+  if (/SStt|WWoorr|MMCC|rrvv|sseerr/i.test(trimmed)) return false;
+  if (/(Working[•. ]*){2,}/i.test(trimmed)) return false;
+  if (/^Wo•Wor/i.test(trimmed)) return false;
+  if (/xcodebui.*xcodebuild.*•/i.test(trimmed)) return false;
+  if (/\/model\s+choose what model/i.test(trimmed) && /\/permissions/i.test(trimmed)) return false;
+  if (/codex_a|xcodebui|xcodebuildmcp|context left/i.test(trimmed) && trimmed.length > 80) return false;
   return true;
 }

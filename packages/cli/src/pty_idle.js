@@ -10,7 +10,8 @@ export function extractPtyIdleReport(provider, rawText) {
     ? extractCodexBulletReports(rawText).filter((line) => isPtyReportLine(provider, line))
     : [];
   if (bulletReports.length > 0) {
-    return bulletReports.at(-1);
+    const recent = bulletReports.slice(-12);
+    return recent.join("\n");
   }
 
   const lines = transcriptDisplayLines(rawText)
@@ -18,7 +19,7 @@ export function extractPtyIdleReport(provider, rawText) {
     .filter((line) => isPtyReportLine(provider, line));
   if (lines.length === 0) return null;
 
-  const startIndex = Math.max(0, lines.length - 12);
+  const startIndex = Math.max(0, lines.length - 60);
   const report = lines.slice(startIndex).join("\n").trim();
   return report.length > 0 ? report : null;
 }
@@ -62,7 +63,6 @@ function hasInputPrompt(provider, screen) {
 
 function isPtyReportLine(provider, line) {
   if (!line) return false;
-  if (provider === "codex" && /^│/.test(line)) return false;
   if (/OpenAI Codex/i.test(line)) return false;
   if (/^Tip: Try the Codex App/i.test(line)) return false;
   if (/Starting MCP servers/i.test(line)) return false;
@@ -74,13 +74,13 @@ function isPtyReportLine(provider, line) {
   if (/incomplete and may behave unpredictably/i.test(line)) return false;
   if (/suppress.*warning/i.test(line)) return false;
   if (/config\.toml/i.test(line)) return false;
-  if (/^model:/i.test(line)) return false;
-  if (/^change\s*│?$/i.test(line)) return false;
-  if (/^directory:/i.test(line)) return false;
-  if (/^visit$/i.test(line)) return false;
-  if (/^this warning/i.test(line)) return false;
-  if (/^and may behave unpredictably/i.test(line)) return false;
-  if (/^true`? in .*\.codex/i.test(line)) return false;
+  if (/^│?\s*model:/i.test(line)) return false;
+  if (/^│?\s*directory:/i.test(line)) return false;
+  if (/^│?\s*change\s*│?$/i.test(line)) return false;
+  if (/^│?\s*visit$/i.test(line)) return false;
+  if (/^│?\s*this warning/i.test(line)) return false;
+  if (/^│?\s*and may behave unpredictably/i.test(line)) return false;
+  if (/^│?\s*true`? in .*\.codex/i.test(line)) return false;
   if (/^\s*[>›]/.test(line)) return false;
   return true;
 }

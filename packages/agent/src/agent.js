@@ -12,6 +12,7 @@ const sessions = new Map();
 await prepareSocketPath();
 const store = createStore();
 fs.mkdirSync(sessionsDir, { recursive: true });
+reapStartupSessions();
 
 const server = net.createServer((socket) => {
   socket.setEncoding("utf8");
@@ -77,7 +78,9 @@ const server = net.createServer((socket) => {
       }
     }
   });
-  socket.on("error", () => {});
+  socket.on("error", (error) => {
+    console.error(`SteerAgent socket error: ${error.message}`);
+  });
 });
 
 server.on("error", (error) => {
@@ -93,6 +96,43 @@ server.listen(socketPath, () => {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+const REAPER_INTERVAL_MS = 30_000;
+const reaperTimer = setInterval(reapDeadSessions, REAPER_INTERVAL_MS);
+reaperTimer.unref?.();
+
+function reapDeadSessions() {
+  for (const [sessionId, session] of sessions) {
+    if (session.runState === "ended" || session.runState === "disconnected") continue;
+    if (!session.pid || session.pid <= 0) continue;
+    if (isProcessAlive(session.pid)) continue;
+
+    sessions.set(sessionId, {
+      ...session,
+      runState: "disconnected",
+      updatedAt: new Date().toISOString()
+    });
+    store.updateSessionState(sessionId, "disconnected");
+  }
+}
+
+function reapStartupSessions() {
+  for (const row of store.listLiveSessions()) {
+    if (!row.pid || row.pid <= 0) continue;
+    if (isProcessAlive(row.pid)) continue;
+    store.updateSessionState(row.id, "disconnected");
+  }
+  store.resolveStaleDisconnectedCards();
+}
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
 
 function registerSession(message, socket, send) {
   const now = new Date().toISOString();
@@ -122,10 +162,22 @@ function registerSession(message, socket, send) {
   send({ type: "registered", sessionId: message.sessionId });
 }
 
+const transcriptStreams = new Map();
+
+function getTranscriptStream(sessionId) {
+  let stream = transcriptStreams.get(sessionId);
+  if (stream) return stream;
+  const filePath = path.join(sessionsDir, `${sessionId}.log`);
+  stream = fs.createWriteStream(filePath, { flags: "a" });
+  stream.on("error", (error) => {
+    console.error(`SteerAgent transcript write failed for ${sessionId}: ${error.message}`);
+  });
+  transcriptStreams.set(sessionId, stream);
+  return stream;
+}
+
 function appendTranscript(message) {
-  const filePath = path.join(sessionsDir, `${message.sessionId}.log`);
-  const prefix = message.stream === "stdout" || message.stream === "stderr" ? "" : "";
-  fs.appendFileSync(filePath, `${prefix}${message.chunk}`);
+  getTranscriptStream(message.sessionId).write(message.chunk);
   store.appendTranscript(message);
 }
 
@@ -218,6 +270,10 @@ function shutdown() {
     try {
       fs.unlinkSync(socketPath);
     } catch {}
+    for (const stream of transcriptStreams.values()) {
+      stream.end();
+    }
+    transcriptStreams.clear();
     store.close();
     process.exit(0);
   });

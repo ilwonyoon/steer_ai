@@ -53,6 +53,35 @@ test("renders terminal repaint output from the final screen state", () => {
   assert.deepEqual(lines, ["• Hi. What would you like to work on?"]);
 });
 
+test("preserves logical lines from long provider-native reports", () => {
+  const report = Array.from({ length: 72 }, (_, index) => `Line ${String(index + 1).padStart(2, "0")}: completed step`).join("\n");
+  const lines = transcriptDisplayLines(report);
+
+  assert.equal(lines.length, 72);
+  assert.equal(lines[0], "Line 01: completed step");
+  assert.equal(lines.at(-1), "Line 72: completed step");
+});
+
+test("keeps paragraph breaks and indentation in provider-native reports", () => {
+  const lines = transcriptDisplayLines(`
+    Completed:
+    - Updated transcript parsing
+      - Preserved nested detail
+
+    Next:
+    Run verification.
+  `);
+
+  assert.deepEqual(lines, [
+    "Completed:",
+    "- Updated transcript parsing",
+    "  - Preserved nested detail",
+    "",
+    "Next:",
+    "Run verification."
+  ]);
+});
+
 test("filters Claude running status repaint lines", () => {
   const lines = transcriptDisplayLines(`
     ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt

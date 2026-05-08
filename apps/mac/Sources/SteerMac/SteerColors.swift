@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SteerColors {
-    static let appBackground = dynamic(light: rgb(0.97, 0.97, 0.98), dark: rgb(0.075, 0.075, 0.085))
+    static let appBackground = dynamic(light: rgb(0.955, 0.955, 0.965), dark: rgb(0.075, 0.075, 0.085))
     static let cardBackground = dynamic(light: rgb(0.985, 0.985, 0.975), dark: rgb(0.12, 0.12, 0.13))
     static let cardBackplate = dynamic(light: rgb(0.985, 0.985, 0.975, 0.94), dark: rgb(0.18, 0.18, 0.19, 0.72))
 
@@ -36,6 +36,20 @@ enum SteerColors {
     static let running = dynamic(light: rgb(0.20, 0.78, 0.35), dark: rgb(0.42, 0.86, 0.52))
     static let ended = dynamic(light: rgb(0.46, 0.46, 0.50), dark: rgb(0.58, 0.58, 0.64))
     static let disconnected = dynamic(light: rgb(0.72, 0.35, 0.00), dark: rgb(0.92, 0.58, 0.25))
+
+    static func hueTint(hue: Double, intensity: Double = 1.0) -> Color {
+        let normalized = hue / 360
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+                let saturation = 0.32 * intensity
+                let brightness = 0.22 + 0.04 * intensity
+                return NSColor(hue: normalized, saturation: saturation, brightness: brightness, alpha: 1)
+            }
+            let saturation = 0.20 * intensity
+            let brightness = 0.99
+            return NSColor(hue: normalized, saturation: saturation, brightness: brightness, alpha: 1)
+        })
+    }
 
     private static func dynamic(light: NSColor, dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
