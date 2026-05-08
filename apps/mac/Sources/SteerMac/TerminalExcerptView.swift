@@ -7,7 +7,7 @@ struct TerminalExcerptView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 5) {
                 ForEach(lines) { line in
-                    Text(line.text.isEmpty ? " " : line.text)
+                    Text(renderedLine(line.text))
                         .font(.system(size: 11.5, weight: weight(for: line.kind), design: .monospaced))
                         .foregroundStyle(color(for: line.kind))
                         .textSelection(.enabled)
@@ -36,6 +36,23 @@ struct TerminalExcerptView: View {
         case .warning:
             SteerColors.terminalWarning
         }
+    }
+
+    /// Inline markdown for the bits that show up in real codex / claude
+    /// output: **bold**, *italic*, `code`, [link](url). Anything that fails
+    /// to parse falls back to literal text so model output never breaks the
+    /// UI.
+    private func renderedLine(_ raw: String) -> AttributedString {
+        let text = raw.isEmpty ? " " : raw
+        if let attributed = try? AttributedString(
+            markdown: text,
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) {
+            return attributed
+        }
+        return AttributedString(text)
     }
 
     private func weight(for kind: TerminalLineKind) -> Font.Weight {

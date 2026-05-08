@@ -466,9 +466,18 @@ private struct CompactActionCardView: View {
         SteerColors.hueTint(hue: card.accentHue, intensity: 1.0)
     }
 
-    private var summaryLine: String {
+    private var summaryLine: AttributedString {
         let trimmed = card.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? card.title : trimmed
+        let raw = trimmed.isEmpty ? card.title : trimmed
+        if let attributed = try? AttributedString(
+            markdown: raw,
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) {
+            return attributed
+        }
+        return AttributedString(raw)
     }
 
     var body: some View {
