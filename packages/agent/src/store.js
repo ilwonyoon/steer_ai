@@ -194,6 +194,9 @@ export function createStore(filePath = databasePath) {
     listLiveSessions() {
       return statements.selectLiveSessions.all();
     },
+    getSession(sessionId) {
+      return statements.selectSession.get(sessionId) ?? null;
+    },
     upsertSession(session) {
       statements.upsertSession.run(
         session.id,

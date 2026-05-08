@@ -154,7 +154,7 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
                 SELECT 1
                 FROM transcript_entries traffic
                 WHERE traffic.session_id = s.id
-                  AND traffic.stream IN ('report', 'stdout', 'stderr', 'pty', 'user')
+                  AND traffic.stream IN ('report', 'stdout', 'stderr', 'user')
               )
             )
           )

@@ -136,6 +136,15 @@ function isProcessAlive(pid) {
 
 function registerSession(message, socket, send) {
   const now = new Date().toISOString();
+  // If this session already exists (wrapper reconnect), preserve its prior
+  // run_state so a card the user hadn't answered yet stays surfaced. Only a
+  // brand-new session starts in 'running'.
+  const existing = store.getSession?.(message.sessionId) ?? null;
+  const preservedRunState =
+    existing && existing.run_state && existing.run_state !== "disconnected" && existing.run_state !== "ended"
+      ? existing.run_state
+      : "running";
+
   const session = {
     id: message.sessionId,
     provider: message.provider,
@@ -145,7 +154,7 @@ function registerSession(message, socket, send) {
     cwd: message.cwd,
     pid: message.pid,
     providerThreadId: message.providerThreadId,
-    runState: "running",
+    runState: preservedRunState,
     createdAt: now,
     updatedAt: now,
     currentRoomId: store.defaultRoomId,
