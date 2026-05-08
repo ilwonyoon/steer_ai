@@ -233,6 +233,9 @@ function routeInstruction(message, send) {
   }
 
   const instructionId = randomUUID();
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments.filter((value) => typeof value === "string" && value.length > 0)
+    : [];
   store.createInstruction({
     id: instructionId,
     sessionId: message.sessionId,
@@ -241,12 +244,16 @@ function routeInstruction(message, send) {
   session.socket.write(encodeMessage({
     type: "instruction",
     instructionId,
-    text: message.text
+    text: message.text,
+    attachments
   }));
+  const transcriptChunk = attachments.length > 0
+    ? `[user] ${message.text}\n${attachments.map((p) => `[attached] ${p}`).join("\n")}\n`
+    : `[user] ${message.text}\n`;
   appendTranscript({
     sessionId: message.sessionId,
     stream: "user",
-    chunk: `[user] ${message.text}\n`
+    chunk: transcriptChunk
   });
   updateState({ sessionId: message.sessionId, runState: "running" });
   send({ type: "queued", sessionId: message.sessionId, instructionId });

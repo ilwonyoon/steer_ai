@@ -16,6 +16,7 @@ import { startCodexSessionReader } from "./codex_session_reader.js";
 import { createAgentLink } from "./agent_link.js";
 import { installClaudeHooks, isClaudeHookInstalled, normalizeHookPayload, parseHookInput } from "./hooks.js";
 import { isCancelChunk } from "./cancel_keys.js";
+import { formatInstructionWithAttachments } from "./attachments.js";
 
 const [, , command, ...args] = process.argv;
 const agentEntryPath = fileURLToPath(new URL("../../agent/src/agent.js", import.meta.url));
@@ -113,7 +114,8 @@ async function wrapProvider(provider, childCommand, childArgs) {
   agent.on("data", createLineDecoder((message) => {
     if (message.type !== "instruction") return;
 
-    child.stdin.write(`${message.text}\n`);
+    const payload = formatInstructionWithAttachments(message.text, message.attachments);
+    child.stdin.write(`${payload}\n`);
     agent.write(encodeMessage({ type: "state", sessionId, runState: "running" }));
     agent.write(encodeMessage({
       type: "ack",
@@ -254,7 +256,8 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   function submitPtyInstruction(message, done) {
     agent.write({ type: "state", sessionId, runState: "running" });
-    const input = formatPtyInstructionInput(provider, message.text);
+    const merged = formatInstructionWithAttachments(message.text, message.attachments);
+    const input = formatPtyInstructionInput(provider, merged);
     ptyProcess.write(input);
     setTimeout(() => {
       ptyProcess.write("\r");
@@ -446,11 +449,12 @@ async function runClaudeHeadlessAdapter(args) {
     if (message.type !== "instruction") return;
 
     agent.write(encodeMessage({ type: "state", sessionId, runState: "running" }));
+    const payload = formatInstructionWithAttachments(message.text, message.attachments);
     child.stdin.write(`${JSON.stringify({
       type: "user",
       message: {
         role: "user",
-        content: [{ type: "text", text: message.text }]
+        content: [{ type: "text", text: payload }]
       }
     })}\n`);
     agent.write(encodeMessage({
@@ -605,7 +609,8 @@ async function runCodexHeadlessAdapter(args) {
 
     try {
       setState("running");
-      const input = [{ type: "text", text: message.text, text_elements: [] }];
+      const payload = formatInstructionWithAttachments(message.text, message.attachments);
+      const input = [{ type: "text", text: payload, text_elements: [] }];
       if (activeTurnId && runState === "running") {
         const response = await codex.request("turn/steer", {
           threadId,
@@ -639,19 +644,46 @@ async function runCodexHeadlessAdapter(args) {
 }
 
 async function sendInstruction(args) {
-  const [sessionId, ...textParts] = args;
-  const text = textParts.join(" ").trim();
+  const { sessionId, text, attachments } = parseSendArgs(args);
 
-  if (!sessionId || !text) {
-    throw new Error("usage: steer send <sessionId> <instruction>");
+  if (!sessionId || (!text && attachments.length === 0)) {
+    throw new Error("usage: steer send <sessionId> <instruction> [--attach <path>]...");
   }
 
-  const response = await requestAgent({ type: "send", sessionId, text });
+  const response = await requestAgent({ type: "send", sessionId, text, attachments });
   if (response.type === "error") {
     console.error(response.error);
     process.exit(1);
   }
   console.log(JSON.stringify(response, null, 2));
+}
+
+function parseSendArgs(args) {
+  const positional = [];
+  const attachments = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+    if (token === "--attach" || token === "-a") {
+      const next = args[i + 1];
+      if (!next) {
+        throw new Error(`${token} requires a path argument`);
+      }
+      attachments.push(next);
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("--attach=")) {
+      attachments.push(token.slice("--attach=".length));
+      continue;
+    }
+    positional.push(token);
+  }
+  const [sessionId, ...textParts] = positional;
+  return {
+    sessionId,
+    text: textParts.join(" ").trim(),
+    attachments
+  };
 }
 
 async function reportHookEvent(args) {

@@ -36,11 +36,17 @@ struct LocalSteerStore {
         }.value
     }
 
-    func send(_ text: String, to sessionId: String) async throws {
+    func send(_ text: String, attachments: [URL] = [], to sessionId: String) async throws {
         try await Task.detached {
+            var arguments: [String] = ["send", sessionId, text]
+            for attachment in attachments {
+                arguments.append("--attach")
+                arguments.append(attachment.path)
+            }
+
             let process = Process()
             process.executableURL = URL(fileURLWithPath: steerExecutablePath())
-            process.arguments = ["send", sessionId, text]
+            process.arguments = arguments
             process.environment = processEnvironment()
             process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
             let errorPipe = Pipe()

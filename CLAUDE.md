@@ -65,7 +65,7 @@ steer claude --headless   # Claude Code stream-json adapter
 steer codex               # interactive PTY-bridged Codex session (default)
 steer codex --headless    # Codex app-server JSON-RPC adapter
 steer wrap -- <cmd>       # generic PTY wrapper for any command
-steer send <sessionId> "instruction"
+steer send <sessionId> "instruction" [--attach <image-path>]...
 steer sessions
 steer install-claude-hooks   # writes Stop/Notification hook commands to .claude/settings.local.json
 steer hook claude Stop       # internal: invoked by Claude hooks; reads JSON payload from stdin

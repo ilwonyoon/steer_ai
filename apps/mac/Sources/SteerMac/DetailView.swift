@@ -3,9 +3,10 @@ import SwiftUI
 struct DetailView: View {
     let card: ActionCard
     let onClose: () -> Void
-    let onSend: (String) -> Void
+    let onSend: (String, [ReplyAttachment]) -> Void
 
     @State private var reply = ""
+    @State private var attachments: [ReplyAttachment] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,9 +60,10 @@ struct DetailView: View {
                 .padding(.vertical, 12)
             }
 
-            ReplyDock(chips: card.chips, reply: $reply, onSend: { text in
-                onSend(text)
+            ReplyDock(chips: card.chips, reply: $reply, attachments: $attachments, onSend: { text, atts in
+                onSend(text, atts)
                 reply = ""
+                attachments = []
             })
             .padding(.horizontal, 14)
             .padding(.bottom, 14)

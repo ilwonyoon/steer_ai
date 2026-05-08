@@ -1,64 +1,65 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ReplyDock: View {
     let chips: [String]
     @Binding var reply: String
-    let onSend: (String) -> Void
+    @Binding var attachments: [ReplyAttachment]
+    let onSend: (String, [ReplyAttachment]) -> Void
     var tint: Color = SteerColors.inputFill
     var provider: ProviderKind = .custom
 
     var body: some View {
-        inputField
+        VStack(alignment: .leading, spacing: 8) {
+            if !attachments.isEmpty {
+                AttachmentRow(
+                    attachments: attachments,
+                    onRemove: removeAttachment
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            inputField
+        }
+        .animation(.snappy(duration: 0.18), value: attachments)
+        .onDrop(of: [.image, .fileURL], isTargeted: nil, perform: handleDrop)
     }
 
     private var trimmedReply: String {
         reply.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func submitReply() {
-        let text = trimmedReply
-        guard !text.isEmpty else { return }
-        onSend(text)
-        reply = ""
+    private var canSend: Bool {
+        !trimmedReply.isEmpty || !attachments.isEmpty
     }
 
-    private var chipScroller: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(chips, id: \.self) { chip in
-                    Button {
-                        reply = chip
-                    } label: {
-                        Text(chip)
-                            .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(SteerColors.ink)
-                            .lineLimit(1)
-                            .padding(.horizontal, 12)
-                            .frame(height: 32)
-                    }
-                    .buttonStyle(.plain)
-                    .background(SteerColors.subtleFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .stroke(SteerColors.softSeparator, lineWidth: 1)
-                    }
-                }
+    private func submitReply() {
+        let text = trimmedReply
+        guard canSend else { return }
+        let outgoing = attachments
+        onSend(text, outgoing)
+        reply = ""
+        attachments = []
+    }
+
+    private func removeAttachment(_ attachment: ReplyAttachment) {
+        AttachmentService.discard(attachment)
+        attachments.removeAll { $0.id == attachment.id }
+    }
+
+    private func ingestPasteboardAttachments() {
+        let captured = AttachmentService.attachments(from: NSPasteboard.general)
+        guard !captured.isEmpty else { return }
+        attachments.append(contentsOf: captured)
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        Task { @MainActor in
+            let captured = await AttachmentService.attachments(from: providers)
+            if !captured.isEmpty {
+                attachments.append(contentsOf: captured)
             }
-            .padding(.vertical, 1)
-            .padding(.trailing, 18)
         }
-        .overlay(alignment: .trailing) {
-            LinearGradient(
-                colors: [
-                    SteerColors.cardBackground.opacity(0),
-                    SteerColors.cardBackground.opacity(0.94)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: 28)
-            .allowsHitTesting(false)
-        }
+        return true
     }
 
     private var inputField: some View {
@@ -85,8 +86,11 @@ struct ReplyDock: View {
                     submitReply()
                     return .handled
                 }
+                .onPasteCommand(of: [.image, .fileURL]) { _ in
+                    ingestPasteboardAttachments()
+                }
 
-            if !trimmedReply.isEmpty {
+            if canSend {
                 Button(action: submitReply) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 13, weight: .bold))
@@ -102,6 +106,75 @@ struct ReplyDock: View {
                 .accessibilityLabel("Send reply")
             }
         }
-        .animation(.snappy(duration: 0.16), value: reply.isEmpty)
+        .animation(.snappy(duration: 0.16), value: canSend)
+    }
+}
+
+private struct AttachmentRow: View {
+    let attachments: [ReplyAttachment]
+    let onRemove: (ReplyAttachment) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(attachments) { attachment in
+                    AttachmentThumbnail(attachment: attachment, onRemove: { onRemove(attachment) })
+                }
+            }
+            .padding(.vertical, 2)
+            .padding(.horizontal, 2)
+        }
+    }
+}
+
+private struct AttachmentThumbnail: View {
+    let attachment: ReplyAttachment
+    let onRemove: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            thumbnailImage
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(SteerColors.softSeparator, lineWidth: 1)
+                }
+                .help(attachment.url.path)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .background(Circle().fill(Color.black.opacity(0.7)))
+            }
+            .buttonStyle(.plain)
+            .padding(2)
+            .accessibilityLabel("Remove attachment")
+            .opacity(isHovered ? 1 : 0.85)
+        }
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+
+    @ViewBuilder
+    private var thumbnailImage: some View {
+        if let nsImage = NSImage(contentsOf: attachment.url) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 64, height: 64)
+                .clipped()
+        } else {
+            Rectangle()
+                .fill(SteerColors.subtleFill)
+                .overlay {
+                    Image(systemName: "photo")
+                        .foregroundStyle(SteerColors.tertiaryInk)
+                }
+        }
     }
 }

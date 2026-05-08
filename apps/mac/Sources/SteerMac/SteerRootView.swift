@@ -104,7 +104,7 @@ struct SteerRootView: View {
         } else if let currentCard {
             ActionCardView(
                 card: currentCard,
-                onSend: { text in sendFromCard(text) }
+                onSend: { text, attachments in sendFromCard(text, attachments: attachments) }
             )
             .matchedGeometryEffect(id: currentCard.sessionId, in: sessionTransition)
             .id(currentCard.id)
@@ -186,19 +186,20 @@ struct SteerRootView: View {
             }
     }
 
-    private func sendFromCard(_ text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    private func sendFromCard(_ text: String, attachments: [ReplyAttachment] = []) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         guard let currentCard else { return }
 
         Task {
-            await send(text, to: currentCard.sessionId)
+            await send(trimmed, attachments: attachments, to: currentCard.sessionId)
             move(1)
         }
     }
 
-    private func send(_ text: String, to sessionId: String) async {
+    private func send(_ text: String, attachments: [ReplyAttachment] = [], to sessionId: String) async {
         do {
-            try await store.send(text, to: sessionId)
+            try await store.send(text, attachments: attachments.map(\.url), to: sessionId)
             await reload()
         } catch {
             lastError = "send failed"

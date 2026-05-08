@@ -17,6 +17,9 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
+        Task.detached(priority: .background) {
+            AttachmentService.cleanupStaleTempFiles()
+        }
         Self.status.$waitingCount
             .receive(on: RunLoop.main)
             .sink { [weak self] count in
