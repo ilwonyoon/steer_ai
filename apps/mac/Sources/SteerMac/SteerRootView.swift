@@ -40,15 +40,27 @@ struct SteerRootView: View {
                 }
 
                 cardStack
-                    .frame(maxWidth: .infinity, maxHeight: 540)
+                    .frame(maxWidth: .infinity, maxHeight: 480)
+
+                ActionCardCarousel(
+                    cards: cards,
+                    currentIndex: currentIndex,
+                    namespace: sessionTransition,
+                    onSelect: { tappedIndex in
+                        guard cards.indices.contains(tappedIndex) else { return }
+                        withAnimation(.snappy(duration: 0.24)) {
+                            currentIndex = tappedIndex
+                        }
+                    }
+                )
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 44)
-            .padding(.bottom, 8)
+            .padding(.top, 36)
+            .padding(.bottom, 12)
         }
-        .frame(width: 375, height: 812)
+        .frame(width: 375, height: 720)
         .background(keyboardShortcuts)
         .animation(.snappy(duration: 0.22), value: currentIndex)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))

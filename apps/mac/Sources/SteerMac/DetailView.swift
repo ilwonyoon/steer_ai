@@ -68,7 +68,7 @@ struct DetailView: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 14)
         }
-        .frame(width: 375, height: 812)
+        .frame(width: 375, height: 720)
         .background(SteerColors.appBackground)
     }
 }
