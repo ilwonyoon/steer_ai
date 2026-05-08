@@ -494,16 +494,7 @@ private struct CompactActionCardView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                headerTint,
-                in: UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-            )
+            .background(headerTint)
 
             Text(summaryLine)
                 .font(.system(size: 10.5, design: .monospaced))
@@ -513,28 +504,17 @@ private struct CompactActionCardView: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 11)
-                .background(
-                    SteerColors.cardBackground,
-                    in: UnevenRoundedRectangle(
-                        topLeadingRadius: 0,
-                        bottomLeadingRadius: 12,
-                        bottomTrailingRadius: 12,
-                        topTrailingRadius: 0,
-                        style: .continuous
-                    )
-                )
+                .background(SteerColors.cardBackground)
         }
         .frame(width: 132, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(SteerColors.softSeparator, lineWidth: 1)
+                .strokeBorder(
+                    isCurrent ? Color.accentColor.opacity(0.7) : SteerColors.softSeparator,
+                    lineWidth: isCurrent ? 1.5 : 1
+                )
         }
-        .shadow(
-            color: isCurrent ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.06),
-            radius: isCurrent ? 10 : 4,
-            x: 0,
-            y: isCurrent ? 4 : 2
-        )
     }
 }
 
