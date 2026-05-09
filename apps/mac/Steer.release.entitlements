@@ -19,5 +19,15 @@
     <array>
         <string>iCloud.ai.steer.mac</string>
     </array>
+
+    <!-- launchd validates that the binary's application-identifier and
+         team-identifier match the embedded provisioning profile. Without
+         these the bundle dies with POSIX 163 ('Launchd job spawn
+         failed') the moment a notarized + profile-embedded build is
+         opened. -->
+    <key>com.apple.application-identifier</key>
+    <string>LG7667PAS6.ai.steer.mac</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>LG7667PAS6</string>
 </dict>
 </plist>
