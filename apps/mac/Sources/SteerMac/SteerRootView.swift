@@ -252,13 +252,14 @@ struct SteerRootView: View {
         isLoading = false
         // Keep the user's focus stable across reloads. If the previously
         // focused session is gone (resolved / disconnected), fall back to
-        // the first available card; otherwise leave focus alone so
-        // mid-typing reloads don't yank the user to a different card.
+        // the most recent card (carousel is sorted oldest→newest, so
+        // .last is the freshest); otherwise leave focus alone so mid-
+        // typing reloads don't yank the user to a different card.
         if let id = focusedSessionId,
            !loadedCards.contains(where: { $0.sessionId == id }) {
-            focusedSessionId = loadedCards.first?.sessionId
+            focusedSessionId = loadedCards.last?.sessionId
         } else if focusedSessionId == nil {
-            focusedSessionId = loadedCards.first?.sessionId
+            focusedSessionId = loadedCards.last?.sessionId
         }
         // Drop drafts for sessions that no longer have a card.
         let liveIds = Set(loadedCards.map(\.sessionId))

@@ -158,13 +158,7 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
               )
             )
           )
-        ORDER BY
-          CASE ac.priority
-            WHEN 'urgent' THEN 0
-            WHEN 'normal' THEN 1
-            ELSE 2
-          END,
-          ac.updated_at DESC
+        ORDER BY ac.updated_at ASC
         LIMIT 12;
         """
     )
