@@ -38,7 +38,7 @@ final class CloudKitWebClient {
 
     init(
         containerIdentifier: String = CloudKitFields.containerIdentifier,
-        environment: Environment = .production,
+        environment: Environment = .development,
         apiToken: String,
         session: URLSession = .shared,
         tokenStore: WebAuthTokenStore = WebAuthTokenStore()
@@ -114,10 +114,15 @@ final class CloudKitWebClient {
             throw ClientError.http(status: -1, body: "no http response")
         }
 
-        // CloudKit returns 401 with a JSON envelope including a
-        // redirectURL when ckWebAuthToken is missing or expired.
-        if http.statusCode == 401, let envelope = try? JSONDecoder().decode(AuthRequiredEnvelope.self, from: data),
-           envelope.uuid != nil, let url = envelope.redirectURL.flatMap(URL.init(string:)) {
+        // CloudKit returns 421 (sometimes 401) with a JSON envelope
+        // containing a redirectURL when ckWebAuthToken is missing or
+        // expired. We treat any non-2xx that decodes to that envelope
+        // as the "needs sign-in" signal so we don't have to guess the
+        // exact status code Apple uses today.
+        if !(200..<300).contains(http.statusCode),
+           let envelope = try? JSONDecoder().decode(AuthRequiredEnvelope.self, from: data),
+           envelope.serverErrorCode == "AUTHENTICATION_REQUIRED",
+           let url = envelope.redirectURL.flatMap(URL.init(string:)) {
             throw ClientError.authenticationRequired(redirectURL: url)
         }
 
@@ -174,6 +179,7 @@ final class CloudKitWebClient {
 
     struct AuthRequiredEnvelope: Decodable {
         let uuid: String?
+        let serverErrorCode: String?
         let redirectURL: String?
     }
 
