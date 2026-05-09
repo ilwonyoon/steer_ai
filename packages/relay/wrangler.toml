@@ -1,0 +1,35 @@
+name = "steer-relay"
+main = "src/index.ts"
+compatibility_date = "2024-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 binding — fill database_id after `wrangler d1 create steer-relay`.
+[[d1_databases]]
+binding = "DB"
+database_name = "steer-relay"
+database_id = "REPLACE_WITH_D1_ID_FROM_DASHBOARD"
+
+# Durable Objects power per-user WebSocket fanout. Each authenticated
+# user gets their own DO instance; cards published from Mac broadcast
+# to every connected client of that user (iPhone / Web / additional
+# Macs in the future).
+[[durable_objects.bindings]]
+name = "USER_HUB"
+class_name = "UserHub"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["UserHub"]
+
+# Apple's identity-token JWKS endpoint — the worker fetches Apple
+# public keys here to verify Sign in with Apple identity tokens.
+[vars]
+APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
+APPLE_AUDIENCES = "ai.steer.mac,ai.steer.ios"
+APPLE_ISSUER = "https://appleid.apple.com"
+
+# Used by /v1/auth/apple to mint our own session JWT after the Apple
+# identity token validates. Set via:
+#   wrangler secret put SESSION_JWT_SECRET
+# Generate locally with `openssl rand -base64 64`.
+# (The secret name lives only in Cloudflare; never check the value in.)

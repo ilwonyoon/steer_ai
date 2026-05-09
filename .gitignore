@@ -9,3 +9,8 @@ package-lock.json
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 apps/mac/Resources/AppIcon.icns
+
+# relay backend
+packages/relay/node_modules/
+packages/relay/.wrangler/
+packages/relay/.dev.vars

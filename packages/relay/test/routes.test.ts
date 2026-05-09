@@ -1,0 +1,271 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { env } from "cloudflare:test";
+import { SignJWT } from "jose";
+import worker from "../src/index.js";
+import migration0001 from "../migrations/0001_initial.sql?raw";
+
+async function runMigrations() {
+  // Workers runtime has no fs; we vite-import the SQL files as raw
+  // strings instead. New migrations: import + add to this array.
+  const migrations = [migration0001];
+  for (const sql of migrations) {
+    // Strip line comments first so they don't break statement
+    // splitting, then split on `;` and run each statement.
+    const cleaned = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    const statements = cleaned
+      .split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const stmt of statements) {
+      await env.DB.prepare(stmt).run();
+    }
+  }
+}
+
+declare module "cloudflare:test" {
+  interface ProvidedEnv extends Record<string, unknown> {
+    DB: D1Database;
+    USER_HUB: DurableObjectNamespace;
+    SESSION_JWT_SECRET: string;
+    APPLE_JWKS_URL: string;
+    APPLE_AUDIENCES: string;
+    APPLE_ISSUER: string;
+  }
+}
+
+async function freshSessionToken(userId = "user-test-1") {
+  const secret = new TextEncoder().encode(env.SESSION_JWT_SECRET as string);
+  return await new SignJWT({ sub: userId, name: "Test User" })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .setIssuer("ai.steer.relay")
+    .sign(secret);
+}
+
+async function bootstrapUser(userId: string) {
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO users (user_id, apple_email, display_name, created_at, last_seen_at)
+     VALUES (?, ?, ?, ?, ?)`
+  )
+    .bind(userId, "test@example.com", "Test User", Date.now(), Date.now())
+    .run();
+}
+
+beforeEach(async () => {
+  await runMigrations();
+  await env.DB.prepare("DELETE FROM cards").run();
+  await env.DB.prepare("DELETE FROM instructions").run();
+  await env.DB.prepare("DELETE FROM sessions").run();
+  await env.DB.prepare("DELETE FROM users").run();
+});
+
+describe("auth", () => {
+  it("rejects requests without Authorization", async () => {
+    const res = await worker.request("/v1/me", {}, env);
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects bogus session tokens", async () => {
+    const res = await worker.request(
+      "/v1/me",
+      { headers: { Authorization: "Bearer not-a-jwt" } },
+      env
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("accepts a freshly minted session token", async () => {
+    await bootstrapUser("user-test-1");
+    const token = await freshSessionToken();
+    const res = await worker.request(
+      "/v1/me",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect((body as any).user.userId).toBe("user-test-1");
+  });
+});
+
+describe("cards", () => {
+  it("publishes a card and lists it back", async () => {
+    await bootstrapUser("user-cards");
+    const token = await freshSessionToken("user-cards");
+    const card = {
+      cardId: "card-1",
+      sessionId: "session-1",
+      category: "blocker",
+      priority: "urgent",
+      title: "Claude needs unblock",
+      summary: "permission denied",
+      payload: { terminalLines: ["error: permission denied"] },
+      state: "active" as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const put = await worker.request(
+      "/v1/sync/cards/card-1",
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(card),
+      },
+      env
+    );
+    expect(put.status).toBe(200);
+
+    const list = await worker.request(
+      "/v1/sync/cards",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    const body = (await list.json()) as { cards: any[] };
+    expect(body.cards).toHaveLength(1);
+    expect(body.cards[0].cardId).toBe("card-1");
+    expect(body.cards[0].payload.terminalLines).toEqual(["error: permission denied"]);
+  });
+
+  it("isolates cards per user", async () => {
+    await bootstrapUser("user-a");
+    await bootstrapUser("user-b");
+    const tokenA = await freshSessionToken("user-a");
+    const tokenB = await freshSessionToken("user-b");
+    const card = {
+      cardId: "card-a",
+      sessionId: "session-a",
+      category: "waiting",
+      priority: "normal",
+      title: "A's session",
+      summary: "...",
+      state: "active" as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await worker.request(
+      "/v1/sync/cards/card-a",
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${tokenA}`, "Content-Type": "application/json" },
+        body: JSON.stringify(card),
+      },
+      env
+    );
+
+    const listB = await worker.request(
+      "/v1/sync/cards",
+      { headers: { Authorization: `Bearer ${tokenB}` } },
+      env
+    );
+    const body = (await listB.json()) as { cards: any[] };
+    expect(body.cards).toHaveLength(0);
+  });
+
+  it("resolves a card", async () => {
+    await bootstrapUser("user-resolve");
+    const token = await freshSessionToken("user-resolve");
+    const card = {
+      cardId: "card-resolve",
+      sessionId: "session-1",
+      category: "question",
+      priority: "normal",
+      title: "Q",
+      summary: "?",
+      state: "active" as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await worker.request(
+      "/v1/sync/cards/card-resolve",
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(card),
+      },
+      env
+    );
+    await worker.request(
+      "/v1/sync/cards/card-resolve",
+      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    const list = await worker.request(
+      "/v1/sync/cards",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    const body = (await list.json()) as { cards: any[] };
+    expect(body.cards).toHaveLength(0);
+  });
+});
+
+describe("instructions", () => {
+  it("queues an instruction and returns it from queued list", async () => {
+    await bootstrapUser("user-inst");
+    const token = await freshSessionToken("user-inst");
+    const post = await worker.request(
+      "/v1/sync/instructions",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructionId: "instr-1",
+          targetSessionId: "session-1",
+          text: "go ahead",
+        }),
+      },
+      env
+    );
+    expect(post.status).toBe(200);
+
+    const list = await worker.request(
+      "/v1/sync/instructions/queued",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    const body = (await list.json()) as { instructions: any[] };
+    expect(body.instructions).toHaveLength(1);
+    expect(body.instructions[0].text).toBe("go ahead");
+  });
+
+  it("marks an instruction injected and removes it from queued", async () => {
+    await bootstrapUser("user-mark");
+    const token = await freshSessionToken("user-mark");
+    await worker.request(
+      "/v1/sync/instructions",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructionId: "instr-mark",
+          targetSessionId: "session-1",
+          text: "do it",
+        }),
+      },
+      env
+    );
+    await worker.request(
+      "/v1/sync/instructions/instr-mark/status",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "injected" }),
+      },
+      env
+    );
+    const list = await worker.request(
+      "/v1/sync/instructions/queued",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    const body = (await list.json()) as { instructions: any[] };
+    expect(body.instructions).toHaveLength(0);
+  });
+});
