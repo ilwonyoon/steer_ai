@@ -19,7 +19,9 @@ class_name = "UserHub"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["UserHub"]
+# Free plan requires SQLite-backed Durable Objects (the older
+# `new_classes` style is paid-only). Per Cloudflare error 10097.
+new_sqlite_classes = ["UserHub"]
 
 # Apple's identity-token JWKS endpoint — the worker fetches Apple
 # public keys here to verify Sign in with Apple identity tokens.
