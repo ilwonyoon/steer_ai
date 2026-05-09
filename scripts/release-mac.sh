@@ -166,7 +166,11 @@ else
   STAGE_DIR="$(mktemp -d)"
   cp -R "$APP_DIR" "$STAGE_DIR/"
   ln -s /Applications "$STAGE_DIR/Applications"
-  hdiutil create -volname "$DMG_VOLNAME" -srcfolder "$STAGE_DIR" -ov -format UDZO "$DMG_PATH"
+  # hdiutil mounts during create at /Volumes/<volname>. If a previous
+  # build left a stale lock there, the second invocation aborts with
+  # "Operation not permitted". Make the volname unique per run so two
+  # back-to-back release-mac.sh invocations don't collide.
+  hdiutil create -volname "${DMG_VOLNAME}-$$" -srcfolder "$STAGE_DIR" -ov -format UDZO "$DMG_PATH"
   rm -rf "$STAGE_DIR"
 fi
 
