@@ -10,6 +10,7 @@
     "agent": "node packages/agent/src/agent.js",
     "steer": "node packages/cli/src/index.js",
     "test": "node --test packages/agent/test/*.test.js packages/cli/test/*.test.js",
+    "test:integration": "STEER_INTEGRATION=1 node --test packages/cli/test/wrapper_invariant.test.js packages/cli/test/reconnect_invariant.test.js packages/cli/test/coding_session_e2e.test.js",
     "test:wrapper": "node packages/cli/src/index.js wrap -- node -i"
   },
   "engines": {

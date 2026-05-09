@@ -1,0 +1,43 @@
+# Run the full Steer test pipeline on every push and pull request.
+# Unit + contract + visibility-gate + classifier tests run as `npm test`;
+# the heavier wrapper / agent integration suite runs as
+# `npm run test:integration` and uses real PTYs and Unix sockets.
+
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  node:
+    name: Node tests (unit + integration)
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node 22.5+
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Unit + contract tests
+        run: npm test
+
+      - name: Wrapper / agent integration tests
+        run: npm run test:integration
+
+  swift:
+    name: Swift build
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SteerMac
+        run: swift build --package-path apps/mac
