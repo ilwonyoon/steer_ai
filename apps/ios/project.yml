@@ -1,0 +1,55 @@
+name: Steer
+options:
+  bundleIdPrefix: ai.steer
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: LG7667PAS6
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.0.1
+
+packages:
+  SteerCore:
+    path: ../../packages/SteerCore
+
+targets:
+  Steer:
+    type: application
+    platform: iOS
+    sources:
+      - path: SteerIOS
+    dependencies:
+      - package: SteerCore
+    info:
+      path: SteerIOS/Info.plist
+      properties:
+        CFBundleDisplayName: Steer
+        CFBundleIdentifier: ai.steer.ios
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.steer.ios
+        TARGETED_DEVICE_FAMILY: "1,2"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    entitlements:
+      path: SteerIOS/Steer.entitlements
+      properties:
+        com.apple.developer.icloud-services:
+          - CloudKit
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.ai.steer.mac

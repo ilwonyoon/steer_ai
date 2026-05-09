@@ -80,12 +80,13 @@ fi
 # Embed the Developer ID provisioning profile that asserts the iCloud
 # entitlements. Without this, notarized direct-distribution Macs hit
 # CKError 9 ('Not Authenticated') the moment they try to access the
-# CloudKit container. We pick up the first .provisionprofile under
-# ~/Library/MobileDevice/Provisioning Profiles/ that names ai.steer.mac;
-# tests can pin a specific path via STEER_PROVISIONING_PROFILE.
+# CloudKit container. Apple writes profiles with either .provisionprofile
+# or .mobileprovision depending on the era of the developer console flow,
+# so we accept both.
 PROFILE_PATH="${STEER_PROVISIONING_PROFILE:-}"
 if [ -z "$PROFILE_PATH" ]; then
-  for candidate in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.provisionprofile; do
+  for candidate in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.provisionprofile \
+                   "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision; do
     [ -f "$candidate" ] || continue
     if security cms -D -i "$candidate" 2>/dev/null \
       | grep -q "ai\.steer\.mac"; then
@@ -98,6 +99,8 @@ fi
 if [ -z "$PROFILE_PATH" ] || [ ! -f "$PROFILE_PATH" ]; then
   echo "error: no Developer ID provisioning profile found for ai.steer.mac" >&2
   echo "  follow docs/IOS_DEVELOPER_CONSOLE_SETUP.md → step 4 to create one" >&2
+  echo "  installed profiles right now:" >&2
+  ls "$HOME/Library/MobileDevice/Provisioning Profiles" 2>&1 | sed 's/^/    /' >&2
   exit 1
 fi
 
