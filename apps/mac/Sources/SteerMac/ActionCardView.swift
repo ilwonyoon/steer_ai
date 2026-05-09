@@ -2,10 +2,9 @@ import SwiftUI
 
 struct ActionCardView: View {
     let card: ActionCard
+    @Binding var reply: String
+    @Binding var attachments: [ReplyAttachment]
     let onSend: (String, [ReplyAttachment]) -> Void
-
-    @State private var reply = ""
-    @State private var attachments: [ReplyAttachment] = []
 
     private var headerTint: Color {
         SteerColors.hueTint(hue: card.accentHue, intensity: 0.65)

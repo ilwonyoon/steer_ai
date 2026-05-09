@@ -7,14 +7,25 @@ struct SteerRootView: View {
 
     @State private var cards: [ActionCard] = []
     @State private var liveChips: [LiveSessionChip] = []
-    @State private var currentIndex = 0
+    @State private var focusedSessionId: String? = nil
     @State private var cardDragOffset: CGFloat = 0
     @State private var isLoading = true
     @State private var lastError: String?
     @State private var didLoadInitialCards = false
     @State private var notifiedCardFingerprints = Set<String>()
     @State private var liveChipsExpanded = false
+    @State private var replyDrafts: [String: String] = [:]
+    @State private var attachmentDrafts: [String: [ReplyAttachment]] = [:]
     @Namespace private var sessionTransition
+
+    private var currentIndex: Int {
+        guard let focusedSessionId,
+              let idx = cards.firstIndex(where: { $0.sessionId == focusedSessionId })
+        else {
+            return 0
+        }
+        return idx
+    }
 
     private var currentCard: ActionCard? {
         guard cards.indices.contains(currentIndex) else { return nil }
@@ -57,7 +68,7 @@ struct SteerRootView: View {
                     onSelect: { tappedIndex in
                         guard cards.indices.contains(tappedIndex) else { return }
                         withAnimation(.snappy(duration: 0.24)) {
-                            currentIndex = tappedIndex
+                            focusedSessionId = cards[tappedIndex].sessionId
                         }
                     }
                 )
@@ -72,9 +83,9 @@ struct SteerRootView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))
         .onChange(of: status.pendingFocusSessionId) { _, newValue in
             guard let sessionId = newValue else { return }
-            if let index = cards.firstIndex(where: { $0.sessionId == sessionId }) {
+            if cards.contains(where: { $0.sessionId == sessionId }) {
                 withAnimation(.snappy(duration: 0.24)) {
-                    currentIndex = index
+                    focusedSessionId = sessionId
                 }
             }
             status.pendingFocusSessionId = nil
@@ -92,6 +103,8 @@ struct SteerRootView: View {
         } else if let currentCard {
             ActionCardView(
                 card: currentCard,
+                reply: replyBinding(for: currentCard.sessionId),
+                attachments: attachmentsBinding(for: currentCard.sessionId),
                 onSend: { text, attachments in sendFromCard(text, attachments: attachments) }
             )
             .matchedGeometryEffect(id: currentCard.sessionId, in: sessionTransition)
@@ -121,9 +134,36 @@ struct SteerRootView: View {
         return "In a terminal:\n  cd ~/your/project\n  steer codex   # or steer claude"
     }
 
+    private func replyBinding(for sessionId: String) -> Binding<String> {
+        Binding(
+            get: { replyDrafts[sessionId] ?? "" },
+            set: { newValue in
+                if newValue.isEmpty {
+                    replyDrafts.removeValue(forKey: sessionId)
+                } else {
+                    replyDrafts[sessionId] = newValue
+                }
+            }
+        )
+    }
+
+    private func attachmentsBinding(for sessionId: String) -> Binding<[ReplyAttachment]> {
+        Binding(
+            get: { attachmentDrafts[sessionId] ?? [] },
+            set: { newValue in
+                if newValue.isEmpty {
+                    attachmentDrafts.removeValue(forKey: sessionId)
+                } else {
+                    attachmentDrafts[sessionId] = newValue
+                }
+            }
+        )
+    }
+
     private func move(_ delta: Int) {
         guard !cards.isEmpty else { return }
-        currentIndex = (currentIndex + delta + cards.count) % cards.count
+        let nextIndex = (currentIndex + delta + cards.count) % cards.count
+        focusedSessionId = cards[nextIndex].sessionId
     }
 
     private var cardSwipeGesture: some Gesture {
@@ -210,8 +250,26 @@ struct SteerRootView: View {
         cards = loadedCards
         liveChips = loadedChips
         isLoading = false
-        if currentIndex >= cards.count {
-            currentIndex = max(cards.count - 1, 0)
+        // Keep the user's focus stable across reloads. If the previously
+        // focused session is gone (resolved / disconnected), fall back to
+        // the first available card; otherwise leave focus alone so
+        // mid-typing reloads don't yank the user to a different card.
+        if let id = focusedSessionId,
+           !loadedCards.contains(where: { $0.sessionId == id }) {
+            focusedSessionId = loadedCards.first?.sessionId
+        } else if focusedSessionId == nil {
+            focusedSessionId = loadedCards.first?.sessionId
+        }
+        // Drop drafts for sessions that no longer have a card.
+        let liveIds = Set(loadedCards.map(\.sessionId))
+        for key in replyDrafts.keys where !liveIds.contains(key) {
+            replyDrafts.removeValue(forKey: key)
+        }
+        for key in attachmentDrafts.keys where !liveIds.contains(key) {
+            for attachment in attachmentDrafts[key] ?? [] {
+                AttachmentService.discard(attachment)
+            }
+            attachmentDrafts.removeValue(forKey: key)
         }
         if !loadedCards.isEmpty || !loadedChips.isEmpty {
             lastError = nil
