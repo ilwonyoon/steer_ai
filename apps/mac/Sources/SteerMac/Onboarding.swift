@@ -276,9 +276,15 @@ private func packagedCLIPath() -> String {
        FileManager.default.isExecutableFile(atPath: bundled) {
         return bundled
     }
-    // Source-tree fallback for `swift run` developer launches.
+#if DEBUG
+    // Source-tree fallback for `swift run` developer launches only.
+    // Never used in release builds — avoids TCC Document Access prompts.
     let fallback = "/Users/\(NSUserName())/Documents/Steer_ai/packages/cli/src/index.js"
     return fallback
+#else
+    // In release builds, fall back to a PATH-resolved steer.
+    return "steer"
+#endif
 }
 
 private func claudeSettingsURL() -> URL {
