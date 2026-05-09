@@ -4,6 +4,7 @@ struct SteerRootView: View {
     private let store = LocalSteerStore()
     private let notificationService = ActionNotificationService.shared
     @ObservedObject private var status = SteerAppDelegate.status
+    @ObservedObject private var cloudKitSync = CloudKitSync.shared
 
     @State private var cards: [ActionCard] = []
     @State private var liveChips: [LiveSessionChip] = []
@@ -93,6 +94,20 @@ struct SteerRootView: View {
         }
         .task {
             await refreshLoop()
+        }
+        .sheet(isPresented: Binding(
+            get: { cloudKitSync.pendingAuthURL != nil },
+            set: { newValue in
+                if !newValue { cloudKitSync.pendingAuthURL = nil }
+            }
+        )) {
+            if let url = cloudKitSync.pendingAuthURL {
+                CloudKitSignInSheet(
+                    initialURL: url,
+                    onToken: { token in cloudKitSync.storeWebAuthToken(token) },
+                    onCancel: { cloudKitSync.pendingAuthURL = nil }
+                )
+            }
         }
     }
 

@@ -209,4 +209,12 @@ public enum CloudKitFields {
     /// of truth so the two platforms can't drift on identifier strings.
     public static let containerIdentifier = "iCloud.ai.steer.mac"
     public static let zoneName = "SteerPrivateZone"
+
+    /// Public CloudKit Web Services API token, scoped to this container
+    /// only. Safe to ship in the binary — the token alone grants no
+    /// access; users still have to sign in with their Apple ID through
+    /// the Web Services auth flow. Used by the Mac app's REST client
+    /// (Direct Distribution can't carry the icloud-services entitlement,
+    /// so the native CKContainer SDK isn't available there).
+    public static let cloudKitWebAPIToken = "d80b9bbad2e192c5b2ede84289e18ae758a577133bf938e99c718c9eac24da61"
 }

@@ -82,40 +82,13 @@ if [ ! -d "$APP_DIR" ]; then
   exit 1
 fi
 
-# Embed the Developer ID provisioning profile that asserts the iCloud
-# entitlements. Without this, notarized direct-distribution Macs hit
-# CKError 9 ('Not Authenticated') the moment they try to access the
-# CloudKit container. Apple writes profiles with either .provisionprofile
-# or .mobileprovision depending on the era of the developer console flow,
-# so we accept both.
-PROFILE_PATH="${STEER_PROVISIONING_PROFILE:-}"
-if [ -z "$PROFILE_PATH" ]; then
-  for candidate in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.provisionprofile \
-                   "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision; do
-    [ -f "$candidate" ] || continue
-    if security cms -D -i "$candidate" 2>/dev/null \
-      | grep -q "ai\.steer\.mac"; then
-      PROFILE_PATH="$candidate"
-      break
-    fi
-  done
-fi
-
-if [ -z "$PROFILE_PATH" ] || [ ! -f "$PROFILE_PATH" ]; then
-  echo "error: no Developer ID provisioning profile found for ai.steer.mac" >&2
-  echo "  follow docs/IOS_DEVELOPER_CONSOLE_SETUP.md → step 4 to create one" >&2
-  echo "  installed profiles right now:" >&2
-  ls "$HOME/Library/MobileDevice/Provisioning Profiles" 2>&1 | sed 's/^/    /' >&2
-  exit 1
-fi
-
-echo "==> Embedding provisioning profile: $(basename "$PROFILE_PATH")"
-cp "$PROFILE_PATH" "$APP_DIR/Contents/embedded.provisionprofile"
-# Profiles downloaded from developer.apple.com inherit a quarantine
-# xattr that follows them into the bundle. macOS launchd then refuses
-# to spawn the app with POSIX 163, so strip it after copy.
-xattr -d com.apple.quarantine "$APP_DIR/Contents/embedded.provisionprofile" 2>/dev/null || true
-xattr -d com.apple.metadata:kMDItemWhereFroms "$APP_DIR/Contents/embedded.provisionprofile" 2>/dev/null || true
+# NOTE: We deliberately do NOT embed a provisioning profile. Direct
+# Distribution Mac builds must NOT carry com.apple.developer.icloud-*
+# entitlements (launchd POSIX 163), so Mac talks to CloudKit via Web
+# Services REST and doesn't need the iCloud-asserting profile at all.
+# Removing it sidesteps a parade of provisioning failures we've hit:
+# expired profile downloads, profile/binary entitlement mismatch,
+# stuck `com.apple.quarantine` xattr from `developer.apple.com` zips.
 
 # Sparkle.framework ships with its own signature. Apple notarization rejects
 # anything signed with a non-Developer-ID identity, so we re-sign every nested
@@ -145,15 +118,21 @@ fi
 echo "==> Verifying signature"
 codesign --verify --strict --deep --verbose=2 "$APP_DIR" >&2
 
-# Sanity-check: the binary actually ended up with the iCloud entitlements
-# we asked for. We've shipped a release before where the Sparkle re-sign
-# stripped them; never again.
-if grep -q "icloud-services" "$ENTITLEMENTS" 2>/dev/null; then
-  if ! codesign -d --entitlements - --xml "$APP_DIR/Contents/MacOS/SteerMac" 2>/dev/null \
-       | grep -q "icloud-services"; then
-    echo "error: built bundle is missing iCloud entitlements; check the Sparkle re-sign step" >&2
-    exit 1
-  fi
+# Sanity-check: confirm the bundle ended up with the hardened-runtime
+# JIT entitlements that node-pty needs. Without them the wrapper can
+# launch but the spawn-helper segfaults on first child process.
+if ! codesign -d --entitlements - --xml "$APP_DIR/Contents/MacOS/SteerMac" 2>/dev/null \
+     | grep -q "allow-jit"; then
+  echo "error: built bundle is missing JIT entitlement; check the Sparkle re-sign step" >&2
+  exit 1
+fi
+# And inversely: confirm we did NOT accidentally re-introduce iCloud
+# entitlements. They make launchd refuse to spawn Direct-Distribution
+# bundles with POSIX 163 (see docs/RELEASE.md).
+if codesign -d --entitlements - --xml "$APP_DIR/Contents/MacOS/SteerMac" 2>/dev/null \
+   | grep -q "icloud-services"; then
+  echo "error: bundle has icloud-services entitlement; Direct Distribution will not launch" >&2
+  exit 1
 fi
 
 echo "==> Submitting bundle for notarization"
