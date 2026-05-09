@@ -46,6 +46,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: ai.steer.ios
         TARGETED_DEVICE_FAMILY: "1,2"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        CODE_SIGN_ENTITLEMENTS: SteerIOS/Steer.entitlements
     entitlements:
       path: SteerIOS/Steer.entitlements
       properties:

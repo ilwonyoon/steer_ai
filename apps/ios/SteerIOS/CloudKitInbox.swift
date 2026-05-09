@@ -8,14 +8,12 @@ final class CloudKitInbox: ObservableObject {
     @Published var loadError: String?
     @Published var isLoading = false
 
-    private let container: CKContainer
-    private let database: CKDatabase
     private let zoneID: CKRecordZone.ID
     private let deviceId: String
 
+    private var resolved: (container: CKContainer, database: CKDatabase)?
+
     init() {
-        self.container = CKContainer(identifier: CloudKitFields.containerIdentifier)
-        self.database = container.privateCloudDatabase
         self.zoneID = CKRecordZone.ID(zoneName: CloudKitFields.zoneName, ownerName: CKCurrentUserDefaultName)
         self.deviceId = CloudKitInbox.resolveDeviceId()
     }
@@ -26,9 +24,34 @@ final class CloudKitInbox: ObservableObject {
         await fetchAll()
     }
 
+    /// Resolve the CloudKit container lazily. The container init traps
+    /// (EXC_BREAKPOINT) when the running binary lacks the matching
+    /// `com.apple.developer.icloud-container-identifiers` entitlement —
+    /// which is what happens for ad-hoc / linker-signed simulator builds.
+    /// Catching it would require Objective-C exception bridging that
+    /// CloudKit doesn't provide, so we simply detect missing entitlements
+    /// up-front and surface a friendly message instead of letting the
+    /// app crash on launch.
+    private func resolveDatabaseIfNeeded() -> CKDatabase? {
+        if let resolved { return resolved.database }
+        guard CloudKitInbox.hasICloudEntitlement() else {
+            loadError = "iCloud disabled for this build (no entitlement). Sign and embed a provisioning profile to enable."
+            return nil
+        }
+        let container = CKContainer(identifier: CloudKitFields.containerIdentifier)
+        let database = container.privateCloudDatabase
+        resolved = (container, database)
+        return database
+    }
+
     func fetchAll() async {
         isLoading = true
         defer { isLoading = false }
+
+        guard let database = resolveDatabaseIfNeeded() else {
+            cards = []
+            return
+        }
 
         let query = CKQuery(recordType: CloudKitFields.Card.recordType, predicate: NSPredicate(value: true))
         do {
@@ -42,7 +65,6 @@ final class CloudKitInbox: ObservableObject {
         } catch let error as CKError where error.code == .notAuthenticated {
             loadError = "Sign in to iCloud in Settings to receive Steer cards."
         } catch let error as CKError where error.code == .zoneNotFound {
-            // Zone hasn't been created yet by the Mac. Treat as empty.
             cards = []
             loadError = nil
         } catch {
@@ -53,6 +75,7 @@ final class CloudKitInbox: ObservableObject {
     /// Send a reply for `card`. The Mac claims the resulting
     /// InstructionRequest record and injects into the wrapper.
     func sendReply(text: String, for card: CardSnapshot) async {
+        guard let database = resolveDatabaseIfNeeded() else { return }
         let request = InstructionRequest(
             instructionId: UUID().uuidString,
             targetSessionId: card.sessionId,
@@ -124,5 +147,22 @@ final class CloudKitInbox: ObservableObject {
         let fresh = UUID().uuidString
         UserDefaults.standard.set(fresh, forKey: key)
         return fresh
+    }
+
+    /// Best-effort: only consider iCloud usable when an embedded
+    /// provisioning profile asserts the container. Without one,
+    /// `CKContainer(identifier:)` traps on init for ad-hoc / linker-
+    /// signed simulator builds. We err on the side of NOT calling into
+    /// CloudKit when the binary can't prove its entitlement.
+    private static func hasICloudEntitlement() -> Bool {
+        guard let path = Bundle.main.path(forResource: "embedded", ofType: "mobileprovision")
+                  ?? Bundle.main.path(forResource: "embedded", ofType: "provisionprofile"),
+              let raw = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            return false
+        }
+        guard let s = String(data: raw, encoding: .ascii) ?? String(data: raw, encoding: .utf8) else {
+            return false
+        }
+        return s.contains(CloudKitFields.containerIdentifier)
     }
 }
