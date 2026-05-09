@@ -68,7 +68,7 @@ APP_DIR="$(
   APP_VERSION="$APP_VERSION" \
   APP_BUILD="${APP_BUILD:-}" \
   SIGN_IDENTITY="$STEER_SIGN_IDENTITY" \
-  ENTITLEMENTS="${ENTITLEMENTS:-$ROOT_DIR/apps/mac/Steer.entitlements}" \
+  ENTITLEMENTS="${ENTITLEMENTS:-$ROOT_DIR/apps/mac/Steer.release.entitlements}" \
   bash "$ROOT_DIR/scripts/build-mac-app.sh" | tail -1
 )"
 
@@ -76,6 +76,33 @@ if [ ! -d "$APP_DIR" ]; then
   echo "error: build did not produce an app bundle at $APP_DIR" >&2
   exit 1
 fi
+
+# Embed the Developer ID provisioning profile that asserts the iCloud
+# entitlements. Without this, notarized direct-distribution Macs hit
+# CKError 9 ('Not Authenticated') the moment they try to access the
+# CloudKit container. We pick up the first .provisionprofile under
+# ~/Library/MobileDevice/Provisioning Profiles/ that names ai.steer.mac;
+# tests can pin a specific path via STEER_PROVISIONING_PROFILE.
+PROFILE_PATH="${STEER_PROVISIONING_PROFILE:-}"
+if [ -z "$PROFILE_PATH" ]; then
+  for candidate in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.provisionprofile; do
+    [ -f "$candidate" ] || continue
+    if security cms -D -i "$candidate" 2>/dev/null \
+      | grep -q "ai\.steer\.mac"; then
+      PROFILE_PATH="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$PROFILE_PATH" ] || [ ! -f "$PROFILE_PATH" ]; then
+  echo "error: no Developer ID provisioning profile found for ai.steer.mac" >&2
+  echo "  follow docs/IOS_DEVELOPER_CONSOLE_SETUP.md → step 4 to create one" >&2
+  exit 1
+fi
+
+echo "==> Embedding provisioning profile: $(basename "$PROFILE_PATH")"
+cp "$PROFILE_PATH" "$APP_DIR/Contents/embedded.provisionprofile"
 
 # Sparkle.framework ships with its own signature. Apple notarization rejects
 # anything signed with a non-Developer-ID identity, so we re-sign every nested

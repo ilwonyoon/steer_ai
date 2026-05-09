@@ -30,6 +30,9 @@ final class SteerSettings: ObservableObject {
             applyRunAtLogin(runAtLogin)
         }
     }
+    @Published var iCloudSyncEnabled: Bool {
+        didSet { defaults.set(iCloudSyncEnabled, forKey: Key.iCloudSyncEnabled) }
+    }
 
     private let defaults = UserDefaults.standard
 
@@ -41,6 +44,7 @@ final class SteerSettings: ObservableObject {
         static let dndEndHour = "steer.notifications.dnd.endHour"
         static let alwaysOnTop = "steer.window.alwaysOnTop"
         static let runAtLogin = "steer.window.runAtLogin"
+        static let iCloudSyncEnabled = "steer.sync.iCloud.enabled"
     }
 
     init() {
@@ -51,7 +55,8 @@ final class SteerSettings: ObservableObject {
             Key.dndStartHour: 22,
             Key.dndEndHour: 8,
             Key.alwaysOnTop: false,
-            Key.runAtLogin: false
+            Key.runAtLogin: false,
+            Key.iCloudSyncEnabled: false
         ])
         notificationsEnabled = defaults.bool(forKey: Key.notificationsEnabled)
         soundEnabled = defaults.bool(forKey: Key.soundEnabled)
@@ -60,6 +65,7 @@ final class SteerSettings: ObservableObject {
         dndEndHour = defaults.integer(forKey: Key.dndEndHour)
         alwaysOnTop = defaults.bool(forKey: Key.alwaysOnTop)
         runAtLogin = defaults.bool(forKey: Key.runAtLogin)
+        iCloudSyncEnabled = defaults.bool(forKey: Key.iCloudSyncEnabled)
     }
 
     func shouldNotify(category: String) -> Bool {
@@ -116,6 +122,15 @@ private struct GeneralPane: View {
             Section("Window") {
                 Toggle("Keep window on top of other apps", isOn: $settings.alwaysOnTop)
                 Toggle("Open Steer at login", isOn: $settings.runAtLogin)
+            }
+
+            Section("iCloud sync (alpha)") {
+                Toggle("Publish action cards to iCloud for the iPhone app", isOn: $settings.iCloudSyncEnabled)
+                Text("When on, this Mac uploads card titles, summaries, and the visible terminal excerpt to your private iCloud database so Steer for iPhone can show them. Raw transcripts and attachments stay local. The toggle is alpha — expect rough edges until iPhone TestFlight ships.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Section("Folder access") {

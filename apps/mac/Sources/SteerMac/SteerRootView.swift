@@ -219,6 +219,41 @@ struct SteerRootView: View {
         }
     }
 
+    private func publishToICloud(cards: [ActionCard], chips: [LiveSessionChip]) async {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        await CloudKitSync.shared.publishDeviceHeartbeat(
+            displayName: Host.current().localizedName ?? "Mac",
+            appVersion: version
+        )
+        for chip in chips {
+            await CloudKitSync.shared.publishSession(SteerCoreMapping.session(from: chip))
+        }
+        for card in cards {
+            await CloudKitSync.shared.publishCard(SteerCoreMapping.card(from: card))
+            await CloudKitSync.shared.publishSession(SteerCoreMapping.session(from: card))
+        }
+
+        await drainQueuedInstructions()
+    }
+
+    private func drainQueuedInstructions() async {
+        let queued = await CloudKitSync.shared.fetchQueuedInstructions()
+        guard !queued.isEmpty else { return }
+        for request in queued {
+            do {
+                try await store.send(request.text, attachments: [], to: request.targetSessionId)
+                await CloudKitSync.shared.updateInstructionStatus(request, status: .injected)
+            } catch {
+                await CloudKitSync.shared.updateInstructionStatus(
+                    request,
+                    status: .failed,
+                    failureReason: error.localizedDescription
+                )
+            }
+        }
+    }
+
     private func refreshLoop() async {
         await reload()
         while !Task.isCancelled {
@@ -277,6 +312,12 @@ struct SteerRootView: View {
             lastError = nil
         }
         SteerAppDelegate.status.waitingCount = loadedCards.count
+
+        // iCloud sync (alpha): if the user opted in, publish each
+        // visible card so the iPhone app can render the same set.
+        if SteerSettings.shared.iCloudSyncEnabled {
+            await publishToICloud(cards: loadedCards, chips: loadedChips)
+        }
     }
 
     private func notifyForNewCards(_ loadedCards: [ActionCard]) async {
