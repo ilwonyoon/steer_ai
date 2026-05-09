@@ -20,9 +20,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ -z "${STEER_SIGN_IDENTITY:-}" ]; then
+  # Prefer the SHA1 fingerprint when there is more than one cert with the
+  # same human-readable name (codesign refuses an ambiguous match by name).
   STEER_SIGN_IDENTITY="$(
     security find-identity -v -p codesigning 2>/dev/null \
-      | awk -F '"' '/Developer ID Application:/ && $0 !~ /REVOKED/ { print $2; exit }'
+      | awk '/Developer ID Application:/ && $0 !~ /REVOKED/ { print $2; exit }'
   )"
 fi
 if [ -z "${STEER_SIGN_IDENTITY}" ]; then
