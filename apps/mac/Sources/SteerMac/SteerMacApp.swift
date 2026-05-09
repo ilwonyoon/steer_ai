@@ -16,8 +16,10 @@ struct SteerMacApp: App {
             Group {
                 if hasCompletedOnboarding {
                     SteerRootView()
-                        .frame(width: 375, height: 600)
-                        .fixedSize()
+                        .frame(
+                            minWidth: 375, idealWidth: 375, maxWidth: 375,
+                            minHeight: 600, idealHeight: 600, maxHeight: 1800
+                        )
                 } else {
                     OnboardingView {
                         hasCompletedOnboarding = true

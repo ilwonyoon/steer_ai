@@ -77,7 +77,8 @@ struct SteerRootView: View {
             .padding(.top, 36)
             .padding(.bottom, 12)
         }
-        .frame(width: 375, height: 600)
+        .frame(width: 375)
+        .frame(minHeight: 600, maxHeight: .infinity)
         .background(keyboardShortcuts)
         .animation(.snappy(duration: 0.22), value: currentIndex)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: cards.map(\.sessionId))
