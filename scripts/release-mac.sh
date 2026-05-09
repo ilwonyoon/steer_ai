@@ -63,12 +63,17 @@ DMG_VOLNAME="${DMG_VOLNAME:-Steer}"
 mkdir -p "$OUT_DIR"
 
 echo "==> Building release bundle (Steer ${APP_VERSION})"
+# Export ENTITLEMENTS so the Sparkle re-sign block below also picks it up,
+# not just the build-mac-app.sh subshell. Otherwise the outer .app gets
+# resigned with the dogfood entitlements (no iCloud), which silently
+# disables CloudKit on every notarized release.
+export ENTITLEMENTS="${ENTITLEMENTS:-$ROOT_DIR/apps/mac/Steer.release.entitlements}"
 APP_DIR="$(
   CONFIGURATION=release \
   APP_VERSION="$APP_VERSION" \
   APP_BUILD="${APP_BUILD:-}" \
   SIGN_IDENTITY="$STEER_SIGN_IDENTITY" \
-  ENTITLEMENTS="${ENTITLEMENTS:-$ROOT_DIR/apps/mac/Steer.release.entitlements}" \
+  ENTITLEMENTS="$ENTITLEMENTS" \
   bash "$ROOT_DIR/scripts/build-mac-app.sh" | tail -1
 )"
 
@@ -134,6 +139,17 @@ fi
 
 echo "==> Verifying signature"
 codesign --verify --strict --deep --verbose=2 "$APP_DIR" >&2
+
+# Sanity-check: the binary actually ended up with the iCloud entitlements
+# we asked for. We've shipped a release before where the Sparkle re-sign
+# stripped them; never again.
+if grep -q "icloud-services" "$ENTITLEMENTS" 2>/dev/null; then
+  if ! codesign -d --entitlements - --xml "$APP_DIR/Contents/MacOS/SteerMac" 2>/dev/null \
+       | grep -q "icloud-services"; then
+    echo "error: built bundle is missing iCloud entitlements; check the Sparkle re-sign step" >&2
+    exit 1
+  fi
+fi
 
 echo "==> Submitting bundle for notarization"
 NOTARY_ZIP="$OUT_DIR/SteerMac-${APP_VERSION}.zip"
