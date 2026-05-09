@@ -188,6 +188,15 @@ enum OnboardingActions {
             // Always link the userland path first; a system path requires admin
             // and we shouldn't pop a sudo prompt unprompted.
             let target = packagedCLIPath()
+            // packagedCLIPath() returns "steer" as a release-build fallback
+            // when no bundled CLI was shipped. Resolve a real install in
+            // that case rather than symlinking the literal string "steer".
+            if target == "steer" {
+                if let resolved = resolveSteerExecutable() {
+                    return .satisfied(detail: "Found steer on PATH at \(resolved). No symlink needed.")
+                }
+                return .failed(detail: "No bundled steer CLI found. Install Node 22.5+ and run `npm install` in the Steer repo, then re-open onboarding.")
+            }
             guard FileManager.default.fileExists(atPath: target) else {
                 return OnboardingStepStatus.failed(detail: "Could not locate bundled CLI at \(target).")
             }

@@ -17,6 +17,9 @@ final class ClipboardImageMonitor: ObservableObject {
     private var lastChangeCount: Int
     private var timer: Timer?
     private let pollInterval: TimeInterval
+    private var requestedActive = false
+    private var becomeActiveObserver: NSObjectProtocol?
+    private var resignActiveObserver: NSObjectProtocol?
 
     init(pollInterval: TimeInterval = 0.4) {
         self.pollInterval = pollInterval
@@ -24,10 +27,32 @@ final class ClipboardImageMonitor: ObservableObject {
     }
 
     func start() {
-        guard timer == nil else { return }
+        guard !requestedActive else { return }
+        requestedActive = true
+        installAppActivationObserversIfNeeded()
         // Reset the baseline so anything already on the pasteboard before the
         // user opened Steer doesn't immediately attach itself.
         lastChangeCount = NSPasteboard.general.changeCount
+        if NSApp?.isActive == true {
+            startTimerLoop()
+        }
+    }
+
+    func stop() {
+        requestedActive = false
+        stopTimerLoop()
+        if let observer = becomeActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+            becomeActiveObserver = nil
+        }
+        if let observer = resignActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+            resignActiveObserver = nil
+        }
+    }
+
+    private func startTimerLoop() {
+        guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -36,9 +61,39 @@ final class ClipboardImageMonitor: ObservableObject {
         }
     }
 
-    func stop() {
+    private func stopTimerLoop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    /// Foreground-only polling. We registered `start()` once but only run
+    /// the timer while Steer is the frontmost app; otherwise a paste in
+    /// some unrelated tool would silently attach itself the next time the
+    /// user came back to Steer.
+    private func installAppActivationObserversIfNeeded() {
+        guard becomeActiveObserver == nil else { return }
+        becomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.requestedActive else { return }
+                // Reset baseline so anything pasted while Steer was in the
+                // background doesn't ride in on the next foreground tick.
+                self.lastChangeCount = NSPasteboard.general.changeCount
+                self.startTimerLoop()
+            }
+        }
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.stopTimerLoop()
+            }
+        }
     }
 
     /// Force a check (used right after the user gives Steer focus, so a paste
