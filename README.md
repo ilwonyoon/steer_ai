@@ -15,6 +15,7 @@ This repository is in the planning and early execution stage. It contains produc
 - `AGENTS.md`: contributor and agent workflow guide.
 - `docs/PRD.md`: product requirements export.
 - `docs/TECH_SPEC.md`: technical specification export.
+- `docs/IOS_LAUNCH_PLAN.md`: iPhone launch, CloudKit sync, and App Store strategy.
 - `docs/HAPPY_WRAPPER_RESEARCH.md`: notes from studying Happy's current provider-control architecture.
 
 ## Product Direction

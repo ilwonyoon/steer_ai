@@ -16,6 +16,7 @@ Steer is a macOS-first AI action queue for CLI coding agents. The core loop is s
 - `docs/MAC_UI_E2E.md`: current Mac UI end-to-end validation notes.
 - `docs/DOGFOOD_NOTES.md`: living log of observations during the dogfood week.
 - `docs/SETTINGS_PLAN.md`: phased settings/UX backlog and iOS sync prerequisites.
+- `docs/IOS_LAUNCH_PLAN.md`: iPhone launch architecture, CloudKit sync plan, and App Store review strategy.
 - Backtick Memory `Steer / prd`: product requirements and positioning.
 - Backtick Memory `Steer / tech-spec`: technical architecture and implementation notes.
 
