@@ -29,5 +29,23 @@
     <string>LG7667PAS6.ai.steer.mac</string>
     <key>com.apple.developer.team-identifier</key>
     <string>LG7667PAS6</string>
+
+    <!-- The Developer ID provisioning profile our developer console
+         minted bundles in extra ubiquity / keychain entitlements that
+         macOS expects every entry in the profile to also be present in
+         the binary entitlements. Skipping any of these flips launchd
+         into the same POSIX 163 'Security policy issue' rejection. -->
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array>
+        <string>iCloud.ai.steer.mac</string>
+    </array>
+    <key>com.apple.developer.ubiquity-kvstore-identifier</key>
+    <string>LG7667PAS6.ai.steer.mac</string>
+    <key>com.apple.developer.icloud-container-environment</key>
+    <string>Production</string>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>LG7667PAS6.ai.steer.mac</string>
+    </array>
 </dict>
 </plist>

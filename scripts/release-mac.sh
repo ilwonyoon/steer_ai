@@ -111,6 +111,11 @@ fi
 
 echo "==> Embedding provisioning profile: $(basename "$PROFILE_PATH")"
 cp "$PROFILE_PATH" "$APP_DIR/Contents/embedded.provisionprofile"
+# Profiles downloaded from developer.apple.com inherit a quarantine
+# xattr that follows them into the bundle. macOS launchd then refuses
+# to spawn the app with POSIX 163, so strip it after copy.
+xattr -d com.apple.quarantine "$APP_DIR/Contents/embedded.provisionprofile" 2>/dev/null || true
+xattr -d com.apple.metadata:kMDItemWhereFroms "$APP_DIR/Contents/embedded.provisionprofile" 2>/dev/null || true
 
 # Sparkle.framework ships with its own signature. Apple notarization rejects
 # anything signed with a non-Developer-ID identity, so we re-sign every nested
