@@ -2,12 +2,26 @@ import SwiftUI
 import SteerCore
 
 struct CardDetailView: View {
-    let card: CardSnapshot
-    @ObservedObject var inbox: CloudKitInbox
+    let card: CardPayload
+    @ObservedObject var inbox: SyncInbox
 
     @Environment(\.dismiss) private var dismiss
     @State private var reply: String = ""
     @State private var isSending = false
+
+    private var terminalLines: [String] {
+        switch card.payload?["terminalLines"]?.value {
+        case .stringArray(let arr): return arr
+        default: return []
+        }
+    }
+
+    private var options: [String] {
+        switch card.payload?["options"]?.value {
+        case .stringArray(let arr): return arr
+        default: return []
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -20,9 +34,9 @@ struct CardDetailView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if !card.terminalLines.isEmpty {
+                    if !terminalLines.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(card.terminalLines, id: \.self) { line in
+                            ForEach(terminalLines, id: \.self) { line in
                                 Text(line.isEmpty ? " " : line)
                                     .font(.system(size: 12, design: .monospaced))
                                     .foregroundStyle(.primary)
@@ -34,9 +48,9 @@ struct CardDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
 
-                    if !card.options.isEmpty {
+                    if !options.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            ForEach(card.options, id: \.self) { chip in
+                            ForEach(options, id: \.self) { chip in
                                 Button {
                                     reply = chip
                                 } label: {

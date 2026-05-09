@@ -2,21 +2,19 @@ import SwiftUI
 import SteerCore
 
 struct InboxView: View {
-    @ObservedObject var inbox: CloudKitInbox
-    @State private var selected: CardSnapshot?
+    @ObservedObject var inbox: SyncInbox
+    @State private var selected: CardPayload?
 
     var body: some View {
         NavigationStack {
             Group {
-                if inbox.isLoading && inbox.cards.isEmpty {
-                    ProgressView().padding()
-                } else if let error = inbox.loadError, inbox.cards.isEmpty {
-                    ContentUnavailableView("Can't reach iCloud", systemImage: "icloud.slash", description: Text(error))
+                if !inbox.isSignedIn {
+                    SignInPrompt(inbox: inbox)
                 } else if inbox.cards.isEmpty {
                     ContentUnavailableView(
                         "No cards yet",
                         systemImage: "tray",
-                        description: Text("Open Steer for Mac, turn on iCloud sync, and let a wrapped session ask a question.")
+                        description: Text("Open Steer for Mac, turn on iPhone Sync, and let a wrapped session ask a question.")
                     )
                 } else {
                     List(inbox.cards, id: \.cardId) { card in
@@ -32,10 +30,12 @@ struct InboxView: View {
             }
             .navigationTitle("Steer")
             .toolbar {
-                Button {
-                    Task { await inbox.fetchAll() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+                if inbox.isSignedIn {
+                    Button {
+                        Task { await inbox.reload() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
             }
             .sheet(item: $selected) { card in
@@ -46,7 +46,7 @@ struct InboxView: View {
 }
 
 private struct CardRow: View {
-    let card: CardSnapshot
+    let card: CardPayload
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -62,6 +62,51 @@ private struct CardRow: View {
     }
 }
 
-extension CardSnapshot: Identifiable {
+private struct SignInPrompt: View {
+    @ObservedObject var inbox: SyncInbox
+    @State private var isSigningIn = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "tray.and.arrow.down")
+                .font(.system(size: 56))
+                .foregroundStyle(.secondary)
+            Text("Sign in to see Steer cards from your Mac")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            if let err = inbox.lastError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+            Button {
+                Task {
+                    isSigningIn = true
+                    await inbox.startSignInWithApple()
+                    isSigningIn = false
+                }
+            } label: {
+                HStack {
+                    if isSigningIn { ProgressView().controlSize(.small) }
+                    Text(isSigningIn ? "Signing in…" : "Sign in with Apple")
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(Color.black)
+                .foregroundColor(.white)
+                .clipShape(Capsule())
+            }
+            .disabled(isSigningIn)
+            Spacer()
+        }
+        .padding()
+    }
+}
+
+extension CardPayload: Identifiable {
     public var id: String { cardId }
 }

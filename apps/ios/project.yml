@@ -41,6 +41,10 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # Allow http://127.0.0.1 during local wrangler dev. Drop before
+        # App Store submission once the relay is on https.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.steer.ios
@@ -50,7 +54,5 @@ targets:
     entitlements:
       path: SteerIOS/Steer.entitlements
       properties:
-        com.apple.developer.icloud-services:
-          - CloudKit
-        com.apple.developer.icloud-container-identifiers:
-          - iCloud.ai.steer.mac
+        com.apple.developer.applesignin:
+          - Default

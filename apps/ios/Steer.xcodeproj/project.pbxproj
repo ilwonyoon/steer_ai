@@ -9,8 +9,8 @@
 /* Begin PBXBuildFile section */
 		05285BD23BDD04888929B775 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18199CFE823CF880E1C94476 /* InboxView.swift */; };
 		60A907D6E745CD578C1248C0 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 37598AC73146CD126426965A /* SteerCore */; };
-		95AE6D97AA3668BE991EE0BB /* CloudKitInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C53E1F07325D698AEBCE9A /* CloudKitInbox.swift */; };
 		B79B1911E9BE7167231F7686 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07EC5CEAC027EA7DD7F295EA /* CardDetailView.swift */; };
+		C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */; };
 		CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D152B83142801A64439B96 /* SteerIOSApp.swift */; };
 /* End PBXBuildFile section */
 
@@ -18,11 +18,11 @@
 		07EC5CEAC027EA7DD7F295EA /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
 		18199CFE823CF880E1C94476 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
 		400608C9A7F07651B1E30B67 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInbox.swift; sourceTree = "<group>"; };
 		84D152B83142801A64439B96 /* SteerIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerIOSApp.swift; sourceTree = "<group>"; };
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
 		A940AFD67B6E554CB8324B64 /* Steer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Steer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5C900DB8295384C9D855881 /* Steer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Steer.entitlements; sourceTree = "<group>"; };
-		E6C53E1F07325D698AEBCE9A /* CloudKitInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitInbox.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -41,11 +41,11 @@
 			isa = PBXGroup;
 			children = (
 				07EC5CEAC027EA7DD7F295EA /* CardDetailView.swift */,
-				E6C53E1F07325D698AEBCE9A /* CloudKitInbox.swift */,
 				18199CFE823CF880E1C94476 /* InboxView.swift */,
 				400608C9A7F07651B1E30B67 /* Info.plist */,
 				D5C900DB8295384C9D855881 /* Steer.entitlements */,
 				84D152B83142801A64439B96 /* SteerIOSApp.swift */,
+				45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */,
 			);
 			path = SteerIOS;
 			sourceTree = "<group>";
@@ -140,9 +140,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				B79B1911E9BE7167231F7686 /* CardDetailView.swift in Sources */,
-				95AE6D97AA3668BE991EE0BB /* CloudKitInbox.swift in Sources */,
 				05285BD23BDD04888929B775 /* InboxView.swift in Sources */,
 				CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */,
+				C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
