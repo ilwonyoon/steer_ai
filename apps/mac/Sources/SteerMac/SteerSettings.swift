@@ -30,6 +30,12 @@ final class SteerSettings: ObservableObject {
             applyRunAtLogin(runAtLogin)
         }
     }
+    /// Mirror cards to the relay backend so the iPhone Steer app
+    /// can read them. Off by default; user opts in via Settings
+    /// after Sign in with Apple completes.
+    @Published var iPhoneSyncEnabled: Bool {
+        didSet { defaults.set(iPhoneSyncEnabled, forKey: Key.iPhoneSyncEnabled) }
+    }
 
     private let defaults = UserDefaults.standard
 
@@ -41,6 +47,7 @@ final class SteerSettings: ObservableObject {
         static let dndEndHour = "steer.notifications.dnd.endHour"
         static let alwaysOnTop = "steer.window.alwaysOnTop"
         static let runAtLogin = "steer.window.runAtLogin"
+        static let iPhoneSyncEnabled = "steer.sync.iphone.enabled"
     }
 
     init() {
@@ -51,7 +58,8 @@ final class SteerSettings: ObservableObject {
             Key.dndStartHour: 22,
             Key.dndEndHour: 8,
             Key.alwaysOnTop: false,
-            Key.runAtLogin: false
+            Key.runAtLogin: false,
+            Key.iPhoneSyncEnabled: false
         ])
         notificationsEnabled = defaults.bool(forKey: Key.notificationsEnabled)
         soundEnabled = defaults.bool(forKey: Key.soundEnabled)
@@ -60,6 +68,7 @@ final class SteerSettings: ObservableObject {
         dndEndHour = defaults.integer(forKey: Key.dndEndHour)
         alwaysOnTop = defaults.bool(forKey: Key.alwaysOnTop)
         runAtLogin = defaults.bool(forKey: Key.runAtLogin)
+        iPhoneSyncEnabled = defaults.bool(forKey: Key.iPhoneSyncEnabled)
     }
 
     func shouldNotify(category: String) -> Bool {
@@ -116,6 +125,10 @@ private struct GeneralPane: View {
             Section("Window") {
                 Toggle("Keep window on top of other apps", isOn: $settings.alwaysOnTop)
                 Toggle("Open Steer at login", isOn: $settings.runAtLogin)
+            }
+
+            Section("iPhone Sync") {
+                IPhoneSyncSection(settings: settings)
             }
 
             Section("Folder access") {
@@ -248,5 +261,66 @@ private struct AboutPane: View {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(payload, forType: .string)
+    }
+}
+
+private struct IPhoneSyncSection: View {
+    @ObservedObject var settings: SteerSettings
+    @ObservedObject private var sync = SyncClient.shared
+    @State private var isSigningIn = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Mirror your action cards to the iPhone Steer app via the Steer relay backend (Cloudflare Workers + Sign in with Apple). Your data stays in your own iCloud Apple ID; replies travel through the relay encrypted in transit.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Text("Status:")
+                Text(statusLabel).foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            if let error = sync.lastError {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 10) {
+                if sync.isSignedIn {
+                    Toggle("Mirror cards to iPhone", isOn: $settings.iPhoneSyncEnabled)
+                    Spacer()
+                    Button("Sign out") { sync.signOut() }
+                } else {
+                    Button {
+                        Task {
+                            isSigningIn = true
+                            await sync.startSignInWithApple()
+                            isSigningIn = false
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isSigningIn { ProgressView().controlSize(.small) }
+                            Text(isSigningIn ? "Signing in…" : "Sign in with Apple")
+                        }
+                    }
+                    .disabled(isSigningIn)
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private var statusLabel: String {
+        switch sync.status {
+        case .signedOut: return "Not signed in"
+        case .signedIn(let user): return "Signed in as \(user.displayName ?? user.appleEmail ?? user.userId.prefix(8) + "…")"
+        case .syncing: return "Syncing…"
+        case .offline: return "Offline"
+        }
     }
 }

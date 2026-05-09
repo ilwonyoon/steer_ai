@@ -1,0 +1,23 @@
+{
+  "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/Sources/SteerMac/ActionCardView.swift" : {
+    "const-values" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionCardView.swiftconstvalues",
+    "dependencies" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionCardView.d",
+    "diagnostics" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionCardView.dia",
+    "object" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionCardView.o",
+    "swift-dependencies" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionCardView.swiftdeps"
+  },
+  "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/Sources/SteerMac/ActionNotificationService.swift" : {
+    "const-values" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionNotificationService.swiftconstvalues",
+    "dependencies" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionNotificationService.d",
+    "diagnostics" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionNotificationService.dia",
+    "object" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionNotificationService.o",
+    "swift-dependencies" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/ActionNotificationService.swiftdeps"
+  },
+  "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/Sources/SteerMac/AttachmentService.swift" : {
+    "const-values" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/AttachmentService.swiftconstvalues",
+    "dependencies" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/AttachmentService.d",
+    "diagnostics" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/AttachmentService.dia",
+    "object" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/AttachmentService.o",
+    "swift-dependencies" : "/Users/ilwonyoon/Documents/Steer_ai/apps/mac/build/Build/Intermediates.noindex/SteerMac.build/Debug/SteerMac.build/Objects-normal/arm64/AttachmentService.swiftdeps"
+  }
+}

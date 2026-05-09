@@ -1,4 +1,5 @@
 import SwiftUI
+import SteerCore
 
 struct SteerRootView: View {
     private let store = LocalSteerStore()
@@ -277,6 +278,33 @@ struct SteerRootView: View {
             lastError = nil
         }
         SteerAppDelegate.status.waitingCount = loadedCards.count
+
+        if SteerSettings.shared.iPhoneSyncEnabled && SyncClient.shared.isSignedIn {
+            await syncToiPhone(cards: loadedCards)
+            await drainQueuedInstructions()
+        }
+    }
+
+    private func syncToiPhone(cards: [ActionCard]) async {
+        for card in cards {
+            let payload = SteerCardMapping.payload(from: card)
+            await SyncClient.shared.publishCard(payload)
+        }
+    }
+
+    private func drainQueuedInstructions() async {
+        let queued = await SyncClient.shared.fetchQueuedInstructions()
+        for record in queued {
+            do {
+                try await store.send(record.text, attachments: [], to: record.targetSessionId)
+                await SyncClient.shared.markInstructionInjected(instructionId: record.instructionId)
+            } catch {
+                await SyncClient.shared.markInstructionFailed(
+                    instructionId: record.instructionId,
+                    reason: error.localizedDescription
+                )
+            }
+        }
     }
 
     private func notifyForNewCards(_ loadedCards: [ActionCard]) async {
