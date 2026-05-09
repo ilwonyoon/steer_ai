@@ -200,21 +200,20 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
 
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
-  let stdinSignalTimer = null;
-  // We don't dedupe state messages here — codex_session_reader and the
-  // PTY adapter both push state=waiting/running directly via agent.write,
-  // so any cached "last reported" value would go stale and silently drop
-  // a real keystroke signal. Always emit; the agent handles idempotence.
+  // The user typing into the wrapped terminal is *not* itself enough to
+  // hide the card. We only flip run_state when the AI actually starts
+  // producing semantic output (handled by codex_session_reader / the PTY
+  // adapter when they emit `state=running`). A bare keystroke can be just
+  // the user thinking out loud, and pre-emptively dismissing the card
+  // costs them context they may still need to compose their reply.
+  //
+  // Esc / Ctrl-C *do* still flip back to waiting, so a user who started
+  // typing in the terminal and changed their mind sees the card again.
   process.stdin.on("data", (chunk) => {
     ptyProcess.write(chunk);
     if (isCancelChunk(chunk)) {
       agent.write({ type: "state", sessionId, runState: "waiting" });
-      return;
     }
-    if (stdinSignalTimer) return;
-    agent.write({ type: "state", sessionId, runState: "running" });
-    stdinSignalTimer = setTimeout(() => { stdinSignalTimer = null; }, 500);
-    stdinSignalTimer.unref?.();
   });
   process.stdin.on("end", () => {
     ptyProcess.write("\x04");

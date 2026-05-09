@@ -73,7 +73,12 @@ suite("wrapper invariant: register surfaces a ready card", async (t) => {
   wrapper.kill("SIGTERM");
 });
 
-suite("wrapper invariant: stdin keystroke flips state to running", async (t) => {
+suite("wrapper invariant: bare stdin keystroke does NOT hide the card", async (t) => {
+  // A bare keystroke into the wrapped terminal is *not* enough to
+  // dismiss the card. Only real semantic AI output (report / stdout /
+  // stderr) or an explicit reply send should flip the gate. Otherwise
+  // the user loses the card the moment they think out loud at the
+  // prompt — the opposite of what they want.
   const harness = createHarness();
   t.after(() => harness.cleanup());
 
@@ -82,60 +87,40 @@ suite("wrapper invariant: stdin keystroke flips state to running", async (t) => 
   const wrapper = harness.spawnWrappedSession();
   const sessionId = await captureSessionId(harness);
 
-  // Wait for the session to settle in 'running' (default register state).
+  // Push the session into the 'waiting' bucket via a Stop hook; the gate
+  // then surfaces an active card.
+  await harness.fireStopHook(sessionId, "Need an answer.");
+  await delay(300);
+
   await harness.waitFor(() => {
     const db = harness.db();
     try {
-      return readSession(db, sessionId)?.run_state === "running";
+      return readSession(db, sessionId)?.run_state === "waiting";
     } finally {
       db.close();
     }
   });
 
-  // Force the state to waiting first (simulates a Stop hook), then
-  // observe whether the next keystroke flips it back to running.
-  await harness.sendInstruction(sessionId, "noop").catch(() => {});
-  // Give the wrapper a chance to write the instruction back into stdout
-  // and the classifier time to land it.
-  await delay(300);
+  // Now type a normal character at the wrapped terminal. The wrapper
+  // forwards the byte to the underlying PTY but does NOT emit
+  // state=running anymore.
+  wrapper.stdin.write("h");
+  wrapper.stdin.write("i");
+  await delay(500);
 
-  // Now flip to waiting via direct DB update — this is what the codex
-  // session reader would do in real life.
-  await new Promise((resolve) => {
+  const finalState = (() => {
     const db = harness.db();
     try {
-      // node:sqlite read-only doesn't allow update; re-open writable.
-      db.close();
-    } catch {}
-    resolve();
-  });
-  // Instead of poking the DB directly, use the agent's hook event path
-  // which is the actual production trigger.
-
-  // Send a real keystroke through the wrapper's stdin. The PTY is
-  // raw-mode, so the byte goes straight into the wrapper's stdin handler.
-  wrapper.stdin.write("x");
-  // Give the wrapper 500ms (the dedup window) and then a beat for the
-  // socket round-trip.
-  await delay(700);
-
-  const history = (() => {
-    const db = harness.db();
-    try {
-      return readRunStateHistory(db, sessionId);
+      return readSession(db, sessionId)?.run_state;
     } finally {
       db.close();
     }
   })();
 
-  // We expect to see the state cycle past 'running' at least twice —
-  // once at register, and again after the user keystroke. Without the
-  // dedup-cache fix this test fails because the second running is
-  // silently dropped.
-  const runningCount = history.filter((s) => s === "running").length;
-  assert.ok(
-    runningCount >= 2,
-    `expected at least two running transitions, got history=${JSON.stringify(history)}`
+  assert.equal(
+    finalState,
+    "waiting",
+    "bare keystrokes must not flip run_state away from waiting"
   );
 
   wrapper.kill("SIGTERM");

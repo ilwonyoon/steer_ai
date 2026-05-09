@@ -134,26 +134,27 @@ suite("e2e coding session: 3-turn conversation with mid-turn cancel", async (t) 
   }
 
   // ── Step 3: user starts typing in the terminal mid-thinking ───
-  wrapper.stdin.write("h");
-  await delay(300);
+  // Bare keystrokes must NOT dismiss the card. Run_state stays waiting.
+  wrapper.stdin.write("h")
+  wrapper.stdin.write("i")
+  await delay(300)
 
-  // run_state should have flipped to 'running' on the keystroke.
   {
     const db = harness.db();
     try {
-      const history = readRunStateHistory(db, sessionId);
-      const lastRunningIdx = history.lastIndexOf("running");
-      const lastWaitingIdx = history.lastIndexOf("waiting");
-      assert.ok(
-        lastRunningIdx > lastWaitingIdx,
-        `running must come after the most recent waiting; history=${JSON.stringify(history)}`
+      const sess = readSession(db, sessionId);
+      assert.equal(
+        sess?.run_state,
+        "waiting",
+        "bare keystrokes should keep the session in waiting"
       );
     } finally {
       db.close();
     }
   }
 
-  // ── Step 4: user presses Esc to cancel typing ────────────────
+  // ── Step 4: user presses Esc; nothing has flipped to running, so
+  //          the explicit cancel just reinforces waiting. ────────────
   wrapper.stdin.write(Buffer.from([0x1b]));
   await delay(400);
 
@@ -195,7 +196,7 @@ suite("e2e coding session: 3-turn conversation with mid-turn cancel", async (t) 
   try {
     const history = readRunStateHistory(db, sessionId);
     const counts = history.reduce((acc, s) => ({ ...acc, [s]: (acc[s] ?? 0) + 1 }), {});
-    assert.ok(counts.running >= 4, `should have flipped to running at least 4 times; history=${JSON.stringify(history)}`);
+    assert.ok(counts.running >= 3, `should have flipped to running at least 3 times; history=${JSON.stringify(history)}`);
     assert.ok(counts.waiting >= 3, `should have flipped to waiting at least 3 times; history=${JSON.stringify(history)}`);
 
     // Total transcript volume: should be substantial — three real
