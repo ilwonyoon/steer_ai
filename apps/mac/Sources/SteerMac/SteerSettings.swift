@@ -192,8 +192,10 @@ private struct NotificationsPane: View {
 
 private struct AboutPane: View {
     var body: some View {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let build = info["CFBundleVersion"] as? String ?? "0"
+        let bundleId = info["CFBundleIdentifier"] as? String ?? "ai.steer.mac"
         let steerHome = ProcessInfo.processInfo.environment["STEER_HOME"]
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".steer").path
 
@@ -203,9 +205,14 @@ private struct AboutPane: View {
                     Text("\(version) (\(build))")
                         .foregroundStyle(.secondary)
                 }
+                LabeledContent("Bundle") {
+                    Text(bundleId)
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            Section("Data folder") {
+            Section("Diagnostics") {
                 Text(steerHome)
                     .font(.system(.callout, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -218,10 +225,28 @@ private struct AboutPane: View {
                     Button("Open agent log") {
                         NSWorkspace.shared.open(URL(fileURLWithPath: "\(steerHome)/agent.log"))
                     }
+                    Button("Copy diagnostics") {
+                        copyDiagnostics(version: version, build: build, bundleId: bundleId, steerHome: steerHome)
+                    }
                     Spacer()
                 }
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func copyDiagnostics(version: String, build: String, bundleId: String, steerHome: String) {
+        let macOS = ProcessInfo.processInfo.operatingSystemVersionString
+        let payload = """
+        Steer diagnostics
+
+        app version : \(version) (\(build))
+        bundle id   : \(bundleId)
+        macOS       : \(macOS)
+        STEER_HOME  : \(steerHome)
+        """
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(payload, forType: .string)
     }
 }
