@@ -201,20 +201,18 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   process.stdin.setRawMode?.(true);
   process.stdin.resume();
   let stdinSignalTimer = null;
-  let lastReportedRunState = null;
-  const sendRunState = (next) => {
-    if (next === lastReportedRunState) return;
-    lastReportedRunState = next;
-    agent.write({ type: "state", sessionId, runState: next });
-  };
+  // We don't dedupe state messages here — codex_session_reader and the
+  // PTY adapter both push state=waiting/running directly via agent.write,
+  // so any cached "last reported" value would go stale and silently drop
+  // a real keystroke signal. Always emit; the agent handles idempotence.
   process.stdin.on("data", (chunk) => {
     ptyProcess.write(chunk);
     if (isCancelChunk(chunk)) {
-      sendRunState("waiting");
+      agent.write({ type: "state", sessionId, runState: "waiting" });
       return;
     }
     if (stdinSignalTimer) return;
-    sendRunState("running");
+    agent.write({ type: "state", sessionId, runState: "running" });
     stdinSignalTimer = setTimeout(() => { stdinSignalTimer = null; }, 500);
     stdinSignalTimer.unref?.();
   });
