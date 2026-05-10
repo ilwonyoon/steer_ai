@@ -33,7 +33,7 @@ struct LiveSessionChipRow: View {
         .frame(height: 28)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
+            withAnimation(.easeOut(duration: 0.18)) { isExpanded.toggle() }
         }
     }
 }
@@ -131,18 +131,12 @@ struct ActionCardCarousel: View {
                         ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
                             CompactActionCardView(card: card, isCurrent: index == currentIndex)
                                 .onTapGesture { onSelect(index) }
-                                .transition(.asymmetric(
-                                    insertion: .scale(scale: 0.9).combined(with: .opacity),
-                                    removal: .scale(scale: 0.95).combined(with: .opacity)
-                                ))
                         }
                     }
-                    // Match the parent's horizontal padding so the
-                    // first/last tile both inset cleanly from the
-                    // screen edge instead of clipping under the bezel.
                     .padding(.horizontal, 18)
                     .padding(.vertical, 0)
                 }
+                .scrollBounceBehavior(.basedOnSize)
                 .frame(height: 100)
             }
         }

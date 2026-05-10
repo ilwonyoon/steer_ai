@@ -29,7 +29,7 @@ struct ReplyDock: View {
                 sendButton
             }
         }
-        .animation(.snappy(duration: 0.16), value: canSend)
+        .animation(.easeOut(duration: 0.16), value: canSend)
     }
 
     private var trimmedReply: String {

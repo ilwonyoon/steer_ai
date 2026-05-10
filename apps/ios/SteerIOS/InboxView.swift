@@ -91,7 +91,7 @@ struct InboxView: View {
                         currentIndex: currentIndex,
                         onSelect: { tappedIndex in
                             guard cards.indices.contains(tappedIndex) else { return }
-                            withAnimation(.snappy(duration: 0.24)) {
+                            withAnimation(.easeOut(duration: 0.22)) {
                                 focusedSessionId = cards[tappedIndex].sessionId
                             }
                         }
@@ -104,7 +104,7 @@ struct InboxView: View {
         .padding(.horizontal, 14)
         .padding(.top, 18)
         .padding(.bottom, 12)
-        .animation(.snappy(duration: 0.22), value: currentIndex)
+        .animation(.easeOut(duration: 0.22), value: currentIndex)
         .animation(.easeInOut(duration: 0.22), value: replyFieldFocused)
     }
 

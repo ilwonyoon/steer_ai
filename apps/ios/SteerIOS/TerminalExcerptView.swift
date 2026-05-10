@@ -2,6 +2,9 @@ import SwiftUI
 
 /// Direct port of Mac TerminalExcerptView. Same monospaced rendering,
 /// markdown support, and per-kind color via SteerColors.terminal*.
+/// `scrollBounceBehavior(.basedOnSize)` keeps the terminal panel from
+/// rubber-banding when its content is shorter than the visible area —
+/// that bounce was reading as "the card is shaking".
 struct TerminalExcerptView: View {
     let lines: [TerminalLine]
 
@@ -21,6 +24,7 @@ struct TerminalExcerptView: View {
             .padding(.vertical, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Terminal excerpt")
     }
