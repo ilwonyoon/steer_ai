@@ -43,6 +43,14 @@ struct InboxView: View {
     /// excludes.
     private var liveChips: [LiveSessionChip] { [] }
 
+    private var isMacOfflineWithCards: Bool {
+        guard !cards.isEmpty else { return false }
+        switch devicePresence.state {
+        case .stale, .offline: return true
+        default: return false
+        }
+    }
+
     private var currentIndex: Int {
         guard let focusedSessionId,
               let idx = cards.firstIndex(where: { $0.sessionId == focusedSessionId })
@@ -115,6 +123,47 @@ struct InboxView: View {
     }
 
     @ViewBuilder
+    private var emptyState: some View {
+        switch devicePresence.state {
+        case .demo:
+            EmptyStateView(
+                icon: "tray",
+                message: "Sample workspace",
+                detail: "You're browsing demo cards. Tap Use Live Sync above to connect your own Mac."
+            )
+        case .neverConnected:
+            EmptyStateView(
+                icon: "rectangle.stack.fill",
+                message: "Set up Steer for Mac",
+                detail: "Live cards appear after Steer for Mac is installed, signed in, iPhone Sync is enabled, and a Steer-managed session is running.",
+                primaryCTA: ("Set Up Mac First", { showsMacSyncStatus = true }),
+                secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
+            )
+        case .connected:
+            EmptyStateView(
+                icon: "tray",
+                message: "No live cards yet",
+                detail: "Your Mac is connected. Start or resume a session with steer codex or steer claude, then waiting moments will appear here.",
+                secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
+            )
+        case .stale, .offline:
+            EmptyStateView(
+                icon: "wifi.slash",
+                message: "Mac offline",
+                detail: "Replies will queue until Steer for Mac comes back online.",
+                primaryCTA: ("Open Steer for Mac", { showsMacSyncStatus = true })
+            )
+        case .error:
+            EmptyStateView(
+                icon: "exclamationmark.triangle",
+                message: "Sync issue",
+                detail: "We couldn't reach the Steer relay. Pull to retry from the Mac Sync Status sheet.",
+                primaryCTA: ("Open Mac Sync Status", { showsMacSyncStatus = true })
+            )
+        }
+    }
+
+    @ViewBuilder
     private var cardArea: some View {
         VStack(spacing: 12) {
             HeaderBar(
@@ -123,6 +172,10 @@ struct InboxView: View {
                 connectionState: devicePresence.state,
                 onTapChip: { showsMacSyncStatus = true }
             )
+
+            if isMacOfflineWithCards {
+                MacOfflineBanner { showsMacSyncStatus = true }
+            }
 
             if !liveChips.isEmpty {
                 LiveSessionChipRow(
@@ -133,11 +186,8 @@ struct InboxView: View {
             }
 
             if cards.isEmpty {
-                EmptyStateView(
-                    message: "No waiting actions",
-                    detail: "Open Steer for Mac, turn on iPhone Sync, and let a wrapped session ask a question."
-                )
-                .frame(maxHeight: .infinity)
+                emptyState
+                    .frame(maxHeight: .infinity)
             } else if let card = currentCard {
                 ActionCardView(
                     card: card,
@@ -284,13 +334,44 @@ private struct PageIndicator: View {
     }
 }
 
+private struct MacOfflineBanner: View {
+    let onTap: () -> Void
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                Image(systemName: "wifi.slash")
+                    .foregroundStyle(SteerColors.disconnected)
+                Text("Mac offline — replies will queue")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(SteerColors.ink)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(SteerColors.tertiaryInk)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(SteerColors.softSeparator, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct EmptyStateView: View {
+    let icon: String
     let message: String
     let detail: String
+    var primaryCTA: (label: String, action: () -> Void)? = nil
+    var secondaryCTA: (label: String, action: () -> Void)? = nil
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Spacer()
-            Image(systemName: "tray")
+            Image(systemName: icon)
                 .font(.system(size: 40))
                 .foregroundStyle(SteerColors.tertiaryInk)
             Text(message)
@@ -301,6 +382,26 @@ private struct EmptyStateView: View {
                 .foregroundStyle(SteerColors.secondaryInk)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
+            if primaryCTA != nil || secondaryCTA != nil {
+                VStack(spacing: 8) {
+                    if let primary = primaryCTA {
+                        Button(primary.label, action: primary.action)
+                            .font(.callout.weight(.semibold))
+                            .frame(width: 240, height: 40)
+                            .background(Color.accentColor)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .buttonStyle(.plain)
+                    }
+                    if let secondary = secondaryCTA {
+                        Button(secondary.label, action: secondary.action)
+                            .font(.callout)
+                            .foregroundStyle(Color.accentColor)
+                            .buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, 4)
+            }
             Spacer()
         }
     }
