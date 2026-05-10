@@ -13,9 +13,29 @@ struct InboxView: View {
     @State private var cardDragOffset: CGFloat = 0
     @State private var replyDrafts: [String: String] = [:]
     @State private var detailCard: ActionCard? = nil
+    @State private var liveChipsExpanded = false
 
     private var cards: [ActionCard] {
         inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
+    }
+
+    private var liveChips: [LiveSessionChip] {
+        // For now we synthesize chips from the same cards that aren't
+        // the focused one — Mac shows all *running* sessions here, but
+        // the relay payload doesn't carry separate running-state metadata
+        // yet. Treat every card whose category is waiting/blocker/running
+        // as a live chip so the UI parity with Mac is visible. When the
+        // backend gains a dedicated session feed we'll switch over.
+        cards.map { card in
+            LiveSessionChip(
+                sessionId: card.sessionId,
+                provider: card.provider,
+                project: card.project,
+                cwd: nil,
+                runState: card.state.rawValue,
+                lastActivityAt: Date()
+            )
+        }
     }
 
     private var currentIndex: Int {
@@ -61,6 +81,14 @@ struct InboxView: View {
         VStack(spacing: 12) {
             HeaderBar()
 
+            if !liveChips.isEmpty {
+                LiveSessionChipRow(
+                    chips: liveChips,
+                    isExpanded: $liveChipsExpanded
+                )
+                .padding(.leading, 4)
+            }
+
             if cards.isEmpty {
                 EmptyStateView(
                     message: "No waiting actions",
@@ -78,11 +106,18 @@ struct InboxView: View {
                 .rotationEffect(.degrees(cardDragOffset / 34))
                 .onTapGesture(count: 2) { detailCard = card }
                 .gesture(cardSwipeGesture)
-                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if cards.count > 1 {
-                    PageIndicator(count: cards.count, current: currentIndex)
-                }
+                ActionCardCarousel(
+                    cards: cards,
+                    currentIndex: currentIndex,
+                    onSelect: { tappedIndex in
+                        guard cards.indices.contains(tappedIndex) else { return }
+                        withAnimation(.snappy(duration: 0.24)) {
+                            focusedSessionId = cards[tappedIndex].sessionId
+                        }
+                    }
+                )
             }
         }
         .padding(.horizontal, 14)

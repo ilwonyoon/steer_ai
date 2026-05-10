@@ -86,6 +86,26 @@ struct TerminalLine: Identifiable {
     }
 }
 
+struct LiveSessionChip: Identifiable, Equatable {
+    let id: String
+    let sessionId: String
+    let provider: ProviderKind
+    let project: String
+    let cwd: String?
+    let runState: String
+    let lastActivityAt: Date
+
+    init(sessionId: String, provider: ProviderKind, project: String, cwd: String?, runState: String, lastActivityAt: Date) {
+        self.id = sessionId
+        self.sessionId = sessionId
+        self.provider = provider
+        self.project = project
+        self.cwd = cwd
+        self.runState = runState
+        self.lastActivityAt = lastActivityAt
+    }
+}
+
 struct ActionCard: Identifiable {
     let id: String
     let sessionId: String

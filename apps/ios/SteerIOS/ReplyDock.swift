@@ -51,7 +51,7 @@ struct ReplyDock: View {
                 ForEach(chips, id: \.self) { chip in
                     Button { reply = chip } label: {
                         Text(chip)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(size: 13, design: .monospaced))
                             .foregroundStyle(SteerColors.ink)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
@@ -69,7 +69,7 @@ struct ReplyDock: View {
     private var textInput: some View {
         TextField("reply to this session", text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.system(size: 13, design: .monospaced))
+            .font(.system(size: 15, design: .monospaced))
             .foregroundStyle(SteerColors.ink)
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")

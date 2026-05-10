@@ -58,7 +58,7 @@ struct SessionHeader: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(card.project)
-                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
                         .foregroundStyle(SteerColors.ink)
                         .lineLimit(1)
                     HStack(spacing: 5) {
@@ -66,7 +66,7 @@ struct SessionHeader: View {
                             .fill(card.state.color)
                             .frame(width: 6, height: 6)
                         Text(card.branchLabel ?? card.provider.displayName)
-                            .font(.system(size: 10.5, design: .monospaced))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(SteerColors.secondaryInk)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -77,7 +77,7 @@ struct SessionHeader: View {
             Spacer()
 
             Text(card.age)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)

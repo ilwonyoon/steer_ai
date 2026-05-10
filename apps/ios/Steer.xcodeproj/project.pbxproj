@@ -11,6 +11,7 @@
 		0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0001A236298D657692E8531D /* DetailView.swift */; };
 		05285BD23BDD04888929B775 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18199CFE823CF880E1C94476 /* InboxView.swift */; };
 		60A907D6E745CD578C1248C0 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 37598AC73146CD126426965A /* SteerCore */; };
+		99BAA46CD0A9C05FAE5E7028 /* CardStackChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */; };
 		A60108A154CB8ABD87D0876D /* ActionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */; };
 		B2AB16691E7FECD9A988EB55 /* SteerColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */; };
 		C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */; };
@@ -34,6 +35,7 @@
 		968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCardView.swift; sourceTree = "<group>"; };
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
 		A940AFD67B6E554CB8324B64 /* Steer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Steer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStackChrome.swift; sourceTree = "<group>"; };
 		C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxFixtures.swift; sourceTree = "<group>"; };
 		CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPayloadMapping.swift; sourceTree = "<group>"; };
 		D5C900DB8295384C9D855881 /* Steer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Steer.entitlements; sourceTree = "<group>"; };
@@ -56,6 +58,7 @@
 			children = (
 				968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */,
 				CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */,
+				A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */,
 				0001A236298D657692E8531D /* DetailView.swift */,
 				18199CFE823CF880E1C94476 /* InboxView.swift */,
 				400608C9A7F07651B1E30B67 /* Info.plist */,
@@ -162,6 +165,7 @@
 			files = (
 				A60108A154CB8ABD87D0876D /* ActionCardView.swift in Sources */,
 				E02279F2C4B075283907BF8B /* CardPayloadMapping.swift in Sources */,
+				99BAA46CD0A9C05FAE5E7028 /* CardStackChrome.swift in Sources */,
 				0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */,
 				05285BD23BDD04888929B775 /* InboxView.swift in Sources */,
 				E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */,

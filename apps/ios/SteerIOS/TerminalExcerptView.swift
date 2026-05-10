@@ -10,7 +10,7 @@ struct TerminalExcerptView: View {
             LazyVStack(alignment: .leading, spacing: 5) {
                 ForEach(lines) { line in
                     Text(renderedLine(line.text))
-                        .font(.system(size: 11.5, weight: weight(for: line.kind), design: .monospaced))
+                        .font(.system(size: 14, weight: weight(for: line.kind), design: .monospaced))
                         .foregroundStyle(color(for: line.kind))
                         .textSelection(.enabled)
                         .lineLimit(nil)
