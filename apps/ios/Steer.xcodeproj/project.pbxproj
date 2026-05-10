@@ -11,9 +11,12 @@
 		0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0001A236298D657692E8531D /* DetailView.swift */; };
 		05285BD23BDD04888929B775 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18199CFE823CF880E1C94476 /* InboxView.swift */; };
 		1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */; };
+		4B186F5237BFAC367284F909 /* SyncInboxOptimisticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */; };
 		4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */; };
 		543EFCA3684DA845C2A274D9 /* DevicePresenceObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */; };
 		60A907D6E745CD578C1248C0 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 37598AC73146CD126426965A /* SteerCore */; };
+		74D5D52E1823197EF214A412 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = AB63FB2F0D6D4043252C1385 /* SteerCore */; };
+		81D04E76A2C0A0F68BBC47F0 /* CardPayloadMappingPerfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4579B87D0A851F8AEE59DC /* CardPayloadMappingPerfTests.swift */; };
 		99BAA46CD0A9C05FAE5E7028 /* CardStackChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */; };
 		A0DD722880EA74A2D91E4CA2 /* PendingRepliesChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A33D83FEEFF02C76FD5D65B /* PendingRepliesChip.swift */; };
 		A60108A154CB8ABD87D0876D /* ActionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */; };
@@ -28,6 +31,16 @@
 		EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6775B843EBF5B82A78C73C8B /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		BC4C1390983E3D62A04414F0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0AF5FDBA820D6D71F919315F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5A68072841FAE356516E8D17;
+			remoteInfo = Steer;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		0001A236298D657692E8531D /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
 		057A2A9A71094A1E78867C5E /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -39,6 +52,7 @@
 		3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerColors.swift; sourceTree = "<group>"; };
 		400608C9A7F07651B1E30B67 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInbox.swift; sourceTree = "<group>"; };
+		5E12334E020126CC7E82A44C /* SteerTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SteerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6775B843EBF5B82A78C73C8B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePresenceObserver.swift; sourceTree = "<group>"; };
 		84D152B83142801A64439B96 /* SteerIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerIOSApp.swift; sourceTree = "<group>"; };
@@ -47,9 +61,11 @@
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
 		A940AFD67B6E554CB8324B64 /* Steer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Steer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStackChrome.swift; sourceTree = "<group>"; };
+		AF4579B87D0A851F8AEE59DC /* CardPayloadMappingPerfTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPayloadMappingPerfTests.swift; sourceTree = "<group>"; };
 		B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacConnectionChip.swift; sourceTree = "<group>"; };
 		C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxFixtures.swift; sourceTree = "<group>"; };
 		CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPayloadMapping.swift; sourceTree = "<group>"; };
+		CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxOptimisticTests.swift; sourceTree = "<group>"; };
 		D5C900DB8295384C9D855881 /* Steer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Steer.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -59,6 +75,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				60A907D6E745CD578C1248C0 /* SteerCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		78D57CF3A2F8644FB3C7704E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				74D5D52E1823197EF214A412 /* SteerCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -97,8 +121,18 @@
 			children = (
 				E694AF44FBC4A43FA4B554E6 /* Packages */,
 				88F223839C1D93AD07CC7146 /* SteerIOS */,
+				E011DD286E58DE160F777CA6 /* SteerIOSTests */,
 				EF437627D5267FF0C98FC0BB /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		E011DD286E58DE160F777CA6 /* SteerIOSTests */ = {
+			isa = PBXGroup;
+			children = (
+				AF4579B87D0A851F8AEE59DC /* CardPayloadMappingPerfTests.swift */,
+				CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */,
+			);
+			path = SteerIOSTests;
 			sourceTree = "<group>";
 		};
 		E694AF44FBC4A43FA4B554E6 /* Packages */ = {
@@ -113,6 +147,7 @@
 			isa = PBXGroup;
 			children = (
 				A940AFD67B6E554CB8324B64 /* Steer.app */,
+				5E12334E020126CC7E82A44C /* SteerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -139,6 +174,26 @@
 			productReference = A940AFD67B6E554CB8324B64 /* Steer.app */;
 			productType = "com.apple.product-type.application";
 		};
+		5FBF6A8827937D4B28B6671A /* SteerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 40AC6A58CA068D03A485B4A6 /* Build configuration list for PBXNativeTarget "SteerTests" */;
+			buildPhases = (
+				9FCB7A3A321FF528E83521F6 /* Sources */,
+				78D57CF3A2F8644FB3C7704E /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C576723D3D795C4ED24B5383 /* PBXTargetDependency */,
+			);
+			name = SteerTests;
+			packageProductDependencies = (
+				AB63FB2F0D6D4043252C1385 /* SteerCore */,
+			);
+			productName = SteerTests;
+			productReference = 5E12334E020126CC7E82A44C /* SteerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -149,6 +204,10 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					5A68072841FAE356516E8D17 = {
+						DevelopmentTeam = LG7667PAS6;
+						ProvisioningStyle = Automatic;
+					};
+					5FBF6A8827937D4B28B6671A = {
 						DevelopmentTeam = LG7667PAS6;
 						ProvisioningStyle = Automatic;
 					};
@@ -172,11 +231,21 @@
 			projectRoot = "";
 			targets = (
 				5A68072841FAE356516E8D17 /* Steer */,
+				5FBF6A8827937D4B28B6671A /* SteerTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		9FCB7A3A321FF528E83521F6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				81D04E76A2C0A0F68BBC47F0 /* CardPayloadMappingPerfTests.swift in Sources */,
+				4B186F5237BFAC367284F909 /* SyncInboxOptimisticTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B7E7C16FDCA12BD5D360E8FC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -204,7 +273,33 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		C576723D3D795C4ED24B5383 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5A68072841FAE356516E8D17 /* Steer */;
+			targetProxy = BC4C1390983E3D62A04414F0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		2FBF2A25F0AE9FBC97737A5B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Steer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Steer";
+			};
+			name = Debug;
+		};
 		39AB0BCF1C794427D7473FD8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -332,6 +427,24 @@
 			};
 			name = Release;
 		};
+		6C09FABCDF7C527635545616 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Steer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Steer";
+			};
+			name = Release;
+		};
 		7F14C7F9673E9D9D25FED366 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -380,6 +493,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		40AC6A58CA068D03A485B4A6 /* Build configuration list for PBXNativeTarget "SteerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2FBF2A25F0AE9FBC97737A5B /* Debug */,
+				6C09FABCDF7C527635545616 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		CD6D1DE511FCCBC234FBB595 /* Build configuration list for PBXNativeTarget "Steer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -400,6 +522,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		37598AC73146CD126426965A /* SteerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SteerCore;
+		};
+		AB63FB2F0D6D4043252C1385 /* SteerCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SteerCore;
 		};
