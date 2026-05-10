@@ -11,6 +11,10 @@ struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
     var tint: Color = SteerColors.inputFill
+    /// Optional outer FocusState binding so the parent (Inbox) can react to
+    /// keyboard focus and hide chrome (carousel) while typing.
+    var externalFocus: FocusState<Bool>.Binding? = nil
+    @FocusState private var localFocus: Bool
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -25,6 +29,9 @@ struct ReplyDock: View {
             }
         }
         .animation(.snappy(duration: 0.16), value: canSend)
+        .onChange(of: localFocus) { _, focused in
+            externalFocus?.wrappedValue = focused
+        }
     }
 
     private var trimmedReply: String {
@@ -46,6 +53,7 @@ struct ReplyDock: View {
             .foregroundStyle(SteerColors.ink)
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
+            .focused($localFocus)
             .padding(.leading, 14)
             .padding(.trailing, 46)
             .padding(.vertical, 12)

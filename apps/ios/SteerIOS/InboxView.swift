@@ -12,8 +12,8 @@ struct InboxView: View {
     @State private var focusedSessionId: String? = nil
     @State private var cardDragOffset: CGFloat = 0
     @State private var replyDrafts: [String: String] = [:]
-    @State private var detailCard: ActionCard? = nil
     @State private var liveChipsExpanded = false
+    @FocusState private var replyFieldFocused: Bool
 
     private var cards: [ActionCard] {
         inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
@@ -49,20 +49,6 @@ struct InboxView: View {
                 content
             }
         }
-        .sheet(item: $detailCard) { card in
-            DetailView(
-                card: card,
-                onClose: { detailCard = nil },
-                onSend: { text in
-                    Task {
-                        if let payload = inbox.cards.first(where: { $0.sessionId == card.sessionId }) {
-                            await inbox.sendReply(text: text, for: payload)
-                        }
-                        detailCard = nil
-                    }
-                }
-            )
-        }
     }
 
     @ViewBuilder
@@ -88,32 +74,36 @@ struct InboxView: View {
                 ActionCardView(
                     card: card,
                     reply: replyBinding(for: card.sessionId),
-                    onSend: { text in send(text, to: card.sessionId) }
+                    onSend: { text in send(text, to: card.sessionId) },
+                    replyFieldFocused: $replyFieldFocused
                 )
                 .id(card.id)
                 .offset(x: cardDragOffset)
                 .rotationEffect(.degrees(cardDragOffset / 34))
-                .onTapGesture(count: 2) { detailCard = card }
                 .gesture(cardSwipeGesture)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                ActionCardCarousel(
-                    cards: cards,
-                    currentIndex: currentIndex,
-                    onSelect: { tappedIndex in
-                        guard cards.indices.contains(tappedIndex) else { return }
-                        withAnimation(.snappy(duration: 0.24)) {
-                            focusedSessionId = cards[tappedIndex].sessionId
+                if !replyFieldFocused {
+                    ActionCardCarousel(
+                        cards: cards,
+                        currentIndex: currentIndex,
+                        onSelect: { tappedIndex in
+                            guard cards.indices.contains(tappedIndex) else { return }
+                            withAnimation(.snappy(duration: 0.24)) {
+                                focusedSessionId = cards[tappedIndex].sessionId
+                            }
                         }
-                    }
-                )
-                .padding(.horizontal, -14) // bleed past parent's 14pt h-padding so the last tile isn't clipped at the screen edge
+                    )
+                    .padding(.horizontal, -14) // bleed past parent's 14pt h-padding so the last tile isn't clipped at the screen edge
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .padding(.horizontal, 14)
         .padding(.top, 18)
         .padding(.bottom, 12)
         .animation(.snappy(duration: 0.22), value: currentIndex)
+        .animation(.easeInOut(duration: 0.22), value: replyFieldFocused)
     }
 
     private func replyBinding(for sessionId: String) -> Binding<String> {

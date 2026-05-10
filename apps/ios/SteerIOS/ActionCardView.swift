@@ -7,6 +7,7 @@ struct ActionCardView: View {
     let card: ActionCard
     @Binding var reply: String
     let onSend: (String) -> Void
+    var replyFieldFocused: FocusState<Bool>.Binding? = nil
 
     private var headerTint: Color {
         SteerColors.hueTint(hue: card.accentHue, intensity: 0.65)
@@ -31,7 +32,7 @@ struct ActionCardView: View {
 
             Divider()
 
-            ReplyDock(reply: $reply, onSend: onSend)
+            ReplyDock(reply: $reply, onSend: onSend, externalFocus: replyFieldFocused)
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
                 .padding(.bottom, 12)
