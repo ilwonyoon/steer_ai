@@ -5,11 +5,12 @@ import worker from "../src/index.js";
 import migration0001 from "../migrations/0001_initial.sql?raw";
 import migration0002 from "../migrations/0002_apple_auth_code.sql?raw";
 import migration0003 from "../migrations/0003_devices.sql?raw";
+import migration0004 from "../migrations/0004_apns_token.sql?raw";
 
 async function runMigrations() {
   // Workers runtime has no fs; we vite-import the SQL files as raw
   // strings instead. New migrations: import + add to this array.
-  const migrations = [migration0001, migration0002, migration0003];
+  const migrations = [migration0001, migration0002, migration0003, migration0004];
   for (const sql of migrations) {
     // Strip line comments first so they don't break statement
     // splitting, then split on `;` and run each statement.

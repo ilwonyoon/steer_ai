@@ -6,6 +6,7 @@ import {
   revokeAppleAuthGrant,
   verifyAppleIdentityToken,
 } from "./auth.js";
+import { sendAPNSPush } from "./apns.js";
 import { Store } from "./store.js";
 import type {
   CardPayload,
@@ -137,11 +138,58 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
   if (body.cardId !== cardId) {
     return c.json({ error: "cardId mismatch" }, 400);
   }
+  const userId = c.get("user").userId;
   const store = new Store(c.env);
-  await store.upsertCard(c.get("user").userId, body);
-  await broadcast(c.env, c.get("user").userId, { type: "card.upsert", card: body });
+  await store.upsertCard(userId, body);
+  await broadcast(c.env, userId, { type: "card.upsert", card: body });
+
+  // Fan out APNS push to every iOS device this user has registered.
+  // Best-effort — failures are logged but don't surface to the Mac
+  // caller, since the WS broadcast above is the primary delivery
+  // path. Only push for actionable categories so we don't spam the
+  // user with completion / progress notifications.
+  if (
+    body.state === "active" &&
+    ["blocker", "decision", "question", "waiting"].includes(body.category)
+  ) {
+    // c.executionCtx throws under the in-process test runtime; in
+    // production it returns a real ExecutionContext. Use a try/catch
+    // so the fanout still fires either way (just without
+    // waitUntil's grace window in tests).
+    const promise = fanoutPush(c.env, userId, body).catch(() => {});
+    try {
+      c.executionCtx.waitUntil(promise);
+    } catch {
+      // ignore — promise still runs to completion in the test loop
+    }
+  }
   return c.json({ ok: true });
 });
+
+async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<void> {
+  try {
+    const store = new Store(env);
+    const devices = await store.listDevices(userId);
+    const targets = devices.filter(
+      (d) => d.platform === "ios" && d.apnsToken && d.syncEnabled
+    );
+    if (targets.length === 0) return;
+    const title = card.title || "Steer";
+    const bodyText = card.summary || card.actionPrompt || "";
+    await Promise.all(
+      targets.map((d) =>
+        sendAPNSPush(env, {
+          deviceToken: d.apnsToken!,
+          title,
+          body: bodyText,
+          customPayload: { cardId: card.cardId, sessionId: card.sessionId },
+        }).catch((e) => console.warn(`[apns] push failed for ${d.deviceId}: ${e}`))
+      )
+    );
+  } catch (e) {
+    console.warn(`[apns] fanout error: ${e}`);
+  }
+}
 
 /**
  * DELETE /v1/sync/cards/:cardId

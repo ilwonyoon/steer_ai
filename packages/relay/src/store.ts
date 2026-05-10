@@ -210,16 +210,17 @@ export class Store {
     await this.env.DB.prepare(
       `INSERT INTO devices (
          device_id, user_id, platform, display_name, device_class,
-         app_version, sync_enabled, last_seen_at
+         app_version, sync_enabled, last_seen_at, apns_token
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_id, device_id) DO UPDATE SET
          platform = excluded.platform,
          display_name = COALESCE(excluded.display_name, display_name),
          device_class = COALESCE(excluded.device_class, device_class),
          app_version = COALESCE(excluded.app_version, app_version),
          sync_enabled = excluded.sync_enabled,
-         last_seen_at = excluded.last_seen_at`
+         last_seen_at = excluded.last_seen_at,
+         apns_token = COALESCE(excluded.apns_token, apns_token)`
     )
       .bind(
         snap.deviceId,
@@ -229,7 +230,8 @@ export class Store {
         snap.deviceClass ?? null,
         snap.appVersion ?? null,
         snap.syncEnabled ? 1 : 0,
-        snap.lastSeenAt
+        snap.lastSeenAt,
+        snap.apnsToken ?? null
       )
       .run();
   }
@@ -237,7 +239,7 @@ export class Store {
   async listDevices(userId: string): Promise<DeviceSnapshot[]> {
     const rs = await this.env.DB.prepare(
       `SELECT device_id, platform, display_name, device_class,
-              app_version, sync_enabled, last_seen_at
+              app_version, sync_enabled, last_seen_at, apns_token
        FROM devices
        WHERE user_id = ?
        ORDER BY last_seen_at DESC
@@ -253,6 +255,7 @@ export class Store {
       appVersion: (row.app_version as string) || undefined,
       syncEnabled: (row.sync_enabled as number) === 1,
       lastSeenAt: row.last_seen_at as number,
+      apnsToken: (row.apns_token as string) || undefined,
     }));
   }
 

@@ -56,6 +56,7 @@ targets:
       properties:
         com.apple.developer.applesignin:
           - Default
+        aps-environment: development
 
   SteerTests:
     type: bundle.unit-test

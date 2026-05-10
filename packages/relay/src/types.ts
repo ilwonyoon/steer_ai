@@ -62,6 +62,7 @@ export interface DeviceSnapshot {
   appVersion?: string;
   syncEnabled: boolean;
   lastSeenAt: number;          // ms epoch
+  apnsToken?: string;          // hex-encoded; only iOS sends this
 }
 
 export type WSMessage =

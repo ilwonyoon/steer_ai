@@ -11,5 +11,10 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!-- Push notifications: use development environment for Xcode
+	     builds; release-mac.sh / TestFlight builds switch this to
+	     production via the App Store Connect provisioning. -->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

@@ -266,6 +266,44 @@ public final class SyncInbox: ObservableObject {
         }
     }
 
+    /// Persist the most recent APNS device token. Tokens rotate (Apple
+    /// issues a new one after restore-from-backup or app reinstall),
+    /// so we always keep the latest. Re-pushes a heartbeat so the
+    /// relay sees the new token immediately.
+    @Published public private(set) var apnsToken: String? = nil
+
+    public func updateAPNSToken(_ hex: String) async {
+        guard apnsToken != hex else { return }
+        apnsToken = hex
+        guard isSignedIn else { return }  // first beat happens after sign-in
+        await sendDeviceHeartbeat()
+    }
+
+    /// One-shot heartbeat publisher (the iOS analog of Mac's
+    /// `SyncClient.sendDeviceHeartbeat`). Run on launch + foreground
+    /// + after APNS token rotation. The Mac chip reads
+    /// /v1/sync/devices and uses lastSeenAt to label "Connected" vs
+    /// "Stale".
+    public func sendDeviceHeartbeat() async {
+        guard isSignedIn else { return }
+        let snapshot = DeviceSnapshot(
+            deviceId: Self.deviceId,
+            platform: "ios",
+            displayName: UIDevice.current.name,
+            deviceClass: UIDevice.current.model,
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+            syncEnabled: true,
+            lastSeenAt: Int64(Date().timeIntervalSince1970 * 1000),
+            apnsToken: apnsToken
+        )
+        do {
+            try await postJSONIgnoringResponse("/v1/sync/devices", body: snapshot)
+        } catch {
+            // Silent — the next beat will recover. Don't flap red on
+            // every transient network blip.
+        }
+    }
+
     /// In-flight reply that the user already saw "leave" the card
     /// stack. Stays here until the relay POST resolves. Failed sends
     /// stay with status=failed so the chip can offer retry/cancel.
@@ -482,6 +520,17 @@ public final class SyncInbox: ObservableObject {
         if requireAuth { addAuth(&req) }
         req.httpBody = try JSONEncoder().encode(body)
         return try await sendDecoding(req)
+    }
+
+    private func postJSONIgnoringResponse<Body: Encodable>(
+        _ path: String, body: Body, requireAuth: Bool = true
+    ) async throws {
+        var req = URLRequest(url: baseURL.appendingPathComponent(path))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if requireAuth { addAuth(&req) }
+        req.httpBody = try JSONEncoder().encode(body)
+        _ = try await sendRaw(req)
     }
 
     private func deleteRequest(_ path: String) async throws {

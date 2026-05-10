@@ -107,6 +107,11 @@ public struct DeviceSnapshot: Codable, Sendable {
     public let appVersion: String?
     public let syncEnabled: Bool
     public let lastSeenAt: Int64         // ms epoch
+    /// Hex-encoded APNS device token for iOS. Only set on iOS, only
+    /// after the user grants notification permission and Apple hands
+    /// us a token. The relay uses this to fan out push notifications
+    /// when a card lands on this user.
+    public let apnsToken: String?
 
     public init(
         deviceId: String,
@@ -115,7 +120,8 @@ public struct DeviceSnapshot: Codable, Sendable {
         deviceClass: String?,
         appVersion: String?,
         syncEnabled: Bool,
-        lastSeenAt: Int64
+        lastSeenAt: Int64,
+        apnsToken: String? = nil
     ) {
         self.deviceId = deviceId
         self.platform = platform
@@ -124,6 +130,7 @@ public struct DeviceSnapshot: Codable, Sendable {
         self.appVersion = appVersion
         self.syncEnabled = syncEnabled
         self.lastSeenAt = lastSeenAt
+        self.apnsToken = apnsToken
     }
 }
 
