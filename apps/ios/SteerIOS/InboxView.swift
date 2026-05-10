@@ -23,6 +23,13 @@ struct InboxView: View {
     /// reinserts mid-keyboard-dismiss — it waits for didHide instead
     /// of guessing with a time-based delay.
     @StateObject private var keyboard = KeyboardObserver()
+    @StateObject private var devicePresence: DevicePresenceObserver
+    @State private var showsMacSyncStatus = false
+
+    init(inbox: SyncInbox) {
+        self.inbox = inbox
+        _devicePresence = StateObject(wrappedValue: DevicePresenceObserver(inbox: inbox))
+    }
 
     private var cards: [ActionCard] {
         inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
@@ -59,6 +66,15 @@ struct InboxView: View {
             } else {
                 content
             }
+        }
+        .sheet(isPresented: $showsMacSyncStatus) {
+            MacSyncStatusView(observer: devicePresence)
+        }
+        .task {
+            devicePresence.start()
+        }
+        .onDisappear {
+            devicePresence.stop()
         }
     }
 
@@ -103,7 +119,9 @@ struct InboxView: View {
         VStack(spacing: 12) {
             HeaderBar(
                 isDemo: inbox.isDemoMode,
-                onExitDemo: { inbox.exitDemoMode() }
+                onExitDemo: { inbox.exitDemoMode() },
+                connectionState: devicePresence.state,
+                onTapChip: { showsMacSyncStatus = true }
             )
 
             if !liveChips.isEmpty {
@@ -226,6 +244,8 @@ struct InboxView: View {
 private struct HeaderBar: View {
     var isDemo: Bool = false
     var onExitDemo: (() -> Void)? = nil
+    var connectionState: DevicePresenceObserver.State = .neverConnected
+    var onTapChip: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -233,13 +253,15 @@ private struct HeaderBar: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(isDemo ? Color.accentColor : SteerColors.secondaryInk)
 
-            if isDemo, let onExitDemo {
-                HStack {
-                    Spacer()
+            HStack {
+                Spacer()
+                if isDemo, let onExitDemo {
                     Button("Use Live Sync", action: onExitDemo)
                         .font(.system(size: 13, weight: .medium))
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.accentColor)
+                } else if let onTapChip {
+                    MacConnectionChip(state: connectionState, onTap: onTapChip)
                 }
             }
         }

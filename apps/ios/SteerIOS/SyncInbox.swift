@@ -347,6 +347,13 @@ public final class SyncInbox: ObservableObject {
         return try await sendDecoding(req)
     }
 
+    /// Public bridge for satellite observers (DevicePresenceObserver)
+    /// that need authenticated GETs without re-implementing the URL
+    /// + auth + decoding plumbing.
+    public func getJSONRaw<T: Decodable>(_ path: String) async throws -> T {
+        try await getJSON(path)
+    }
+
     private func postJSON<Body: Encodable, T: Decodable>(
         _ path: String, body: Body, requireAuth: Bool = true
     ) async throws -> T {
