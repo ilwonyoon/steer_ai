@@ -11,10 +11,11 @@ struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
     var tint: Color = SteerColors.inputFill
-    /// Optional outer FocusState binding so the parent (Inbox) can react to
-    /// keyboard focus and hide chrome (carousel) while typing.
+    /// External @FocusState owned by the parent. We bind the TextField
+    /// directly to it so the parent can both observe changes and
+    /// programmatically dismiss the keyboard.
     var externalFocus: FocusState<Bool>.Binding? = nil
-    @FocusState private var localFocus: Bool
+    @FocusState private var fallbackFocus: Bool
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -29,9 +30,6 @@ struct ReplyDock: View {
             }
         }
         .animation(.snappy(duration: 0.16), value: canSend)
-        .onChange(of: localFocus) { _, focused in
-            externalFocus?.wrappedValue = focused
-        }
     }
 
     private var trimmedReply: String {
@@ -46,18 +44,24 @@ struct ReplyDock: View {
         reply = ""
     }
 
+    @ViewBuilder
     private var textInput: some View {
-        TextField("reply to this session", text: $reply, axis: .vertical)
+        let base = TextField("reply to this session", text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 15, design: .monospaced))
             .foregroundStyle(SteerColors.ink)
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
-            .focused($localFocus)
             .padding(.leading, 14)
             .padding(.trailing, 46)
             .padding(.vertical, 12)
             .frame(minHeight: 42)
+
+        if let externalFocus {
+            base.focused(externalFocus)
+        } else {
+            base.focused($fallbackFocus)
+        }
     }
 
     private var sendButton: some View {
