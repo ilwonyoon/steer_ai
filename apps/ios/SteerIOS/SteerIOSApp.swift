@@ -7,7 +7,11 @@ struct SteerIOSApp: App {
     var body: some Scene {
         WindowGroup {
             InboxView(inbox: inbox)
-                .task { await inbox.refreshMe() }
+                .task {
+                    if !SyncInbox.fixtureModeEnabled {
+                        await inbox.refreshMe()
+                    }
+                }
         }
     }
 }

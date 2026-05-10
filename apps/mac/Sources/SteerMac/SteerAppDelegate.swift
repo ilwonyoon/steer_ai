@@ -23,19 +23,15 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the main window to open. The status bar can be the only
         // visible UI while sync still needs to run in the background.
         _ = SyncClient.shared
-        // SwiftUI sometimes restores the "last window was closed"
-        // state and starts with zero visible windows. Force the
-        // primary scene to materialize once at launch.
+        // Background launches (Open at Login, `open -g`) sometimes finish
+        // with NSApplication.windows == [] because AppKit never auto-
+        // creates a window for a backgrounded process. The status bar is
+        // up but the user has nothing to click. Force-activate then
+        // post the bridge notification so the SwiftUI WindowGroup
+        // materializes via openWindow(id:).
         DispatchQueue.main.async {
             NSApplication.shared.activate(ignoringOtherApps: true)
-            for w in NSApplication.shared.windows where w.canBecomeKey {
-                w.makeKeyAndOrderFront(nil)
-                return
-            }
-            // No window exists yet — ask AppKit to reopen the scene.
-            _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
-                NSApplication.shared, hasVisibleWindows: false
-            )
+            self.ensureMainWindowVisible()
         }
         Task.detached(priority: .background) {
             AttachmentService.cleanupStaleTempFiles()
@@ -108,6 +104,17 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSteer() {
         NSApplication.shared.activate(ignoringOtherApps: true)
+        ensureMainWindowVisible()
+    }
+
+    /// Bring the SteerRootView WindowGroup forward, creating it if no
+    /// instance exists. Handles three cases:
+    ///   1. Window exists and is key/visible -> bring forward
+    ///   2. Window exists but minimized/hidden -> deminiaturize
+    ///   3. No window (background launch / user quit all windows) ->
+    ///      post bridge notification; SwiftUI's openWindow modifier in
+    ///      SteerMacApp picks it up and instantiates the scene.
+    func ensureMainWindowVisible() {
         var reopened = false
         for window in NSApplication.shared.windows where window.canBecomeKey {
             window.deminiaturize(nil)
@@ -115,9 +122,10 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             reopened = true
         }
         if !reopened {
-            // SwiftUI WindowGroup gets fully released after the last
-            // window closes; ask AppKit to recreate it via the standard
-            // "reopen" path that Dock-icon clicks use.
+            NotificationCenter.default.post(name: .steerOpenMainWindow, object: nil)
+            // applicationShouldHandleReopen as a belt-and-braces fallback
+            // for Dock-icon clicks on macOS versions where the
+            // notification doesn't get a receiver in time.
             _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
                 NSApplication.shared, hasVisibleWindows: false
             )

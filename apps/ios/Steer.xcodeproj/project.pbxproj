@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00FC61208B49178C55AEF015 /* SyncInboxFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */; };
 		05285BD23BDD04888929B775 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18199CFE823CF880E1C94476 /* InboxView.swift */; };
 		60A907D6E745CD578C1248C0 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 37598AC73146CD126426965A /* SteerCore */; };
 		B79B1911E9BE7167231F7686 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07EC5CEAC027EA7DD7F295EA /* CardDetailView.swift */; };
@@ -22,6 +23,7 @@
 		84D152B83142801A64439B96 /* SteerIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerIOSApp.swift; sourceTree = "<group>"; };
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
 		A940AFD67B6E554CB8324B64 /* Steer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Steer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxFixtures.swift; sourceTree = "<group>"; };
 		D5C900DB8295384C9D855881 /* Steer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Steer.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -46,6 +48,7 @@
 				D5C900DB8295384C9D855881 /* Steer.entitlements */,
 				84D152B83142801A64439B96 /* SteerIOSApp.swift */,
 				45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */,
+				C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */,
 			);
 			path = SteerIOS;
 			sourceTree = "<group>";
@@ -143,6 +146,7 @@
 				05285BD23BDD04888929B775 /* InboxView.swift in Sources */,
 				CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */,
 				C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */,
+				00FC61208B49178C55AEF015 /* SyncInboxFixtures.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

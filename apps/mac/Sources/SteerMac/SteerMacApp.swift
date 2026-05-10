@@ -16,7 +16,7 @@ struct SteerMacApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             Group {
                 if hasCompletedOnboarding {
                     SteerRootView()
@@ -32,6 +32,7 @@ struct SteerMacApp: App {
                     .fixedSize()
                 }
             }
+            .modifier(OpenMainWindowReceiver())
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -41,4 +42,27 @@ struct SteerMacApp: App {
             SteerSettingsView()
         }
     }
+}
+
+/// Bridge from AppDelegate (which has no SwiftUI environment) to
+/// SwiftUI's OpenWindowAction. We post a notification from AppDelegate;
+/// this view modifier listens and calls openWindow(id:), which is the
+/// only reliable way to instantiate a SwiftUI WindowGroup from outside
+/// SwiftUI. Background launches (Open at Login / `open -g`) otherwise
+/// finish with zero windows because AppKit never auto-creates one for
+/// a backgrounded process.
+struct OpenMainWindowReceiver: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .steerOpenMainWindow)) { _ in
+                openWindow(id: "main")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+    }
+}
+
+extension Notification.Name {
+    static let steerOpenMainWindow = Notification.Name("ai.steer.mac.openMainWindow")
 }

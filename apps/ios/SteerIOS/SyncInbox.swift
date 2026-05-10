@@ -42,9 +42,31 @@ public final class SyncInbox: ObservableObject {
         cfg.timeoutIntervalForRequest = 30
         cfg.waitsForConnectivity = true
         self.urlSession = URLSession(configuration: cfg)
+
+        if Self.fixtureModeEnabled {
+            // Simulator UX iteration path: skip Apple sign-in (which the
+            // sim can't complete anyway) and load a hard-coded card set
+            // so the inbox renders immediately. Set in scheme env vars
+            // (STEER_FIXTURES=1) or UserDefaults `steer.ios.fixtures`.
+            self.status = .signedIn(SyncUser(
+                userId: "fixture-user",
+                appleEmail: "fixtures@steer.local",
+                displayName: "Fixture User"
+            ))
+            self.cards = SyncInboxFixtures.cards()
+            return
+        }
+
         if tokenStore.read() != nil {
             Task { await refreshMe() }
         }
+    }
+
+    static var fixtureModeEnabled: Bool {
+        if ProcessInfo.processInfo.environment["STEER_FIXTURES"] == "1" {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: "steer.ios.fixtures")
     }
 
     public var isSignedIn: Bool {

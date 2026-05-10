@@ -10,88 +10,48 @@ struct CardDetailView: View {
     @State private var isSending = false
 
     private var terminalLines: [String] {
-        switch card.payload?["terminalLines"]?.value {
-        case .stringArray(let arr): return arr
-        default: return []
-        }
+        if case .stringArray(let arr) = card.payload?["terminalLines"]?.value { return arr }
+        return []
     }
-
     private var options: [String] {
-        switch card.payload?["options"]?.value {
-        case .stringArray(let arr): return arr
-        default: return []
-        }
+        if case .stringArray(let arr) = card.payload?["options"]?.value { return arr }
+        return []
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(card.title)
-                        .font(.system(size: 18, weight: .semibold))
-                    Text(card.summary)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !terminalLines.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(terminalLines, id: \.self) { line in
-                                Text(line.isEmpty ? " " : line)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(.primary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                        .padding(12)
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-
-                    if !options.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(options, id: \.self) { chip in
-                                Button {
-                                    reply = chip
-                                } label: {
-                                    Text(chip)
-                                        .font(.system(size: 13, design: .monospaced))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.vertical, 10)
-                                        .padding(.horizontal, 12)
-                                        .background(Color(.tertiarySystemBackground))
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-                .padding(16)
-            }
-
             VStack(spacing: 0) {
-                Divider()
-                HStack {
-                    TextField("reply to this session", text: $reply, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14, design: .monospaced))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .disabled(isSending)
-                    Button {
-                        Task { await send() }
-                    } label: {
-                        Image(systemName: isSending ? "hourglass" : "arrow.up.circle.fill")
-                            .font(.system(size: 28))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        CardMetaRow(card: card)
+
+                        Text(card.title)
+                            .font(.system(size: 18, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if !card.summary.isEmpty {
+                            Text(card.summary)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if !terminalLines.isEmpty {
+                            TerminalExcerpt(lines: terminalLines)
+                        }
                     }
-                    .disabled(isSending || reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
                 }
-                .padding(12)
+
+                ReplyComposer(
+                    chips: options,
+                    reply: $reply,
+                    isSending: isSending,
+                    onChip: { reply = $0 },
+                    onSend: { Task { await send() } }
+                )
             }
-            .background(.regularMaterial)
             .navigationTitle("Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -110,5 +70,89 @@ struct CardDetailView: View {
         await inbox.sendReply(text: text, for: card)
         reply = ""
         dismiss()
+    }
+}
+
+private struct TerminalExcerpt: View {
+    let lines: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(line.isEmpty ? " " : line)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color(white: 0.92))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(12)
+        .background(Color(white: 0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct ReplyComposer: View {
+    let chips: [String]
+    @Binding var reply: String
+    let isSending: Bool
+    let onChip: (String) -> Void
+    let onSend: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                if !chips.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(chips, id: \.self) { chip in
+                                Button {
+                                    onChip(chip)
+                                } label: {
+                                    Text(chip)
+                                        .font(.system(size: 13, design: .monospaced))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color(.tertiarySystemBackground))
+                                        .clipShape(Capsule())
+                                        .overlay(
+                                            Capsule()
+                                                .strokeBorder(Color(.separator), lineWidth: 0.5)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                }
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField("reply to this session", text: $reply, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14, design: .monospaced))
+                        .lineLimit(1...5)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .disabled(isSending)
+                    Button {
+                        onSend()
+                    } label: {
+                        Image(systemName: isSending ? "hourglass" : "arrow.up.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
+                    }
+                    .disabled(!canSend || isSending)
+                }
+            }
+            .padding(12)
+        }
+        .background(.regularMaterial)
+    }
+
+    private var canSend: Bool {
+        !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
