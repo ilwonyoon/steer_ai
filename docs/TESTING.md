@@ -70,7 +70,32 @@ Three things make this work:
 2. **Accessibility identifiers, applied to leaves.** `reply-input` is on the `TextField`, `reply-send` on the `Button`. `inbox-content` is on the inbox root container. **Don't** apply `.accessibilityIdentifier()` to a card-shaped container: SwiftUI cascades the identifier to every subview and overwrites the child identifiers, which silently breaks `reply-input` / `reply-send` lookups.
 3. **System TabBar buttons use SF Symbol labels.** Applying an identifier inside `.tabItem { Image(systemName: ...) }` does not survive — the system rewrites the button label to the symbol's accessibility name (e.g. `rectangle.stack.fill` becomes "Album"). Tests address tabs positionally via `app.tabBars.firstMatch.buttons.element(boundBy: 0)`.
 
-Why XCUITest rather than Maestro or fastlane snapshot: XCUITest ships with Xcode, runs entirely from `xcodebuild` without a separate runtime, and the test sources sit next to the app target so they're version-locked to the SwiftUI changes that motivate them. fastlane snapshot is XCUITest underneath but is screenshot-oriented. Maestro is a YAML driver maintained outside Apple and would add a second toolchain for very little gain at our current scope.
+Why XCUITest rather than Maestro or fastlane snapshot: XCUITest ships with Xcode, runs entirely from `xcodebuild` without a separate runtime, and the test sources sit next to the app target so they're version-locked to the SwiftUI changes that motivate them. fastlane snapshot is XCUITest underneath but is screenshot-oriented. Maestro is a YAML driver maintained outside Apple and would add a second toolchain for very little gain at our current scope (iOS-only). If we ever ship Android or want to share scenarios across mobile-team contributors who don't write Swift, Maestro is worth a second look.
+
+Three suites in `SteerUITests`:
+
+| Suite | What it covers | Runtime |
+| ----- | -------------- | ------- |
+| `CardFlowUITests` | Smoke — launch, card present, reply send, tab switch. | ~28s |
+| `GoldenFlowUITests` | Happy paths — demo entry, multi-card swipe + draft preservation, keyboard show/hide layout, Settings drill-down. | ~47s |
+| `StressFlowUITests` | Soak — 100× swipe (XCTMemoryMetric/XCTCPUMetric baseline), 50× demo reply, rotation+lifecycle churn, long typing + erase. | ~8min |
+
+The stress suite is slow on purpose. Run it before a release, not on every commit. CI gating belongs in `scripts/verify-steer-regression.sh` if/when we want it routine.
+
+Quick sanity vs. full pre-release:
+
+```sh
+# Daily / per-commit:
+xcodebuild test -project apps/ios/Steer.xcodeproj -scheme Steer \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:SteerUITests/CardFlowUITests \
+  -only-testing:SteerUITests/GoldenFlowUITests
+
+# Before release:
+xcodebuild test -project apps/ios/Steer.xcodeproj -scheme Steer \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:SteerUITests
+```
 
 ## Adding a new test
 

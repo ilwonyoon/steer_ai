@@ -68,11 +68,26 @@ public final class SyncInbox: ObservableObject {
         }
         // Honored by XCUITest. `app.launchArguments = ["--uitest"]`
         // forces fixture mode so the system Sign in with Apple sheet
-        // never appears.
-        if ProcessInfo.processInfo.arguments.contains("--uitest") {
+        // never appears. `--uitest-signed-out` is an explicit opt-out
+        // for tests that need to exercise the signed-out UI (sign-in
+        // prompt, Try Demo entry point) without going through the
+        // real Apple flow.
+        let argv = ProcessInfo.processInfo.arguments
+        if argv.contains("--uitest-signed-out") {
+            return false
+        }
+        if argv.contains("--uitest") {
             return true
         }
         return UserDefaults.standard.bool(forKey: "steer.ios.fixtures")
+    }
+
+    /// True when the app booted under `--uitest-signed-out`. The UI
+    /// uses this to suppress the real Apple sign-in button so XCUITest
+    /// doesn't accidentally trigger the system Apple ID sheet (which
+    /// it can't drive anyway).
+    static var uitestSignedOutMode: Bool {
+        ProcessInfo.processInfo.arguments.contains("--uitest-signed-out")
     }
 
     /// True while the user is browsing sample data via Try Demo. Used

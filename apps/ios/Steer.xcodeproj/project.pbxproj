@@ -23,6 +23,7 @@
 		A60108A154CB8ABD87D0876D /* ActionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */; };
 		B2AB16691E7FECD9A988EB55 /* SteerColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */; };
 		BF2785C3DCB28F862D3775A4 /* CardFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B6FCF8B8A7ABA7A683B8A8C /* CardFlowUITests.swift */; };
+		C27C0479BED00D3676D94A7F /* GoldenFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D822532A315ABEF005BBBCE /* GoldenFlowUITests.swift */; };
 		C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */; };
 		CA677DB22BB1B45BE3F4DDB3 /* ReplyDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B391F7B1C395484A445D38 /* ReplyDock.swift */; };
 		CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D152B83142801A64439B96 /* SteerIOSApp.swift */; };
@@ -31,6 +32,7 @@
 		E0B0A4B323883CCF658AB6D3 /* WhatSyncsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4E924D811C045FDF2306F2 /* WhatSyncsView.swift */; };
 		E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 057A2A9A71094A1E78867C5E /* Models.swift */; };
 		EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6775B843EBF5B82A78C73C8B /* SettingsView.swift */; };
+		FDCA1FF988781E53C70E9ACA /* StressFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DD8134A0919FD30B77CE4F2 /* StressFlowUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,7 +59,9 @@
 		18199CFE823CF880E1C94476 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
 		1A33D83FEEFF02C76FD5D65B /* PendingRepliesChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRepliesChip.swift; sourceTree = "<group>"; };
 		25011DE39A71D10907B4E14F /* TerminalExcerptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalExcerptView.swift; sourceTree = "<group>"; };
+		2DD8134A0919FD30B77CE4F2 /* StressFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StressFlowUITests.swift; sourceTree = "<group>"; };
 		36B391F7B1C395484A445D38 /* ReplyDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyDock.swift; sourceTree = "<group>"; };
+		3D822532A315ABEF005BBBCE /* GoldenFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoldenFlowUITests.swift; sourceTree = "<group>"; };
 		3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerColors.swift; sourceTree = "<group>"; };
 		400608C9A7F07651B1E30B67 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInbox.swift; sourceTree = "<group>"; };
@@ -161,6 +165,8 @@
 			isa = PBXGroup;
 			children = (
 				7B6FCF8B8A7ABA7A683B8A8C /* CardFlowUITests.swift */,
+				3D822532A315ABEF005BBBCE /* GoldenFlowUITests.swift */,
+				2DD8134A0919FD30B77CE4F2 /* StressFlowUITests.swift */,
 			);
 			path = SteerIOSUITests;
 			sourceTree = "<group>";
@@ -299,6 +305,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF2785C3DCB28F862D3775A4 /* CardFlowUITests.swift in Sources */,
+				C27C0479BED00D3676D94A7F /* GoldenFlowUITests.swift in Sources */,
+				FDCA1FF988781E53C70E9ACA /* StressFlowUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

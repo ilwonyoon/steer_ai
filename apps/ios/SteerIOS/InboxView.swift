@@ -478,18 +478,30 @@ private struct SignInPrompt: View {
 
                 // Apple's native button is required by App Store
                 // guideline 4.8 (custom black capsules get flagged).
-                SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.fullName, .email]
-                } onCompletion: { result in
-                    Task {
-                        isSigningIn = true
-                        await inbox.handleAppleSignInResult(result)
-                        isSigningIn = false
+                // XCUITest can't drive the system Apple ID sheet, so
+                // we hide the button under `--uitest-signed-out` and
+                // surface a stand-in placeholder identifier instead.
+                if SyncInbox.uitestSignedOutMode {
+                    Text("Sign in with Apple (disabled in UI tests)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 240, height: 44)
+                        .accessibilityIdentifier("apple-signin-stub")
+                } else {
+                    SignInWithAppleButton(.signIn) { request in
+                        request.requestedScopes = [.fullName, .email]
+                    } onCompletion: { result in
+                        Task {
+                            isSigningIn = true
+                            await inbox.handleAppleSignInResult(result)
+                            isSigningIn = false
+                        }
                     }
+                    .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                    .frame(width: 240, height: 44)
+                    .disabled(isSigningIn)
+                    .accessibilityIdentifier("apple-signin-button")
                 }
-                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                .frame(width: 240, height: 44)
-                .disabled(isSigningIn)
                 if isSigningIn {
                     ProgressView().controlSize(.small)
                 }
