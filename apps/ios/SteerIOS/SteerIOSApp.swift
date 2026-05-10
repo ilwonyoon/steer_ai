@@ -26,11 +26,11 @@ private struct RootTabView: View {
         TabView {
             InboxView(inbox: inbox)
                 .tabItem {
-                    Label("Inbox", systemImage: "rectangle.stack.fill")
+                    Image(systemName: "rectangle.stack.fill")
                 }
             SettingsView(inbox: inbox)
                 .tabItem {
-                    Label("Settings", systemImage: "gearshape")
+                    Image(systemName: "gearshape")
                 }
         }
     }

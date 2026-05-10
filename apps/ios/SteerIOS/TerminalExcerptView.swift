@@ -25,6 +25,12 @@ struct TerminalExcerptView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .scrollContentBackground(.hidden)
+        // Don't let the keyboard adjust this scroll view's content
+        // insets — it's nested inside a card whose frame is already
+        // managed by the parent's keyboard avoidance, so doubling up
+        // makes the text appear to flash on focus changes.
+        .ignoresSafeArea(.keyboard)
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Terminal excerpt")
     }

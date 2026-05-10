@@ -1,5 +1,8 @@
 import SwiftUI
 import SteerCore
+import os.log
+
+private let diagLog = Logger(subsystem: "ai.steer.ios", category: "diag")
 
 /// iOS Inbox uses the same card-stack pattern as Mac SteerRootView:
 /// the central canvas always shows ONE ActionCardView at a time, and
@@ -14,6 +17,11 @@ struct InboxView: View {
     @State private var replyDrafts: [String: String] = [:]
     @State private var liveChipsExpanded = false
     @FocusState private var replyFieldFocused: Bool
+    /// Tracks the actual keyboard phase (will-show / did-hide). The
+    /// compact carousel renders only when this is false, so it never
+    /// reinserts mid-keyboard-dismiss — it waits for didHide instead
+    /// of guessing with a time-based delay.
+    @StateObject private var keyboard = KeyboardObserver()
 
     private var cards: [ActionCard] {
         inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
@@ -55,12 +63,42 @@ struct InboxView: View {
 
     @ViewBuilder
     private var content: some View {
-        // Single column. Bottom padding is dynamic: full carousel
-        // footprint when the carousel is visible, zero when typing.
-        // The padding change is driven by .ignoresSafeArea(.keyboard)
-        // off — i.e. we let the system push the column up — but the
-        // padding swap happens in the same gesture so layout settles
-        // in one step rather than oscillating.
+        // Two independent containers, NOT a single VStack column:
+        //   - cardArea: header + card. Lives in its own VStack and
+        //     responds to system keyboard avoidance directly.
+        //   - carousel: pinned to bottom in a separate layer. Renders
+        //     only when keyboard is fully hidden (KeyboardObserver
+        //     listens for keyboardDidHide). Its insert/remove no
+        //     longer changes the card area's frame.
+        ZStack(alignment: .bottom) {
+            cardArea
+
+            if !cards.isEmpty {
+                ActionCardCarousel(
+                    cards: cards,
+                    currentIndex: currentIndex,
+                    onSelect: { tappedIndex in
+                        guard cards.indices.contains(tappedIndex) else { return }
+                        withAnimation(.easeOut(duration: 0.22)) {
+                            focusedSessionId = cards[tappedIndex].sessionId
+                        }
+                    }
+                )
+                .padding(.bottom, 12)
+                // Carousel always exists at the bottom of the screen
+                // and slides DOWN by exactly the keyboard's height.
+                // Result: as the keyboard rises, it appears to "push"
+                // the carousel off-screen; as the keyboard slides
+                // down, the carousel slides up behind it on the same
+                // curve. No discrete insert/remove, no empty band.
+                .offset(y: keyboard.height)
+                .ignoresSafeArea(.keyboard)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var cardArea: some View {
         VStack(spacing: 12) {
             HeaderBar()
 
@@ -89,30 +127,38 @@ struct InboxView: View {
                 .offset(x: cardDragOffset)
                 .gesture(cardSwipeGesture)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                if !replyFieldFocused {
-                    ActionCardCarousel(
-                        cards: cards,
-                        currentIndex: currentIndex,
-                        onSelect: { tappedIndex in
-                            guard cards.indices.contains(tappedIndex) else { return }
-                            withAnimation(.easeOut(duration: 0.22)) {
-                                focusedSessionId = cards[tappedIndex].sessionId
-                            }
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.onChange(of: proxy.size.height) { old, new in
+                            diagLog.notice("card.height \(old, format: .fixed(precision: 1)) -> \(new, format: .fixed(precision: 1))")
                         }
-                    )
-                    .padding(.horizontal, -14)
+                    }
+                )
+                .onChange(of: replyFieldFocused) { _, focused in
+                    diagLog.notice("focus -> \(focused)")
                 }
             }
         }
         .padding(.horizontal, 14)
         .padding(.top, 18)
-        .padding(.bottom, 12)
+        // Reserve carousel's footprint when the keyboard is hidden, so
+        // the card never sits under the carousel layer below. When the
+        // keyboard is visible the system pushes us up so the input is
+        // visible — at that moment carousel isn't rendered, so we drop
+        // the reserved space too. This keeps card height stable
+        // throughout the dismiss animation: the only thing changing is
+        // the keyboard frame, which the system handles smoothly.
+        // Reserve carousel footprint always — toggling it on focus
+        // change makes the card content (terminal text, reply dock)
+        // visibly flash because our `keyboard.isVisible` publish
+        // always lags the system's own keyboard avoidance by ~10ms.
+        // With static padding the card frame only changes when the
+        // keyboard frame changes, in one continuous motion.
+        .padding(.bottom, carouselFootprint)
         .animation(.easeOut(duration: 0.22), value: currentIndex)
-        // Carousel insert/remove is intentionally NOT animated.
-        // Static UI + system keyboard avoidance only — no extra
-        // motion competing with the keyboard.
     }
+
+    private var carouselFootprint: CGFloat { 100 + 12 }
 
     private func replyBinding(for sessionId: String) -> Binding<String> {
         Binding(
