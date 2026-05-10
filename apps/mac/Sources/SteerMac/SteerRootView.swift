@@ -286,6 +286,21 @@ struct SteerRootView: View {
             await syncToiPhone(cards: loadedCards)
             await drainQueuedInstructions()
         }
+        // Heartbeat at most once per 60s; reload runs ~every 2s but we
+        // only post when we cross the cooldown.
+        if signedIn {
+            await maybeHeartbeat(syncEnabled: toggleOn)
+        }
+    }
+
+    @State private var lastHeartbeatAt: Date? = nil
+    private func maybeHeartbeat(syncEnabled: Bool) async {
+        let now = Date()
+        if let last = lastHeartbeatAt, now.timeIntervalSince(last) < 60 {
+            return
+        }
+        lastHeartbeatAt = now
+        await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: syncEnabled)
     }
 
     private func syncToiPhone(cards: [ActionCard]) async {

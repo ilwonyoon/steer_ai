@@ -204,6 +204,71 @@ public final class SyncClient: ObservableObject {
         }
     }
 
+    // MARK: - Device presence
+
+    /// Stable per-install Mac device id, generated on first call and
+    /// kept in UserDefaults so the server keeps a single device row
+    /// across launches. We deliberately don't put this in Keychain —
+    /// it's not a credential, just an identifier for presence rows.
+    public static var deviceId: String {
+        let key = "ai.steer.mac.deviceId"
+        if let id = UserDefaults.standard.string(forKey: key), !id.isEmpty {
+            return id
+        }
+        let id = UUID().uuidString
+        UserDefaults.standard.set(id, forKey: key)
+        return id
+    }
+
+    /// Send one device heartbeat to the relay. Caller decides cadence
+    /// (typically 60s while iPhone Sync is on, plus an immediate beat
+    /// on launch). Best-effort; failures don't surface to the user.
+    public func sendDeviceHeartbeat(syncEnabled: Bool) async {
+        guard isSignedIn else { return }
+        let snapshot = DeviceSnapshot(
+            deviceId: Self.deviceId,
+            platform: "mac",
+            displayName: Host.current().localizedName,
+            deviceClass: macDeviceClass(),
+            appVersion: appVersionString(),
+            syncEnabled: syncEnabled,
+            lastSeenAt: Int64(Date().timeIntervalSince1970 * 1000.0)
+        )
+        do {
+            try await postJSONIgnoringResponse("/v1/sync/devices", body: snapshot)
+            SignInDebugLog.write("[heartbeat] OK syncEnabled=\(syncEnabled)")
+        } catch {
+            SignInDebugLog.write("[heartbeat] FAILED: \(error)")
+        }
+    }
+
+    private func macDeviceClass() -> String {
+        // sysctl hw.model gives "MacBookAir10,1", "Macmini9,1" etc.
+        // We fold those into the user-facing classes called out in
+        // CROSS_DEVICE_ONBOARDING_PLAN: MacBook Air, MacBook Pro,
+        // Mac mini, Mac Studio, iMac, or fallback "Mac".
+        var size = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        var raw = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.model", &raw, &size, nil, 0)
+        let model = String(cString: raw)
+        if model.hasPrefix("MacBookAir") { return "MacBook Air" }
+        if model.hasPrefix("MacBookPro") { return "MacBook Pro" }
+        if model.hasPrefix("MacBook")    { return "MacBook" }
+        if model.hasPrefix("Macmini")    { return "Mac mini" }
+        if model.hasPrefix("MacStudio")  { return "Mac Studio" }
+        if model.hasPrefix("iMac")       { return "iMac" }
+        if model.hasPrefix("MacPro")     { return "Mac Pro" }
+        return "Mac"
+    }
+
+    private func appVersionString() -> String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let v = info["CFBundleShortVersionString"] as? String ?? "0"
+        let b = info["CFBundleVersion"] as? String ?? "0"
+        return "\(v) (\(b))"
+    }
+
     // MARK: - Cards
 
     public func publishCard(_ card: CardPayload) async {
