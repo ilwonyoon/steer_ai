@@ -84,11 +84,6 @@ struct InboxView: View {
                 .offset(x: cardDragOffset)
                 .gesture(cardSwipeGesture)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Block the parent's easeInOut from cascading into the
-                // keyboard-driven layout shift. The system already has
-                // its own keyboard avoidance animation; layering ours
-                // on top is what produced the "shake".
-                .transaction { $0.animation = nil }
 
                 ActionCardCarousel(
                     cards: cards,
@@ -101,19 +96,23 @@ struct InboxView: View {
                     }
                 )
                 .padding(.horizontal, -14) // bleed past parent's 14pt h-padding so the last tile isn't clipped at the screen edge
-                // Fade only — moving the carousel down while the keyboard
-                // also moves up created a double animation that read as
-                // the card shaking.
+                // Visibility only, no size toggling. Hiding the carousel
+                // by changing its frame causes the parent to relayout
+                // mid-keyboard-animation, which is what produced the
+                // "input pops up then drops" jitter on dismiss. Opacity
+                // alone is enough — the keyboard fully covers this row
+                // while focused anyway.
                 .opacity(replyFieldFocused ? 0 : 1)
-                .frame(height: replyFieldFocused ? 0 : nil)
-                .clipped()
+                .allowsHitTesting(!replyFieldFocused)
             }
         }
         .padding(.horizontal, 14)
         .padding(.top, 18)
         .padding(.bottom, 12)
         .animation(.easeOut(duration: 0.22), value: currentIndex)
-        .animation(.easeInOut(duration: 0.22), value: replyFieldFocused)
+        // Note: no animation on replyFieldFocused. The system handles
+        // keyboard-driven layout; layering ours on top causes overshoot
+        // on dismiss.
     }
 
     private func replyBinding(for sessionId: String) -> Binding<String> {
