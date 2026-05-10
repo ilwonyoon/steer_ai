@@ -164,30 +164,42 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// the last window the receiver was gone, which is exactly when
     /// "Open Steer" had to work and didn't.
     func ensureMainWindowVisible() {
-        var reopened = false
-        for window in NSApplication.shared.windows where window.canBecomeKey {
-            window.deminiaturize(nil)
-            window.makeKeyAndOrderFront(nil)
-            reopened = true
+        // Filter to "main"-shaped windows: the SteerRootView WindowGroup
+        // sets a known title prefix and SwiftUI exposes it via
+        // window.title. Settings/About sheets use their own NSWindow
+        // chain so they never satisfy this predicate.
+        let mainWindows = NSApplication.shared.windows.filter { window in
+            guard window.canBecomeKey else { return false }
+            // Settings/About windows have a distinct title; SteerRootView
+            // is just "Steer" or "Steer · …".
+            let title = window.title
+            return title == "Steer" || title.hasPrefix("Steer · ")
         }
-        if !reopened {
-            // Try the targeted notification first — works if user
-            // minimized rather than closed and the scene is still
-            // alive somewhere in the responder chain.
-            NotificationCenter.default.post(name: .steerOpenMainWindow, object: nil)
-            // The real fallback: ask AppKit to re-instantiate the
-            // SwiftUI WindowGroup via the standard new-window action.
-            DispatchQueue.main.async {
-                if NSApplication.shared.windows.contains(where: { $0.canBecomeKey }) == false {
-                    NSApp.sendAction(#selector(NSDocumentController.newDocument(_:)), to: nil, from: nil)
-                }
-                // Last-ditch: applicationShouldHandleReopen tells
-                // AppKit to materialize the scene. Some macOS versions
-                // honor it even outside a Dock click context.
-                _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
-                    NSApplication.shared, hasVisibleWindows: false
-                )
-            }
+
+        if let main = mainWindows.first {
+            main.deminiaturize(nil)
+            main.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // No main window alive (user closed it or SwiftUI dismantled
+        // the scene). Materialize a fresh one via newDocument: which
+        // SwiftUI WindowGroup registers for. We post the notification
+        // *and* fire newDocument: in the same tick — the first one
+        // that lands wins, the other no-ops.
+        NotificationCenter.default.post(name: .steerOpenMainWindow, object: nil)
+        DispatchQueue.main.async {
+            NSApp.sendAction(
+                #selector(NSDocumentController.newDocument(_:)),
+                to: nil,
+                from: nil
+            )
+            // Belt-and-suspenders for older macOS where newDocument:
+            // is sometimes ignored without a delegate confirmation.
+            _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
+                NSApplication.shared,
+                hasVisibleWindows: false
+            )
         }
     }
 

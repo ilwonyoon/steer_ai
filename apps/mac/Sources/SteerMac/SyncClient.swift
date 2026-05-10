@@ -292,6 +292,15 @@ public final class SyncClient: ObservableObject {
 
     // MARK: - Cards
 
+    /// "Cancelled" / NSURLErrorCancelled is an in-flight URLSession
+    /// task that lost its race with another tick — not a real failure
+    /// the user should see. We treat it as silent so the Settings
+    /// status row doesn't flap red on every reload.
+    private func isTransientError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
+
     public func publishCard(_ card: CardPayload) async {
         guard isSignedIn else {
             SignInDebugLog.write("[publish] skipped (not signed in) card=\(card.cardId)")
@@ -300,9 +309,12 @@ public final class SyncClient: ObservableObject {
         do {
             try await putJSON("/v1/sync/cards/\(card.cardId)", body: card)
             SignInDebugLog.write("[publish] OK card=\(card.cardId) state=\(card.state)")
+            lastError = nil
         } catch {
             SignInDebugLog.write("[publish] FAILED card=\(card.cardId): \(error)")
-            lastError = "publishCard failed: \(error.localizedDescription)"
+            if !isTransientError(error) {
+                lastError = "publishCard failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -310,8 +322,11 @@ public final class SyncClient: ObservableObject {
         guard isSignedIn else { return }
         do {
             try await deleteRequest("/v1/sync/cards/\(cardId)")
+            lastError = nil
         } catch {
-            lastError = "resolveCard failed: \(error.localizedDescription)"
+            if !isTransientError(error) {
+                lastError = "resolveCard failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -319,9 +334,12 @@ public final class SyncClient: ObservableObject {
         guard isSignedIn else { return [] }
         do {
             let resp: InstructionListResponse = try await getJSON("/v1/sync/instructions/queued")
+            lastError = nil
             return resp.instructions
         } catch {
-            lastError = "fetchQueuedInstructions failed: \(error.localizedDescription)"
+            if !isTransientError(error) {
+                lastError = "fetchQueuedInstructions failed: \(error.localizedDescription)"
+            }
             return []
         }
     }
@@ -334,8 +352,11 @@ public final class SyncClient: ObservableObject {
                 "/v1/sync/instructions/\(instructionId)/status",
                 body: StatusBody(status: "injected")
             )
+            lastError = nil
         } catch {
-            lastError = "markInjected failed: \(error.localizedDescription)"
+            if !isTransientError(error) {
+                lastError = "markInjected failed: \(error.localizedDescription)"
+            }
         }
     }
 

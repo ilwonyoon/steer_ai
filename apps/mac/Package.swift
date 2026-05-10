@@ -24,10 +24,14 @@ let package = Package(
             resources: [
                 .process("Resources")
             ]
-        ),
-        .testTarget(
-            name: "SteerMacTests",
-            dependencies: ["SteerMac"]
         )
+        // No testTarget here. SwiftPM implicitly threads `@testable
+        // import SteerMac` against the executable target into the
+        // launch graph; the resulting .app crashes on first launch
+        // inside UNUserNotificationCenter.current() with
+        // `bundleProxyForCurrentProcess is nil`. The Mac perf harness
+        // belongs in a separate library target, or in a Swift
+        // command-line target that doesn't drive the SwiftUI App
+        // entry point.
     ]
 )

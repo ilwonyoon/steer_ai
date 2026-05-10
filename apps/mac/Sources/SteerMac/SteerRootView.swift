@@ -282,8 +282,16 @@ struct SteerRootView: View {
         let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
         let signedIn = SyncClient.shared.isSignedIn
         SignInDebugLog.write("[reload] toggle=\(toggleOn) signedIn=\(signedIn) cards=\(loadedCards.count)")
-        if toggleOn && signedIn {
-            await syncToiPhone(cards: loadedCards)
+        // Outbound mirroring respects the toggle — that's a privacy
+        // promise the iPhone Sync section makes. Inbound instructions
+        // do NOT respect it: if the user once signed in and an iPhone
+        // queued a reply, we drain regardless. Otherwise queued
+        // instructions pile up forever and the iPhone shows a stale
+        // "delivered" state. Sign out is the real off switch.
+        if signedIn {
+            if toggleOn {
+                await syncToiPhone(cards: loadedCards)
+            }
             await drainQueuedInstructions()
         }
         // Heartbeat at most once per 60s; reload runs ~every 2s but we
@@ -311,7 +319,19 @@ struct SteerRootView: View {
         }
     }
 
+    /// Reload runs every ~2s, so without this lock a slow `steer send`
+    /// subprocess overlaps the next reload tick. The next tick fetches
+    /// the same queued row (markInjected hasn't landed yet), spawns a
+    /// second `steer send`, and one of the two markInjected POSTs gets
+    /// cancelled by URLSession because both share the in-flight task —
+    /// surfaces as "markInjected failed: cancelled" in Settings.
+    @State private var drainInFlight = false
+
     private func drainQueuedInstructions() async {
+        guard !drainInFlight else { return }
+        drainInFlight = true
+        defer { drainInFlight = false }
+
         let queued = await SyncClient.shared.fetchQueuedInstructions()
         for record in queued {
             do {

@@ -24,7 +24,15 @@ struct OnboardingView: View {
         }
         .padding(28)
         .frame(width: 540)
-        .task { await controller.refreshAll() }
+        .task {
+            // Defer onboarding checks one runloop tick so AppKit has
+            // a chance to publish Bundle.main into UserNotifications.
+            // Without this, UNUserNotificationCenter.current() asserts
+            // with `bundleProxyForCurrentProcess is nil` on first
+            // launch from `open .app`.
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            await controller.refreshAll()
+        }
     }
 
     private var header: some View {

@@ -335,7 +335,7 @@ private struct IPhoneSyncSection: View {
 
             HStack(spacing: 10) {
                 if sync.isSignedIn {
-                    Toggle("Mirror cards to iPhone", isOn: $settings.iPhoneSyncEnabled)
+                    Toggle("Send cards to iPhone", isOn: $settings.iPhoneSyncEnabled)
                     Spacer()
                     Button("Sign out") { sync.signOut() }
                 } else {

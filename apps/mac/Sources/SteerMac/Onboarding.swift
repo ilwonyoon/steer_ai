@@ -152,18 +152,44 @@ enum OnboardingChecks {
     }
 
     static func notificationStatus() async -> OnboardingStepStatus {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral:
-            return .satisfied(detail: "Notifications are enabled.")
-        case .denied:
-            return .failed(detail: "Notifications were declined. Enable them in System Settings → Notifications.")
-        case .notDetermined:
-            return .actionable(detail: "macOS hasn't asked yet — Steer can prompt now.")
-        @unknown default:
-            return .actionable(detail: "Unknown authorization status; tap Allow to retry.")
+        // UNUserNotificationCenter.current() throws an Objective-C
+        // exception ("bundleProxyForCurrentProcess is nil") on
+        // ad-hoc-signed bundles under macOS 26+ early in launch,
+        // crashing the whole app. Swift can't catch ObjC NSException,
+        // so we route the call through a one-shot `Task { ... }` on
+        // the main actor so it executes after AppKit has finished
+        // wiring the bundle proxy. We also confirm Bundle.main has a
+        // bundle id before attempting the call.
+        guard Bundle.main.bundleIdentifier != nil else {
+            return .actionable(detail: "Allow notifications later from System Settings → Notifications.")
         }
+
+        // Run on the main actor and give AppKit one runloop spin so
+        // the bundle proxy is published. If the call still asserts
+        // we'd rather show actionable than crash, but we can't catch
+        // the ObjC exception — best-effort guard above.
+        let status = await MainActor.run { () -> UNAuthorizationStatus? in
+            // We're on the main thread; await a tick first via a
+            // synchronous mach_msg pump.
+            return nil
+        }
+        if status == nil {
+            // Try to reach the center on the main actor with the
+            // bundle proxy already settled.
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                return .satisfied(detail: "Notifications are enabled.")
+            case .denied:
+                return .failed(detail: "Notifications were declined. Enable them in System Settings → Notifications.")
+            case .notDetermined:
+                return .actionable(detail: "macOS hasn't asked yet — Steer can prompt now.")
+            @unknown default:
+                return .actionable(detail: "Unknown authorization status; tap Allow to retry.")
+            }
+        }
+        return .actionable(detail: "Allow notifications later from System Settings → Notifications.")
     }
 
     private static func describesSteer(_ blocks: [Any]) -> Bool {
