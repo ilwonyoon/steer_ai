@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AuthenticationServices
 import ServiceManagement
 
 @MainActor
@@ -338,19 +339,19 @@ private struct IPhoneSyncSection: View {
                     Spacer()
                     Button("Sign out") { sync.signOut() }
                 } else {
-                    Button {
+                    SignInWithAppleButton(.signIn) { request in
+                        request.requestedScopes = [.fullName, .email]
+                    } onCompletion: { result in
                         Task {
                             isSigningIn = true
-                            await sync.startSignInWithApple()
+                            await sync.handleAppleSignInResult(result)
                             isSigningIn = false
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isSigningIn { ProgressView().controlSize(.small) }
-                            Text(isSigningIn ? "Signing in…" : "Sign in with Apple")
-                        }
                     }
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(width: 220, height: 30)
                     .disabled(isSigningIn)
+                    if isSigningIn { ProgressView().controlSize(.small) }
                     Spacer()
                 }
             }

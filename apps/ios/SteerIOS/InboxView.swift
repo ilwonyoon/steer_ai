@@ -1,5 +1,6 @@
 import SwiftUI
 import SteerCore
+import AuthenticationServices
 import os.log
 
 private let diagLog = Logger(subsystem: "ai.steer.ios", category: "diag")
@@ -267,6 +268,7 @@ private struct EmptyStateView: View {
 
 private struct SignInPrompt: View {
     @ObservedObject var inbox: SyncInbox
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isSigningIn = false
 
     var body: some View {
@@ -285,25 +287,24 @@ private struct SignInPrompt: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
-            Button {
+            // Apple's native button is required for App Store guideline
+            // 4.8 (custom black capsules can be flagged). It also adapts
+            // to light/dark automatically.
+            SignInWithAppleButton(.signIn) { request in
+                request.requestedScopes = [.fullName, .email]
+            } onCompletion: { result in
                 Task {
                     isSigningIn = true
-                    await inbox.startSignInWithApple()
+                    await inbox.handleAppleSignInResult(result)
                     isSigningIn = false
                 }
-            } label: {
-                HStack {
-                    if isSigningIn { ProgressView().controlSize(.small) }
-                    Text(isSigningIn ? "Signing in…" : "Sign in with Apple")
-                        .fontWeight(.semibold)
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(Color.black)
-                .foregroundColor(.white)
-                .clipShape(Capsule())
             }
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .frame(width: 240, height: 44)
             .disabled(isSigningIn)
+            if isSigningIn {
+                ProgressView().controlSize(.small)
+            }
             Spacer()
         }
         .padding()

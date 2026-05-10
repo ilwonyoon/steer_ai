@@ -91,6 +91,23 @@ public final class SyncInbox: ObservableObject {
         }
     }
 
+    /// Entry point for SwiftUI's `SignInWithAppleButton` onCompletion.
+    /// Apple already presents the native sheet; we just consume the
+    /// result and route into the same backend-call code path as the
+    /// programmatic flow above.
+    public func handleAppleSignInResult(_ result: Result<ASAuthorization, Error>) async {
+        switch result {
+        case .success(let auth):
+            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else {
+                lastError = "Unexpected credential type from Apple."
+                return
+            }
+            await handleAppleCredential(credential)
+        case .failure(let error):
+            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+        }
+    }
+
     private func handleAppleCredential(_ credential: ASAuthorizationAppleIDCredential) async {
         guard let tokenData = credential.identityToken,
               let identityToken = String(data: tokenData, encoding: .utf8) else {

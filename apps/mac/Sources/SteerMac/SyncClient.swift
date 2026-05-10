@@ -145,6 +145,23 @@ public final class SyncClient: ObservableObject {
         let delegate: AppleSignInDelegate
     }
 
+    /// SwiftUI `SignInWithAppleButton` onCompletion entry point.
+    /// Mirrors iOS's handleAppleSignInResult so the native button can
+    /// drive the same backend flow as the programmatic sign-in.
+    public func handleAppleSignInResult(_ result: Result<ASAuthorization, Error>) async {
+        switch result {
+        case .success(let auth):
+            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else {
+                lastError = "Unexpected credential type from Apple."
+                return
+            }
+            await handleAppleCredential(credential)
+        case .failure(let error):
+            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            status = .signedOut
+        }
+    }
+
     private func handleAppleCredential(_ credential: ASAuthorizationAppleIDCredential) async {
         SignInDebugLog.write("[apple-signin] handleAppleCredential start, user=\(credential.user)")
         guard let tokenData = credential.identityToken,
