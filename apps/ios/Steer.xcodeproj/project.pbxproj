@@ -20,6 +20,7 @@
 		CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D152B83142801A64439B96 /* SteerIOSApp.swift */; };
 		D74DDAE84355EF3D7F6CC8DA /* TerminalExcerptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25011DE39A71D10907B4E14F /* TerminalExcerptView.swift */; };
 		E02279F2C4B075283907BF8B /* CardPayloadMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */; };
+		E0B0A4B323883CCF658AB6D3 /* WhatSyncsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4E924D811C045FDF2306F2 /* WhatSyncsView.swift */; };
 		E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 057A2A9A71094A1E78867C5E /* Models.swift */; };
 		EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6775B843EBF5B82A78C73C8B /* SettingsView.swift */; };
 /* End PBXBuildFile section */
@@ -37,6 +38,7 @@
 		6775B843EBF5B82A78C73C8B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		84D152B83142801A64439B96 /* SteerIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerIOSApp.swift; sourceTree = "<group>"; };
 		968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCardView.swift; sourceTree = "<group>"; };
+		9E4E924D811C045FDF2306F2 /* WhatSyncsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatSyncsView.swift; sourceTree = "<group>"; };
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
 		A940AFD67B6E554CB8324B64 /* Steer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Steer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStackChrome.swift; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 				45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */,
 				C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */,
 				25011DE39A71D10907B4E14F /* TerminalExcerptView.swift */,
+				9E4E924D811C045FDF2306F2 /* WhatSyncsView.swift */,
 			);
 			path = SteerIOS;
 			sourceTree = "<group>";
@@ -183,6 +186,7 @@
 				C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */,
 				00FC61208B49178C55AEF015 /* SyncInboxFixtures.swift in Sources */,
 				D74DDAE84355EF3D7F6CC8DA /* TerminalExcerptView.swift in Sources */,
+				E0B0A4B323883CCF658AB6D3 /* WhatSyncsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

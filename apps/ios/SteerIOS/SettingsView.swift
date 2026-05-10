@@ -18,6 +18,7 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 identitySection
+                syncSection
                 supportSection
                 if inbox.isSignedIn {
                     Section {
@@ -37,6 +38,18 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var syncSection: some View {
+        Section {
+            NavigationLink {
+                WhatSyncsView()
+            } label: {
+                LinkLabel(title: "What Syncs?", icon: "arrow.triangle.2.circlepath")
+            }
+        } header: {
+            Text("Sync")
         }
     }
 

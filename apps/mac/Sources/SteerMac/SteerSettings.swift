@@ -275,6 +275,37 @@ private struct AboutPane: View {
     }
 }
 
+/// Same disclosure copy as iOS WhatSyncsView. Keep in sync when
+/// fields are added — both surfaces must show the same set or the
+/// privacy disclosure is incomplete.
+enum WhatSyncs {
+    static let synced: [String] = [
+        "Card title and summary",
+        "Short terminal excerpt that triggered the card",
+        "Suggested replies",
+        "Project, provider, and branch labels",
+        "Replies sent from iPhone",
+        "Delivery status and failure reason",
+        "Account identifier from Sign in with Apple"
+    ]
+    static let notSynced: [String] = [
+        "Full raw transcripts",
+        "Environment variables",
+        "Attachments and arbitrary file contents",
+        "Anything outside Steer-managed CLI sessions"
+    ]
+}
+
+private struct WhatSyncsRowStyle: LabelStyle {
+    let color: Color
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            configuration.icon.foregroundStyle(color).font(.caption)
+            configuration.title.font(.callout)
+        }
+    }
+}
+
 private struct IPhoneSyncSection: View {
     @ObservedObject var settings: SteerSettings
     @ObservedObject private var sync = SyncClient.shared
@@ -323,6 +354,32 @@ private struct IPhoneSyncSection: View {
                     Spacer()
                 }
             }
+
+            DisclosureGroup("What Syncs?") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Synced through the Steer relay:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(WhatSyncs.synced, id: \.self) { item in
+                        Label(item, systemImage: "checkmark.circle.fill")
+                            .labelStyle(WhatSyncsRowStyle(color: .green))
+                    }
+                    Text("Stays on this Mac:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+                    ForEach(WhatSyncs.notSynced, id: \.self) { item in
+                        Label(item, systemImage: "xmark.circle.fill")
+                            .labelStyle(WhatSyncsRowStyle(color: .secondary))
+                    }
+                    Text("iPhone replies queue while this Mac is offline and deliver as soon as Steer for Mac comes back online.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 6)
+                }
+                .padding(.top, 4)
+            }
+            .font(.callout)
         }
     }
 
