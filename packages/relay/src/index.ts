@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import {
   extractAuthorizedUser,
   mintSessionJWT,
+  revokeAppleAuthGrant,
   verifyAppleIdentityToken,
 } from "./auth.js";
 import { Store } from "./store.js";
@@ -38,7 +39,11 @@ app.get("/", (c) => c.json({ ok: true, name: "steer-relay", version: "0.1.0" }))
  * 30-day session JWT.
  */
 app.post("/v1/auth/apple", async (c) => {
-  const body = await c.req.json<{ identityToken?: string; displayName?: string }>();
+  const body = await c.req.json<{
+    identityToken?: string;
+    displayName?: string;
+    authorizationCode?: string;
+  }>();
   if (!body.identityToken) {
     return c.json({ error: "missing identityToken" }, 400);
   }
@@ -49,7 +54,12 @@ app.post("/v1/auth/apple", async (c) => {
     return c.json({ error: "invalid Apple identity token", detail: String(e) }, 401);
   }
   const store = new Store(c.env);
-  await store.upsertUser(identity.sub, identity.email, body.displayName);
+  await store.upsertUser(
+    identity.sub,
+    identity.email,
+    body.displayName,
+    body.authorizationCode
+  );
   const user: SessionUser = {
     userId: identity.sub,
     appleEmail: identity.email,
@@ -78,13 +88,23 @@ app.get("/v1/me", (c) => c.json({ user: c.get("user") }));
 
 /**
  * DELETE /v1/me
- * Account deletion entry point for App Store compliance. Removes the
- * relay account row and all user-owned sync data we persist in D1.
+ * Account deletion entry point for App Store compliance. Two phases:
+ *   1. Revoke the user's Sign in with Apple grant on Apple's side
+ *      (token revocation per guideline 5.1.1). Best-effort; if it
+ *      fails we log and continue.
+ *   2. Remove the relay account row and all user-owned sync data
+ *      from D1.
  */
 app.delete("/v1/me", async (c) => {
+  const userId = c.get("user").userId;
   const store = new Store(c.env);
-  await store.deleteUserData(c.get("user").userId);
-  return c.json({ ok: true });
+  const authCode = await store.getAppleAuthCode(userId);
+  let appleRevoked = false;
+  if (authCode) {
+    appleRevoked = await revokeAppleAuthGrant(authCode, c.env);
+  }
+  await store.deleteUserData(userId);
+  return c.json({ ok: true, appleRevoked });
 });
 
 /**

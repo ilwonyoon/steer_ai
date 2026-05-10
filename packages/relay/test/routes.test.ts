@@ -3,11 +3,12 @@ import { env } from "cloudflare:test";
 import { SignJWT } from "jose";
 import worker from "../src/index.js";
 import migration0001 from "../migrations/0001_initial.sql?raw";
+import migration0002 from "../migrations/0002_apple_auth_code.sql?raw";
 
 async function runMigrations() {
   // Workers runtime has no fs; we vite-import the SQL files as raw
   // strings instead. New migrations: import + add to this array.
-  const migrations = [migration0001];
+  const migrations = [migration0001, migration0002];
   for (const sql of migrations) {
     // Strip line comments first so they don't break statement
     // splitting, then split on `;` and run each statement.
@@ -20,7 +21,16 @@ async function runMigrations() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
     for (const stmt of statements) {
-      await env.DB.prepare(stmt).run();
+      try {
+        await env.DB.prepare(stmt).run();
+      } catch (e) {
+        // beforeEach reruns all migrations on each test; SQLite ALTER
+        // TABLE ADD COLUMN can't be made idempotent, so swallow the
+        // duplicate-column error for replayed migrations.
+        const msg = String(e);
+        if (msg.includes("duplicate column")) continue;
+        throw e;
+      }
     }
   }
 }

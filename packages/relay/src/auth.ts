@@ -88,6 +88,76 @@ export async function verifySessionJWT(token: string, env: Env): Promise<Session
 }
 
 /**
+ * Revoke a user's Apple sign-in grant. Calls Apple's
+ * https://appleid.apple.com/auth/revoke endpoint with our service's
+ * client_id + a freshly-signed JWT client_secret + the user's most
+ * recent authorization_code. Required by App Store guideline 5.1.1
+ * for Sign in with Apple — when the user deletes their account the
+ * server must tell Apple to drop the grant on Apple's side, not just
+ * delete the local row.
+ *
+ * Returns true on success, false on any failure. Failure is logged
+ * but doesn't block local deletion: relay-side data is removed
+ * either way, so the worst case is that Apple retains the dormant
+ * grant. The user can also revoke manually from iOS Settings.
+ *
+ * Required env (set via wrangler secret):
+ *   APPLE_TEAM_ID            — 10-char Apple Developer team id
+ *   APPLE_CLIENT_ID          — Services ID or app bundle id
+ *   APPLE_KEY_ID             — 10-char key id for the AuthKey .p8
+ *   APPLE_PRIVATE_KEY        — PKCS#8 PEM body of the AuthKey .p8
+ *
+ * If any are missing the function logs and returns false (so dev
+ * environments without Apple credentials still let deletion proceed).
+ */
+export async function revokeAppleAuthGrant(
+  authorizationCode: string,
+  env: Env
+): Promise<boolean> {
+  const teamId = (env as any).APPLE_TEAM_ID as string | undefined;
+  const clientId = (env as any).APPLE_CLIENT_ID as string | undefined;
+  const keyId = (env as any).APPLE_KEY_ID as string | undefined;
+  const privateKey = (env as any).APPLE_PRIVATE_KEY as string | undefined;
+  if (!teamId || !clientId || !keyId || !privateKey) {
+    console.warn("[apple-revoke] missing APPLE_* secrets; skipping revoke");
+    return false;
+  }
+  try {
+    const { SignJWT, importPKCS8 } = await import("jose");
+    const key = await importPKCS8(privateKey, "ES256");
+    const now = Math.floor(Date.now() / 1000);
+    const clientSecret = await new SignJWT({})
+      .setProtectedHeader({ alg: "ES256", kid: keyId })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 60 * 5)
+      .setAudience("https://appleid.apple.com")
+      .setIssuer(teamId)
+      .setSubject(clientId)
+      .sign(key);
+
+    const body = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      token: authorizationCode,
+      token_type_hint: "authorization_code",
+    });
+    const res = await fetch("https://appleid.apple.com/auth/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!res.ok) {
+      console.warn(`[apple-revoke] Apple returned ${res.status}: ${await res.text()}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("[apple-revoke] failed:", e);
+    return false;
+  }
+}
+
+/**
  * Hono middleware: pull Authorization: Bearer <jwt>, verify, attach
  * the user to context.
  */

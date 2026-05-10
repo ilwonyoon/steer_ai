@@ -6,18 +6,33 @@ import type { CardPayload, Env, InstructionRecord, SessionSnapshot } from "./typ
 export class Store {
   constructor(private env: Env) {}
 
-  async upsertUser(userId: string, email: string | undefined, displayName: string | undefined) {
+  async upsertUser(
+    userId: string,
+    email: string | undefined,
+    displayName: string | undefined,
+    appleAuthCode?: string | undefined
+  ) {
     const now = Date.now();
     await this.env.DB.prepare(
-      `INSERT INTO users (user_id, apple_email, display_name, created_at, last_seen_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO users (user_id, apple_email, display_name, apple_auth_code, created_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET
          apple_email = COALESCE(excluded.apple_email, apple_email),
          display_name = COALESCE(excluded.display_name, display_name),
+         apple_auth_code = COALESCE(excluded.apple_auth_code, apple_auth_code),
          last_seen_at = excluded.last_seen_at`
     )
-      .bind(userId, email ?? null, displayName ?? null, now, now)
+      .bind(userId, email ?? null, displayName ?? null, appleAuthCode ?? null, now, now)
       .run();
+  }
+
+  async getAppleAuthCode(userId: string): Promise<string | null> {
+    const row = await this.env.DB.prepare(
+      `SELECT apple_auth_code FROM users WHERE user_id = ?`
+    )
+      .bind(userId)
+      .first<{ apple_auth_code: string | null }>();
+    return row?.apple_auth_code ?? null;
   }
 
   async deleteUserData(userId: string): Promise<void> {

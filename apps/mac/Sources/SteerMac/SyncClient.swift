@@ -162,7 +162,15 @@ public final class SyncClient: ObservableObject {
             }
             return nil
         }()
-        let body = AuthAppleRequest(identityToken: identityToken, displayName: displayName)
+        // authorizationCode lets the relay later call Apple's revoke
+        // endpoint when the user deletes their account.
+        let authCode = credential.authorizationCode
+            .flatMap { String(data: $0, encoding: .utf8) }
+        let body = AuthAppleRequest(
+            identityToken: identityToken,
+            displayName: displayName,
+            authorizationCode: authCode
+        )
         do {
             SignInDebugLog.write("[apple-signin] POST \(baseURL.absoluteString)/v1/auth/apple")
             let response: AuthAppleResponse = try await postJSON(

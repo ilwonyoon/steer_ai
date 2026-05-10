@@ -97,8 +97,20 @@ public final class SyncInbox: ObservableObject {
             lastError = "Apple sign-in returned no identity token."
             return
         }
+        // Capture the authorization code if Apple provided one — relay
+        // needs it later to revoke the user's Apple-side grant when
+        // they delete their account. We forward it on every sign-in
+        // so the latest valid auth_code lands on the server for that
+        // user; the relay stores it (server-only) and uses it in the
+        // /v1/auth/apple/revoke flow during account deletion.
+        let authCode: String? = credential.authorizationCode
+            .flatMap { String(data: $0, encoding: .utf8) }
         let displayName = credential.fullName?.givenName
-        let body = AuthAppleRequest(identityToken: identityToken, displayName: displayName)
+        let body = AuthAppleRequest(
+            identityToken: identityToken,
+            displayName: displayName,
+            authorizationCode: authCode
+        )
         do {
             let response: AuthAppleResponse = try await postJSON(
                 "/v1/auth/apple",

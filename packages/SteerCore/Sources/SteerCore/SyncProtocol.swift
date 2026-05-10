@@ -100,10 +100,21 @@ public struct InstructionRecord: Codable, Hashable, Sendable {
 public struct AuthAppleRequest: Codable, Sendable {
     public let identityToken: String
     public let displayName: String?
+    /// One-time authorization code from Apple. Only present on the
+    /// initial sign-in event for a given session; the relay stores
+    /// it server-side and uses it to call Apple's revoke endpoint
+    /// during account deletion. Optional for backwards compatibility
+    /// with older clients.
+    public let authorizationCode: String?
 
-    public init(identityToken: String, displayName: String?) {
+    public init(
+        identityToken: String,
+        displayName: String?,
+        authorizationCode: String? = nil
+    ) {
         self.identityToken = identityToken
         self.displayName = displayName
+        self.authorizationCode = authorizationCode
     }
 }
 
