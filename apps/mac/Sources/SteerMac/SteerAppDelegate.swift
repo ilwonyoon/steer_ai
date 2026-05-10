@@ -56,21 +56,33 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// often has Mac running with the window closed. Run a 60s timer
     /// here so /v1/sync/devices stays fresh and iPhone's chip stays
     /// accurate regardless of UI state.
+    private var heartbeatTimer: Timer?
     private func startHeartbeatTimer() {
         // Wait 5s for refreshMe to settle isSignedIn, then fire the
         // first heartbeat. After that, repeat every 60s.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            Task { @MainActor in
-                let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
-                await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: toggleOn)
+        // Timer must be retained (heartbeatTimer property) — earlier
+        // version stored it as a local inside DispatchQueue.asyncAfter
+        // and the closure freed it immediately, so the timer fired 0
+        // times and the iPhone chip never saw the Mac.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self else { return }
+            self.fireHeartbeat()
+            self.heartbeatTimer = Timer.scheduledTimer(
+                withTimeInterval: 60,
+                repeats: true
+            ) { [weak self] _ in
+                self?.fireHeartbeat()
             }
-            let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
-                Task { @MainActor in
-                    let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
-                    await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: toggleOn)
-                }
+            if let timer = self.heartbeatTimer {
+                RunLoop.main.add(timer, forMode: .common)
             }
-            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    private func fireHeartbeat() {
+        Task { @MainActor in
+            let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
+            await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: toggleOn)
         }
     }
 
