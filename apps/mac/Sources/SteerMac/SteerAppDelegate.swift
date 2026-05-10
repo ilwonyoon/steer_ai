@@ -131,13 +131,26 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ensureMainWindowVisible()
     }
 
-    /// Bring the SteerRootView WindowGroup forward, creating it if no
-    /// instance exists. Handles three cases:
-    ///   1. Window exists and is key/visible -> bring forward
-    ///   2. Window exists but minimized/hidden -> deminiaturize
-    ///   3. No window (background launch / user quit all windows) ->
-    ///      post bridge notification; SwiftUI's openWindow modifier in
-    ///      SteerMacApp picks it up and instantiates the scene.
+    /// Bring the SteerRootView WindowGroup forward. Three states to
+    /// handle, with an important asymmetry:
+    ///
+    ///   1. A key-able window already exists → just deminiaturize +
+    ///      makeKeyAndOrderFront. Cheap path.
+    ///   2. NO key-able window (user closed it; SwiftUI dismantled the
+    ///      WindowGroup instance) → AppKit's "reopen" channel is
+    ///      unreliable here because the SwiftUI Scene that listens for
+    ///      `openWindow(id:)` was destroyed with the window. The
+    ///      durable wake-up is `newDocument:` — SwiftUI WindowGroup
+    ///      registers as the responder for it and instantiates a fresh
+    ///      scene every time. We send it through `NSApp.sendAction`
+    ///      with `to: nil` so the responder chain finds whatever
+    ///      registered handler is alive.
+    ///
+    /// Each previous attempt (NotificationCenter post +
+    /// applicationShouldHandleReopen) only worked while the
+    /// in-WindowGroup receiver was still alive. After the user closed
+    /// the last window the receiver was gone, which is exactly when
+    /// "Open Steer" had to work and didn't.
     func ensureMainWindowVisible() {
         var reopened = false
         for window in NSApplication.shared.windows where window.canBecomeKey {
@@ -146,13 +159,23 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             reopened = true
         }
         if !reopened {
+            // Try the targeted notification first — works if user
+            // minimized rather than closed and the scene is still
+            // alive somewhere in the responder chain.
             NotificationCenter.default.post(name: .steerOpenMainWindow, object: nil)
-            // applicationShouldHandleReopen as a belt-and-braces fallback
-            // for Dock-icon clicks on macOS versions where the
-            // notification doesn't get a receiver in time.
-            _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
-                NSApplication.shared, hasVisibleWindows: false
-            )
+            // The real fallback: ask AppKit to re-instantiate the
+            // SwiftUI WindowGroup via the standard new-window action.
+            DispatchQueue.main.async {
+                if NSApplication.shared.windows.contains(where: { $0.canBecomeKey }) == false {
+                    NSApp.sendAction(#selector(NSDocumentController.newDocument(_:)), to: nil, from: nil)
+                }
+                // Last-ditch: applicationShouldHandleReopen tells
+                // AppKit to materialize the scene. Some macOS versions
+                // honor it even outside a Dock click context.
+                _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
+                    NSApplication.shared, hasVisibleWindows: false
+                )
+            }
         }
     }
 
