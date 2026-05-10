@@ -48,6 +48,30 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Self.applyAlwaysOnTop(onTop)
             }
             .store(in: &cancellables)
+        startHeartbeatTimer()
+    }
+
+    /// Heartbeat must run independent of the main window — SteerRootView's
+    /// reload loop is gated on the window being mounted, but the user
+    /// often has Mac running with the window closed. Run a 60s timer
+    /// here so /v1/sync/devices stays fresh and iPhone's chip stays
+    /// accurate regardless of UI state.
+    private func startHeartbeatTimer() {
+        // Wait 5s for refreshMe to settle isSignedIn, then fire the
+        // first heartbeat. After that, repeat every 60s.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            Task { @MainActor in
+                let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
+                await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: toggleOn)
+            }
+            let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+                Task { @MainActor in
+                    let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
+                    await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: toggleOn)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }
     }
 
     static func applyAlwaysOnTop(_ enabled: Bool) {

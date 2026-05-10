@@ -241,7 +241,10 @@ public final class SyncClient: ObservableObject {
     /// (typically 60s while iPhone Sync is on, plus an immediate beat
     /// on launch). Best-effort; failures don't surface to the user.
     public func sendDeviceHeartbeat(syncEnabled: Bool) async {
-        guard isSignedIn else { return }
+        guard isSignedIn else {
+            SignInDebugLog.write("[heartbeat] skipped (not signed in)")
+            return
+        }
         let snapshot = DeviceSnapshot(
             deviceId: Self.deviceId,
             platform: "mac",
