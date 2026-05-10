@@ -4,11 +4,11 @@ Effective date: May 10, 2026
 
 These Terms govern your use of Steer for iPhone, Steer for Mac, and Steer's relay service.
 
-Launch placeholders before publication:
+Pre-publication placeholders (must be filled before App Store submission):
 
-- Legal operator: `TODO: Developer legal name`
-- Contact email: `TODO: support/legal email`
-- Published URL: `TODO: https://.../terms`
+- Legal operator: `[PRE-LAUNCH] Developer legal name — to be set by repo owner before submission`
+- Contact email: `support@steer.ai`
+- Published URL: `https://steer.ai/terms` *(serve via GitHub Pages until the canonical site is live)*
 
 ## The Service
 
@@ -93,4 +93,4 @@ We may update these Terms as Steer changes. The effective date above will be upd
 
 ## Contact
 
-For questions about these Terms, contact `TODO: support/legal email`.
+For questions about these Terms, contact `support@steer.ai`.

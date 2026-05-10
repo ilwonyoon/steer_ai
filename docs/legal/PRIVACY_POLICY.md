@@ -4,11 +4,11 @@ Effective date: May 10, 2026
 
 This Privacy Policy explains how Steer collects, uses, stores, and deletes information when you use the Steer iPhone app, Steer for Mac, and Steer's relay service.
 
-Launch placeholders before publication:
+Pre-publication placeholders (must be filled before App Store submission):
 
-- Legal operator: `TODO: Developer legal name`
-- Contact email: `TODO: privacy/support email`
-- Published URL: `TODO: https://.../privacy`
+- Legal operator: `[PRE-LAUNCH] Developer legal name — to be set by repo owner before submission`
+- Contact email: `privacy@steer.ai`
+- Published URL: `https://steer.ai/privacy` *(serve via GitHub Pages until the canonical site is live)*
 
 ## What Steer Does
 
@@ -113,4 +113,4 @@ We may update this Privacy Policy when Steer's product, data practices, or servi
 
 ## Contact
 
-For privacy questions or deletion requests, contact `TODO: privacy/support email`.
+For privacy questions or deletion requests, contact `privacy@steer.ai`.
