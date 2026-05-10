@@ -46,6 +46,11 @@ struct ActionCardView: View {
                 .stroke(SteerColors.separator, lineWidth: 1)
         }
         .shadow(color: SteerColors.cardShadow, radius: 24, y: 16)
+        // Don't .accessibilityIdentifier() the whole card — SwiftUI
+        // cascades it down to every subview and overwrites the
+        // identifiers on `reply-input` / `reply-send`. UITests assert
+        // on the reply field instead, which is unique per visible
+        // card.
     }
 }
 

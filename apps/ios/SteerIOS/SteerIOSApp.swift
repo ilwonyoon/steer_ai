@@ -26,11 +26,17 @@ private struct RootTabView: View {
         TabView {
             InboxView(inbox: inbox)
                 .tabItem {
+                    // Image's accessibilityIdentifier ends up on the
+                    // tab-bar button — InboxView's own identifier is
+                    // owned by its body and isn't what XCUITest needs
+                    // to switch tabs.
                     Image(systemName: "rectangle.stack.fill")
+                        .accessibilityIdentifier("tab-inbox")
                 }
             SettingsView(inbox: inbox)
                 .tabItem {
                     Image(systemName: "gearshape")
+                        .accessibilityIdentifier("tab-settings")
                 }
         }
     }

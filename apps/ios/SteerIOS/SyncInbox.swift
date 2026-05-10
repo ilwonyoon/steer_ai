@@ -66,6 +66,12 @@ public final class SyncInbox: ObservableObject {
         if ProcessInfo.processInfo.environment["STEER_FIXTURES"] == "1" {
             return true
         }
+        // Honored by XCUITest. `app.launchArguments = ["--uitest"]`
+        // forces fixture mode so the system Sign in with Apple sheet
+        // never appears.
+        if ProcessInfo.processInfo.arguments.contains("--uitest") {
+            return true
+        }
         return UserDefaults.standard.bool(forKey: "steer.ios.fixtures")
     }
 

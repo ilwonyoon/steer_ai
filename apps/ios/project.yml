@@ -72,3 +72,26 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         BUNDLE_LOADER: $(TEST_HOST)
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/Steer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Steer
+
+  # XCUITest target. Driven from CLI via:
+  #   xcodebuild test -scheme Steer \
+  #     -destination 'platform=iOS Simulator,name=iPhone 16' \
+  #     -only-testing:SteerUITests
+  #
+  # The app reads the `--uitest` launch argument and forces fixture
+  # mode (no Apple sign-in, seeded cards) so the system Apple ID
+  # dialog never appears — that dialog isn't automatable by XCUITest
+  # since it's owned by another process.
+  SteerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: SteerIOSUITests
+    dependencies:
+      - target: Steer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.steer.ios.uitests
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Steer

@@ -77,8 +77,12 @@ struct InboxView: View {
 
             if !inbox.isSignedIn {
                 SignInPrompt(inbox: inbox)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("sign-in-prompt")
             } else {
                 content
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("inbox-content")
             }
         }
         .sheet(isPresented: $showsMacSyncStatus) {
@@ -470,6 +474,7 @@ private struct SignInPrompt: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("try-demo-button")
 
                 // Apple's native button is required by App Store
                 // guideline 4.8 (custom black capsules get flagged).

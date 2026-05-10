@@ -51,6 +51,27 @@ Each test cleans up its `STEER_HOME` and kills any spawned wrappers / agent in `
 
 `docs/MAC_UI_E2E.md` documents the AppleScript flow against a foreground SteerMac. There is no XCUITest target yet. We run this manually before any release that touches Mac UI behaviour.
 
+## 4. iOS XCUITest (`SteerUITests`)
+
+`apps/ios/SteerIOSUITests/CardFlowUITests.swift` drives the simulator end-to-end. From the repo root:
+
+```sh
+cd apps/ios && xcodegen generate   # only when project.yml changed
+xcodebuild test \
+  -project apps/ios/Steer.xcodeproj \
+  -scheme Steer \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:SteerUITests
+```
+
+Three things make this work:
+
+1. **`--uitest` launch argument.** `SyncInbox.fixtureModeEnabled` honors `ProcessInfo.processInfo.arguments.contains("--uitest")` in addition to the existing `STEER_FIXTURES=1` env var. Every UI test sets `app.launchArguments = ["--uitest"]` so the app skips Sign in with Apple (the system Apple ID sheet is owned by another process and cannot be driven by XCUITest), loads a fake user, and seeds the sample cards from `SyncInboxFixtures.swift`.
+2. **Accessibility identifiers, applied to leaves.** `reply-input` is on the `TextField`, `reply-send` on the `Button`. `inbox-content` is on the inbox root container. **Don't** apply `.accessibilityIdentifier()` to a card-shaped container: SwiftUI cascades the identifier to every subview and overwrites the child identifiers, which silently breaks `reply-input` / `reply-send` lookups.
+3. **System TabBar buttons use SF Symbol labels.** Applying an identifier inside `.tabItem { Image(systemName: ...) }` does not survive — the system rewrites the button label to the symbol's accessibility name (e.g. `rectangle.stack.fill` becomes "Album"). Tests address tabs positionally via `app.tabBars.firstMatch.buttons.element(boundBy: 0)`.
+
+Why XCUITest rather than Maestro or fastlane snapshot: XCUITest ships with Xcode, runs entirely from `xcodebuild` without a separate runtime, and the test sources sit next to the app target so they're version-locked to the SwiftUI changes that motivate them. fastlane snapshot is XCUITest underneath but is screenshot-oriented. Maestro is a YAML driver maintained outside Apple and would add a second toolchain for very little gain at our current scope.
+
 ## Adding a new test
 
 When fixing a bug:
