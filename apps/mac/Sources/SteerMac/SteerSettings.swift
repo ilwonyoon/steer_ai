@@ -225,6 +225,17 @@ private struct AboutPane: View {
                 }
             }
 
+            Section("Help") {
+                Link("Report an Issue on GitHub",
+                     destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues/new")!)
+                Link("Browse Known Issues",
+                     destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
+                Link("Privacy Policy",
+                     destination: URL(string: "https://steer.ai/privacy")!)
+                Link("Terms of Service",
+                     destination: URL(string: "https://steer.ai/terms")!)
+            }
+
             Section("Diagnostics") {
                 Text(steerHome)
                     .font(.system(.callout, design: .monospaced))
