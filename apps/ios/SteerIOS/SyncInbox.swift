@@ -35,7 +35,7 @@ public final class SyncInbox: ObservableObject {
 
     private init() {
         let stored = UserDefaults.standard.string(forKey: "ai.steer.relay.baseURL")
-            ?? "http://127.0.0.1:8787"
+            ?? "https://steer-relay.ilwonyoon-turtleneck.workers.dev"
         self.baseURL = URL(string: stored)!
         self.tokenStore = SessionTokenStore()
         let cfg = URLSessionConfiguration.default
