@@ -17,6 +17,12 @@ struct InboxView: View {
     @State private var cardDragOffset: CGFloat = 0
     @State private var replyDrafts: [String: String] = [:]
     @State private var liveChipsExpanded = false
+    /// Memoized projection of `inbox.cards` -> `[ActionCard]`. Recomputed
+    /// only when `inbox.cards` actually changes, not on every SwiftUI
+    /// re-render. Markdown rendering inside CardPayloadMapping was
+    /// running on every keystroke / focus tick and stalling input
+    /// response on the device.
+    @State private var cards: [ActionCard] = []
     @FocusState private var replyFieldFocused: Bool
     /// Tracks the actual keyboard phase (will-show / did-hide). The
     /// compact carousel renders only when this is false, so it never
@@ -31,9 +37,9 @@ struct InboxView: View {
         _devicePresence = StateObject(wrappedValue: DevicePresenceObserver(inbox: inbox))
     }
 
-    private var cards: [ActionCard] {
-        inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
-    }
+    /// Driven by an .onReceive observer below. Don't recompute inside
+    /// computed properties — markdown parsing in CardPayloadMapping is
+    /// expensive enough to be visible on input focus.
 
     /// Mac populates this from `loadLiveSessions(excluding: activeSessionIds)`
     /// — sessions that are running but not currently surfacing an action
@@ -80,6 +86,10 @@ struct InboxView: View {
         }
         .task {
             devicePresence.start()
+            cards = inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
+        }
+        .onReceive(inbox.$cards) { newCards in
+            cards = newCards.map { CardPayloadMapping.actionCard(from: $0) }
         }
         .onDisappear {
             devicePresence.stop()
@@ -177,6 +187,14 @@ struct InboxView: View {
                 MacOfflineBanner { showsMacSyncStatus = true }
             }
 
+            if !inbox.pendingReplies.isEmpty {
+                PendingRepliesChip(
+                    pending: inbox.pendingReplies,
+                    onRetry: { inbox.retryPendingReply($0) },
+                    onCancel: { inbox.cancelPendingReply($0) }
+                )
+                .padding(.leading, 4)
+            }
             if !liveChips.isEmpty {
                 LiveSessionChipRow(
                     chips: liveChips,
@@ -247,15 +265,16 @@ struct InboxView: View {
     private func send(_ text: String, to sessionId: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        Task {
-            if let payload = inbox.cards.first(where: { $0.sessionId == sessionId }) {
-                if inbox.isDemoMode {
-                    await inbox.sendDemoReply(text: trimmed, for: payload)
-                } else {
-                    await inbox.sendReply(text: trimmed, for: payload)
-                }
-            }
-            replyDrafts[sessionId] = nil
+        // Clear the draft + dismiss focus FIRST so the keyboard can
+        // start retreating in the same frame. Network work happens
+        // optimistically inside sendReply.
+        replyDrafts[sessionId] = nil
+        replyFieldFocused = false
+        guard let payload = inbox.cards.first(where: { $0.sessionId == sessionId }) else { return }
+        if inbox.isDemoMode {
+            Task { await inbox.sendDemoReply(text: trimmed, for: payload) }
+        } else {
+            inbox.sendReply(text: trimmed, for: payload)  // already optimistic + Task internally
         }
     }
 

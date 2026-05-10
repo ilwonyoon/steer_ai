@@ -237,15 +237,66 @@ public final class SyncInbox: ObservableObject {
         }
     }
 
-    public func sendReply(text: String, for card: CardPayload) async {
+    /// In-flight reply that the user already saw "leave" the card
+    /// stack. Stays here until the relay POST resolves. Failed sends
+    /// stay with status=failed so the chip can offer retry/cancel.
+    public struct PendingReply: Identifiable, Equatable {
+        public let id: String              // instruction id
+        public let cardId: String
+        public let sessionId: String
+        public let cardTitle: String
+        public let text: String
+        public let sentAt: Date
+        public var status: Status
+
+        public enum Status: Equatable { case sending, failed(String) }
+    }
+    @Published public private(set) var pendingReplies: [PendingReply] = []
+
+    /// Optimistic send: yank the card from `cards` immediately (the
+    /// user's intent is "I'm done with it"), put a row in
+    /// pendingReplies, and POST in the background. Success: drop the
+    /// row. Failure: keep the row at .failed + push the card back so
+    /// the user can retry without losing context.
+    public func sendReply(text: String, for card: CardPayload) {
         guard isSignedIn else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let request = InstructionRequestV2(
-            instructionId: UUID().uuidString,
-            targetSessionId: card.sessionId,
-            text: trimmed
+
+        // Snapshot the card BEFORE we remove it so we can restore on
+        // failure.
+        let snapshot = card
+        let instructionId = UUID().uuidString
+        let pending = PendingReply(
+            id: instructionId,
+            cardId: card.cardId,
+            sessionId: card.sessionId,
+            cardTitle: card.title,
+            text: trimmed,
+            sentAt: Date(),
+            status: .sending
         )
+        pendingReplies.append(pending)
+        cards.removeAll { $0.cardId == card.cardId }
+
+        Task { [weak self] in
+            await self?.postReply(
+                pendingId: instructionId,
+                request: InstructionRequestV2(
+                    instructionId: instructionId,
+                    targetSessionId: snapshot.sessionId,
+                    text: trimmed
+                ),
+                cardSnapshot: snapshot
+            )
+        }
+    }
+
+    private func postReply(
+        pendingId: String,
+        request: InstructionRequestV2,
+        cardSnapshot: CardPayload
+    ) async {
         struct ReplyResponse: Decodable {
             let ok: Bool
             let instruction: InstructionRecord
@@ -255,9 +306,36 @@ public final class SyncInbox: ObservableObject {
                 "/v1/sync/instructions",
                 body: request
             )
+            pendingReplies.removeAll { $0.id == pendingId }
         } catch {
-            lastError = "Reply send failed: \(error.localizedDescription)"
+            // Restore the card and mark the pending row failed.
+            if !cards.contains(where: { $0.cardId == cardSnapshot.cardId }) {
+                cards.append(cardSnapshot)
+                cards.sort { $0.updatedAt < $1.updatedAt }
+            }
+            if let idx = pendingReplies.firstIndex(where: { $0.id == pendingId }) {
+                pendingReplies[idx].status = .failed(error.localizedDescription)
+            }
         }
+    }
+
+    /// Manual retry from the pending-reply chip. Requeues the same
+    /// text against the same session.
+    public func retryPendingReply(_ id: String) {
+        guard let pending = pendingReplies.first(where: { $0.id == id }) else { return }
+        let cardId = pending.cardId
+        // Drop the failed row; sendReply will append a fresh sending
+        // row. If the card is still visible (because we restored it
+        // on failure), pull it back out.
+        pendingReplies.removeAll { $0.id == id }
+        guard let card = cards.first(where: { $0.cardId == cardId }) else { return }
+        sendReply(text: pending.text, for: card)
+    }
+
+    /// Cancel a failed reply — drop the pending row but leave the
+    /// restored card visible so the user can rewrite or skip.
+    public func cancelPendingReply(_ id: String) {
+        pendingReplies.removeAll { $0.id == id }
     }
 
     public func resolveCard(_ cardId: String) async {
