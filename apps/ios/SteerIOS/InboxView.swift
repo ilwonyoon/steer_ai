@@ -172,6 +172,7 @@ struct InboxView: View {
 private struct HeaderBar: View {
     var body: some View {
         HStack {
+            Spacer()
             Text("Steer")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(SteerColors.secondaryInk)
@@ -261,8 +262,4 @@ private struct SignInPrompt: View {
         }
         .padding()
     }
-}
-
-extension CardPayload: Identifiable {
-    public var id: String { cardId }
 }

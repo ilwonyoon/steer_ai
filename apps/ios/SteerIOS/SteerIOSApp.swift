@@ -6,11 +6,31 @@ struct SteerIOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            InboxView(inbox: inbox)
+            RootTabView(inbox: inbox)
                 .task {
                     if !SyncInbox.fixtureModeEnabled {
                         await inbox.refreshMe()
                     }
+                }
+        }
+    }
+}
+
+/// Bottom tab nav. iOS 26+ renders the bar with the system Liquid
+/// Glass material automatically, and child scrollables (the inbox
+/// card-stack content) auto-inset for the bar — no manual padding.
+private struct RootTabView: View {
+    @ObservedObject var inbox: SyncInbox
+
+    var body: some View {
+        TabView {
+            InboxView(inbox: inbox)
+                .tabItem {
+                    Label("Inbox", systemImage: "rectangle.stack.fill")
+                }
+            SettingsView(inbox: inbox)
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
                 }
         }
     }

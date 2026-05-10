@@ -20,6 +20,7 @@
 		D74DDAE84355EF3D7F6CC8DA /* TerminalExcerptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25011DE39A71D10907B4E14F /* TerminalExcerptView.swift */; };
 		E02279F2C4B075283907BF8B /* CardPayloadMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */; };
 		E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 057A2A9A71094A1E78867C5E /* Models.swift */; };
+		EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6775B843EBF5B82A78C73C8B /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerColors.swift; sourceTree = "<group>"; };
 		400608C9A7F07651B1E30B67 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInbox.swift; sourceTree = "<group>"; };
+		6775B843EBF5B82A78C73C8B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		84D152B83142801A64439B96 /* SteerIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerIOSApp.swift; sourceTree = "<group>"; };
 		968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCardView.swift; sourceTree = "<group>"; };
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
@@ -64,6 +66,7 @@
 				400608C9A7F07651B1E30B67 /* Info.plist */,
 				057A2A9A71094A1E78867C5E /* Models.swift */,
 				36B391F7B1C395484A445D38 /* ReplyDock.swift */,
+				6775B843EBF5B82A78C73C8B /* SettingsView.swift */,
 				D5C900DB8295384C9D855881 /* Steer.entitlements */,
 				3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */,
 				84D152B83142801A64439B96 /* SteerIOSApp.swift */,
@@ -170,6 +173,7 @@
 				05285BD23BDD04888929B775 /* InboxView.swift in Sources */,
 				E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */,
 				CA677DB22BB1B45BE3F4DDB3 /* ReplyDock.swift in Sources */,
+				EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */,
 				B2AB16691E7FECD9A988EB55 /* SteerColors.swift in Sources */,
 				CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */,
 				C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */,
