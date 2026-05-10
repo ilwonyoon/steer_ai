@@ -97,6 +97,41 @@ public struct InstructionRecord: Codable, Hashable, Sendable {
     }
 }
 
+/// Mac/iOS device presence published to the relay so the other
+/// device can show a connection chip + queue-vs-deliver decisions.
+public struct DeviceSnapshot: Codable, Sendable {
+    public let deviceId: String
+    public let platform: String          // "mac" | "ios"
+    public let displayName: String?
+    public let deviceClass: String?      // "MacBook Air", "Mac mini", "iPhone"
+    public let appVersion: String?
+    public let syncEnabled: Bool
+    public let lastSeenAt: Int64         // ms epoch
+
+    public init(
+        deviceId: String,
+        platform: String,
+        displayName: String?,
+        deviceClass: String?,
+        appVersion: String?,
+        syncEnabled: Bool,
+        lastSeenAt: Int64
+    ) {
+        self.deviceId = deviceId
+        self.platform = platform
+        self.displayName = displayName
+        self.deviceClass = deviceClass
+        self.appVersion = appVersion
+        self.syncEnabled = syncEnabled
+        self.lastSeenAt = lastSeenAt
+    }
+}
+
+public struct DeviceListResponse: Codable, Sendable {
+    public let devices: [DeviceSnapshot]
+    public init(devices: [DeviceSnapshot]) { self.devices = devices }
+}
+
 public struct AuthAppleRequest: Codable, Sendable {
     public let identityToken: String
     public let displayName: String?

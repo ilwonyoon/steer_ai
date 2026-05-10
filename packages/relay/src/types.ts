@@ -54,6 +54,16 @@ export interface SessionSnapshot {
   lastActivityAt: number;
 }
 
+export interface DeviceSnapshot {
+  deviceId: string;
+  platform: string;            // "mac" | "ios"
+  displayName?: string;
+  deviceClass?: string;
+  appVersion?: string;
+  syncEnabled: boolean;
+  lastSeenAt: number;          // ms epoch
+}
+
 export type WSMessage =
   | { type: "card.upsert"; card: CardPayload }
   | { type: "card.resolved"; cardId: string }

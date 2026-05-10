@@ -9,6 +9,7 @@ import {
 import { Store } from "./store.js";
 import type {
   CardPayload,
+  DeviceSnapshot,
   Env,
   InstructionRequest,
   SessionSnapshot,
@@ -208,6 +209,36 @@ app.post("/v1/sync/sessions", async (c) => {
   const store = new Store(c.env);
   await store.upsertSession(c.get("user").userId, body);
   return c.json({ ok: true });
+});
+
+/**
+ * POST /v1/sync/devices
+ * Device heartbeat. Mac calls every ~60s while iPhone Sync is on,
+ * iPhone calls on launch + foreground. Body is a DeviceSnapshot.
+ */
+app.post("/v1/sync/devices", async (c) => {
+  const body = await c.req.json<DeviceSnapshot>();
+  if (!body.deviceId || !body.platform) {
+    return c.json({ error: "missing deviceId or platform" }, 400);
+  }
+  const store = new Store(c.env);
+  await store.upsertDevice(c.get("user").userId, {
+    ...body,
+    lastSeenAt: body.lastSeenAt || Date.now(),
+  });
+  return c.json({ ok: true });
+});
+
+/**
+ * GET /v1/sync/devices
+ * iPhone reads this to render the Mac connection chip and "Mac Sync
+ * Status" sheet. Returns the user's full device list, sorted newest
+ * lastSeenAt first.
+ */
+app.get("/v1/sync/devices", async (c) => {
+  const store = new Store(c.env);
+  const devices = await store.listDevices(c.get("user").userId);
+  return c.json({ devices });
 });
 
 /**

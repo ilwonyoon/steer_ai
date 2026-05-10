@@ -4,11 +4,12 @@ import { SignJWT } from "jose";
 import worker from "../src/index.js";
 import migration0001 from "../migrations/0001_initial.sql?raw";
 import migration0002 from "../migrations/0002_apple_auth_code.sql?raw";
+import migration0003 from "../migrations/0003_devices.sql?raw";
 
 async function runMigrations() {
   // Workers runtime has no fs; we vite-import the SQL files as raw
   // strings instead. New migrations: import + add to this array.
-  const migrations = [migration0001, migration0002];
+  const migrations = [migration0001, migration0002, migration0003];
   for (const sql of migrations) {
     // Strip line comments first so they don't break statement
     // splitting, then split on `;` and run each statement.
@@ -70,6 +71,7 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM cards").run();
   await env.DB.prepare("DELETE FROM instructions").run();
   await env.DB.prepare("DELETE FROM sessions").run();
+  await env.DB.prepare("DELETE FROM devices").run();
   await env.DB.prepare("DELETE FROM users").run();
 });
 
@@ -279,6 +281,71 @@ describe("cards", () => {
     );
     const body = (await list.json()) as { cards: any[] };
     expect(body.cards).toHaveLength(0);
+  });
+});
+
+describe("devices", () => {
+  it("upserts a device heartbeat and lists it back", async () => {
+    await bootstrapUser("user-dev");
+    const token = await freshSessionToken("user-dev");
+    const heartbeat = {
+      deviceId: "mac-abc",
+      platform: "mac",
+      displayName: "Ilwon's MacBook Air",
+      deviceClass: "MacBook Air",
+      appVersion: "0.0.4",
+      syncEnabled: true,
+      lastSeenAt: Date.now(),
+    };
+    const post = await worker.request(
+      "/v1/sync/devices",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(heartbeat),
+      },
+      env
+    );
+    expect(post.status).toBe(200);
+
+    const list = await worker.request(
+      "/v1/sync/devices",
+      { headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    const body = (await list.json()) as { devices: any[] };
+    expect(body.devices).toHaveLength(1);
+    expect(body.devices[0].displayName).toBe("Ilwon's MacBook Air");
+    expect(body.devices[0].syncEnabled).toBe(true);
+  });
+
+  it("isolates device list per user", async () => {
+    await bootstrapUser("user-dev-a");
+    await bootstrapUser("user-dev-b");
+    const tokenA = await freshSessionToken("user-dev-a");
+    const tokenB = await freshSessionToken("user-dev-b");
+    await worker.request(
+      "/v1/sync/devices",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokenA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deviceId: "mac-a",
+          platform: "mac",
+          displayName: "A's Mac",
+          syncEnabled: true,
+          lastSeenAt: Date.now(),
+        }),
+      },
+      env
+    );
+    const listB = await worker.request(
+      "/v1/sync/devices",
+      { headers: { Authorization: `Bearer ${tokenB}` } },
+      env
+    );
+    const body = (await listB.json()) as { devices: any[] };
+    expect(body.devices).toHaveLength(0);
   });
 });
 

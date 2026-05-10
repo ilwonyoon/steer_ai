@@ -1,4 +1,10 @@
-import type { CardPayload, Env, InstructionRecord, SessionSnapshot } from "./types.js";
+import type {
+  CardPayload,
+  DeviceSnapshot,
+  Env,
+  InstructionRecord,
+  SessionSnapshot,
+} from "./types.js";
 
 /**
  * D1 wrapper. Keeps SQL out of the route handlers.
@@ -39,6 +45,7 @@ export class Store {
     await this.env.DB.prepare(`DELETE FROM cards WHERE user_id = ?`).bind(userId).run();
     await this.env.DB.prepare(`DELETE FROM instructions WHERE user_id = ?`).bind(userId).run();
     await this.env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId).run();
+    await this.env.DB.prepare(`DELETE FROM devices WHERE user_id = ?`).bind(userId).run();
     await this.env.DB.prepare(`DELETE FROM users WHERE user_id = ?`).bind(userId).run();
   }
 
@@ -179,6 +186,56 @@ export class Store {
         .bind(failureReason ?? "unknown", userId, instructionId)
         .run();
     }
+  }
+
+  async upsertDevice(userId: string, snap: DeviceSnapshot): Promise<void> {
+    await this.env.DB.prepare(
+      `INSERT INTO devices (
+         device_id, user_id, platform, display_name, device_class,
+         app_version, sync_enabled, last_seen_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, device_id) DO UPDATE SET
+         platform = excluded.platform,
+         display_name = COALESCE(excluded.display_name, display_name),
+         device_class = COALESCE(excluded.device_class, device_class),
+         app_version = COALESCE(excluded.app_version, app_version),
+         sync_enabled = excluded.sync_enabled,
+         last_seen_at = excluded.last_seen_at`
+    )
+      .bind(
+        snap.deviceId,
+        userId,
+        snap.platform,
+        snap.displayName ?? null,
+        snap.deviceClass ?? null,
+        snap.appVersion ?? null,
+        snap.syncEnabled ? 1 : 0,
+        snap.lastSeenAt
+      )
+      .run();
+  }
+
+  async listDevices(userId: string): Promise<DeviceSnapshot[]> {
+    const rs = await this.env.DB.prepare(
+      `SELECT device_id, platform, display_name, device_class,
+              app_version, sync_enabled, last_seen_at
+       FROM devices
+       WHERE user_id = ?
+       ORDER BY last_seen_at DESC
+       LIMIT 50`
+    )
+      .bind(userId)
+      .all();
+    return rs.results.map((row) => ({
+      deviceId: row.device_id as string,
+      platform: row.platform as string,
+      displayName: (row.display_name as string) || undefined,
+      deviceClass: (row.device_class as string) || undefined,
+      appVersion: (row.app_version as string) || undefined,
+      syncEnabled: (row.sync_enabled as number) === 1,
+      lastSeenAt: row.last_seen_at as number,
+    }));
   }
 
   async upsertSession(userId: string, snap: SessionSnapshot): Promise<void> {
