@@ -1,148 +1,195 @@
 import SwiftUI
 import SteerCore
 
+/// iOS Inbox uses the same card-stack pattern as Mac SteerRootView:
+/// the central canvas always shows ONE ActionCardView at a time, and
+/// horizontal swipes move between cards. There's no carousel and no
+/// bottom navigation — sticking with a single focused card matches
+/// the Mac UX so the two clients feel like the same product.
 struct InboxView: View {
     @ObservedObject var inbox: SyncInbox
-    @State private var selected: CardPayload?
+
+    @State private var focusedSessionId: String? = nil
+    @State private var cardDragOffset: CGFloat = 0
+    @State private var replyDrafts: [String: String] = [:]
+    @State private var detailCard: ActionCard? = nil
+
+    private var cards: [ActionCard] {
+        inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
+    }
+
+    private var currentIndex: Int {
+        guard let focusedSessionId,
+              let idx = cards.firstIndex(where: { $0.sessionId == focusedSessionId })
+        else { return 0 }
+        return idx
+    }
+
+    private var currentCard: ActionCard? {
+        guard cards.indices.contains(currentIndex) else { return nil }
+        return cards[currentIndex]
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if !inbox.isSignedIn {
-                    SignInPrompt(inbox: inbox)
-                } else if inbox.cards.isEmpty {
-                    ContentUnavailableView(
-                        "No cards yet",
-                        systemImage: "tray",
-                        description: Text("Open Steer for Mac, turn on iPhone Sync, and let a wrapped session ask a question.")
-                    )
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(inbox.cards, id: \.cardId) { card in
-                                Button { selected = card } label: {
-                                    InboxCardRow(card: card)
-                                }
-                                .buttonStyle(.plain)
-                            }
+        ZStack(alignment: .top) {
+            SteerColors.appBackground.ignoresSafeArea()
+
+            if !inbox.isSignedIn {
+                SignInPrompt(inbox: inbox)
+            } else {
+                content
+            }
+        }
+        .sheet(item: $detailCard) { card in
+            DetailView(
+                card: card,
+                onClose: { detailCard = nil },
+                onSend: { text in
+                    Task {
+                        if let payload = inbox.cards.first(where: { $0.sessionId == card.sessionId }) {
+                            await inbox.sendReply(text: text, for: payload)
                         }
-                        .padding(16)
-                    }
-                    .refreshable { await inbox.reload() }
-                }
-            }
-            .navigationTitle("Steer")
-            .toolbar {
-                if inbox.isSignedIn {
-                    Button {
-                        Task { await inbox.reload() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                        detailCard = nil
                     }
                 }
-            }
-            .sheet(item: $selected) { card in
-                CardDetailView(card: card, inbox: inbox)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        VStack(spacing: 12) {
+            HeaderBar()
+
+            if cards.isEmpty {
+                EmptyStateView(
+                    message: "No waiting actions",
+                    detail: "Open Steer for Mac, turn on iPhone Sync, and let a wrapped session ask a question."
+                )
+                .frame(maxHeight: .infinity)
+            } else if let card = currentCard {
+                ActionCardView(
+                    card: card,
+                    reply: replyBinding(for: card.sessionId),
+                    onSend: { text in send(text, to: card.sessionId) }
+                )
+                .id(card.id)
+                .offset(x: cardDragOffset)
+                .rotationEffect(.degrees(cardDragOffset / 34))
+                .onTapGesture(count: 2) { detailCard = card }
+                .gesture(cardSwipeGesture)
+                .padding(.bottom, 4)
+
+                if cards.count > 1 {
+                    PageIndicator(count: cards.count, current: currentIndex)
+                }
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
+        .animation(.snappy(duration: 0.22), value: currentIndex)
+    }
+
+    private func replyBinding(for sessionId: String) -> Binding<String> {
+        Binding(
+            get: { replyDrafts[sessionId] ?? "" },
+            set: { replyDrafts[sessionId] = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    private func move(_ delta: Int) {
+        guard !cards.isEmpty else { return }
+        let next = (currentIndex + delta + cards.count) % cards.count
+        focusedSessionId = cards[next].sessionId
+    }
+
+    private func send(_ text: String, to sessionId: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        Task {
+            if let payload = inbox.cards.first(where: { $0.sessionId == sessionId }) {
+                await inbox.sendReply(text: trimmed, for: payload)
+            }
+            replyDrafts[sessionId] = nil
+        }
+    }
+
+    private var cardSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { value in cardDragOffset = value.translation.width }
+            .onEnded { value in
+                let horizontal = value.translation.width
+                let vertical = abs(value.translation.height)
+                guard abs(horizontal) > 82, abs(horizontal) > vertical else {
+                    withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.08)) {
+                        cardDragOffset = 0
+                    }
+                    return
+                }
+                let direction = horizontal < 0 ? 1 : -1
+                let exitOffset: CGFloat = horizontal < 0 ? -460 : 460
+                withAnimation(.easeIn(duration: 0.16)) {
+                    cardDragOffset = exitOffset
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) {
+                    move(direction)
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        cardDragOffset = 0
+                    }
+                }
+            }
     }
 }
 
-private struct InboxCardRow: View {
-    let card: CardPayload
-
+private struct HeaderBar: View {
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Rectangle()
-                .fill(CardCategory.color(for: card.category))
-                .frame(width: 4)
-                .cornerRadius(2)
-
-            VStack(alignment: .leading, spacing: 8) {
-                CardMetaRow(card: card)
-                Text(card.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                Text(card.summary)
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack {
+            Text("Steer")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(SteerColors.secondaryInk)
+            Spacer()
         }
-        .padding(14)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(height: 28)
     }
 }
 
-struct CardMetaRow: View {
-    let card: CardPayload
-
-    private var provider: String {
-        card.payload?["provider"]?.value.stringValue ?? "agent"
-    }
-    private var project: String? {
-        card.payload?["project"]?.value.stringValue
-    }
-    private var branch: String? {
-        card.payload?["branchLabel"]?.value.stringValue
-    }
-
+private struct PageIndicator: View {
+    let count: Int
+    let current: Int
     var body: some View {
         HStack(spacing: 6) {
-            CategoryBadge(category: card.category)
-            if let project, !project.isEmpty {
-                Text(project)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            if let branch, !branch.isEmpty {
-                Text("· \(branch)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            ForEach(0..<count, id: \.self) { idx in
+                Circle()
+                    .fill(idx == current ? SteerColors.ink : SteerColors.softSeparator)
+                    .frame(width: 6, height: 6)
             }
         }
+        .padding(.top, 4)
     }
 }
 
-struct CategoryBadge: View {
-    let category: String
+private struct EmptyStateView: View {
+    let message: String
+    let detail: String
     var body: some View {
-        Text(category.uppercased())
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(CardCategory.color(for: category))
-            .clipShape(Capsule())
-    }
-}
-
-enum CardCategory {
-    static func color(for category: String) -> Color {
-        switch category {
-        case "blocker": return Color.red
-        case "question": return Color.blue
-        case "decision": return Color.purple
-        case "waiting": return Color.orange
-        case "completion": return Color.green
-        default: return Color.gray
+        VStack(spacing: 10) {
+            Spacer()
+            Image(systemName: "tray")
+                .font(.system(size: 40))
+                .foregroundStyle(SteerColors.tertiaryInk)
+            Text(message)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(SteerColors.ink)
+            Text(detail)
+                .font(.system(size: 13))
+                .foregroundStyle(SteerColors.secondaryInk)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+            Spacer()
         }
-    }
-}
-
-extension AnyCodableValue {
-    var stringValue: String? {
-        if case .string(let s) = self { return s }
-        return nil
     }
 }
 
@@ -153,9 +200,9 @@ private struct SignInPrompt: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: "tray.and.arrow.down")
+            Image(systemName: "rectangle.stack.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SteerColors.tertiaryInk)
             Text("Sign in to see Steer cards from your Mac")
                 .font(.headline)
                 .multilineTextAlignment(.center)
