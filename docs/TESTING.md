@@ -107,7 +107,31 @@ When fixing a bug:
 
 The fake provider at `packages/cli/test/helpers/fake_provider.js` accepts a JSON plan via `STEER_FAKE_PLAN`. Each plan turn can specify `responseBytes`, `responseDelayMs`, `ptyRepaints`, and a `preamble` string. To imitate a real Claude / Codex turn closely, give it 8–30 KB of body, 1–4 seconds of delay, and a few PTY repaints sprinkled across the duration. The harness in `packages/cli/test/helpers/harness.js` exposes `setPlan`, `spawnWrappedSession`, `sendInstruction`, `fireStopHook`, `stopAgent`, and `waitFor` — most new scenarios can be expressed in five or six harness calls.
 
-## 5. SteerCore unit tests (cross-platform)
+## 5. Mac SwiftPM unit tests (`SteerMacTests`)
+
+`apps/mac/Tests/SteerMacTests/` runs against the executable target
+directly:
+
+```sh
+swift test --package-path apps/mac
+```
+
+Currently covers `LocalSteerStorePerfTests` — three tests that
+profile the `/usr/bin/sqlite3` subprocess fork strategy:
+
+| metric | budget | observed (M-series) |
+| ------ | ------ | ------------------- |
+| single cold call | < 200ms | ~4ms |
+| 50-call p95 | < 50ms | ~7ms |
+| warm vs cold | warm ≤ cold + 10ms slop | both ~3-4ms |
+
+This pins the strategy: shelling out to `sqlite3` is fast enough
+for the dashboard's reload cadence and we don't need to replace
+it with an in-process SQLite binding. If the p95 budget is ever
+breached the test fails fast and tells the next person to swap
+in an in-process binding.
+
+## 6. SteerCore unit tests (cross-platform)
 
 `packages/SteerCore/Tests/SteerCoreTests/` holds platform-agnostic
 helpers that both Mac and iOS depend on. Run with plain Swift:
