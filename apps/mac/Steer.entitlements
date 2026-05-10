@@ -2,19 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Hardened-runtime exceptions for node-pty / JIT-using
-         transitive helpers. Direct dmg keeps these as-is.
-
-         NOTE: com.apple.developer.applesignin was tried here on
-         2026-05-09 but bricked dogfood launch with POSIX 163. The
-         provisioning profile has to assert the capability too, and
-         the existing Developer ID profile was issued before we
-         enabled Sign in with Apple on the App ID. Re-issue the
-         profile from developer.apple.com, then bring the entitlement
-         back. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
 </dict>
 </plist>

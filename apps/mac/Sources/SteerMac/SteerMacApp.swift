@@ -9,6 +9,10 @@ struct SteerMacApp: App {
     init() {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
+        // Disable per-window state restoration so a new launch always
+        // materializes the WindowGroup, instead of inheriting "all
+        // windows were closed last time -> show nothing" state.
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
     }
 
     var body: some Scene {

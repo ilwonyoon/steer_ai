@@ -149,6 +149,13 @@ Opening a card shows the full session context in a Claude/Codex-style view.
 - Do not make every transcript line a heavy card.
 - CLI snippets use SF Mono and compact code blocks.
 
+### Workspace Text Zoom
+- `Cmd++`, `Cmd+-`, and `Cmd+0` control the central reading surface, not the full app window.
+- Apply zoom to the action card body and session detail transcript: message text, terminal excerpt text, line spacing, transcript block padding, and message vertical spacing.
+- Keep chrome stable: sidebars, metadata panes, status pills, toolbar controls, quick chips, composer controls, and Settings do not scale with workspace text zoom.
+- Use View menu labels such as `Increase Workspace Text Size`, `Decrease Workspace Text Size`, and `Reset Workspace Text Size` so the behavior is explicit.
+- Bound the scale conservatively so small-window layouts stay usable; prefer a few predictable steps over continuous zoom.
+
 ### Composer
 - Bottom-pinned input bar.
 - Min height: 40pt; grows to 120pt before scrolling.

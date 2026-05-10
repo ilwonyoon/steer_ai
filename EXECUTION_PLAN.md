@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-08 (ready-card + terminal-typing handoff)
+Last updated: 2026-05-09 (relay backend Mac → backend E2E verified)
 
 ## Purpose
 
@@ -28,6 +28,7 @@ Keep this document focused on execution. Durable product or architecture changes
 - The default UX is an action card stack, not a chat timeline.
 - Opening a card shows a Claude/Codex-style session detail with full context and reply controls.
 - The Mac app should start as a focused mobile-width utility window, 375px wide x 812px tall, so the core stack ports cleanly to iOS.
+- Text zoom should be workspace-scoped, not app-global: `Cmd++`, `Cmd+-`, and `Cmd+0` adjust the central card/detail transcript reading area while sidebars, metadata, toolbar chrome, and status controls keep their default size.
 - The UI should feel iOS-native and use Liquid Glass sparingly for app chrome, navigation controls, sheets, and larger floating surfaces. Do not use it for card reply chips/input.
 - The main card bottom should be a reply input with suggested chips above it, not Skip/Snooze/Done buttons.
 - The main card body should show the last actionable terminal block as the primary trust surface. AI summary is secondary.
@@ -140,6 +141,7 @@ Goal: make the core loop usable from a native Mac UI.
 - [x] EmptyState with explicit `cd ~/your/project && steer codex` recipe.
 - [x] RunningBadge above main card while live sessions exist.
 - [x] Keyboard shortcuts: Cmd+Shift+[ / ] for prev/next card, Cmd+R refresh.
+- [ ] Workspace text zoom: `Cmd++`, `Cmd+-`, and `Cmd+0` adjust only the central action card/detail transcript area. Keep surrounding metadata, sidebar/list chrome, toolbar/status controls, and settings UI at system size.
 - [x] Document folder TCC handling: spawn sub-processes with `/tmp` cwd + `NSDocumentsFolderUsageDescription` in Info.plist.
 - [x] Notification click jumps to that session's card.
 - [x] Settings sheet (Cmd+,) for notifications/sound/categories/DND/Always-on-top/Run-at-login. Menu bar Settings… and Open agent log. See `docs/SETTINGS_PLAN.md` Phase 1.
@@ -252,6 +254,7 @@ Exit criteria:
 - [x] Define local IPC protocol.
 - [x] Create first wrapper spike.
 - [x] Create Mac app skeleton.
+- [ ] Add workspace-scoped text zoom to the Mac app (`Cmd++`, `Cmd+-`, `Cmd+0`) for the central card/detail reading area.
 
 ## Decision Log
 
@@ -361,6 +364,28 @@ The decision: ship v1 as a Developer ID-signed, notarized direct-distribution ap
 ### 2026-05-08: Document Folder TCC
 
 Sub-processes spawned by SteerMac (sqlite3, `steer send`) inherited the app's working directory under `~/Documents`, which triggered a macOS TCC consent dialog the first time the app actually accessed any file there. We now spawn those sub-processes with `currentDirectoryURL = /tmp` and declare `NSDocumentsFolderUsageDescription` (plus Desktop/Downloads) in the bundle's Info.plist so the consent persists once granted. `tccutil reset SystemPolicyDocumentsFolder ai.steer.mac` is the recovery step if a prior decision is cached.
+
+### 2026-05-09: Workspace-Scoped Text Zoom
+
+Mac-style `Cmd++` / `Cmd+-` zoom should not scale the whole Steer window. The high-value reading surface is the central action card and session detail transcript, while the surrounding session list, metadata, status pills, toolbar chrome, and settings controls are already appropriately sized.
+
+Implement zoom as a persisted workspace/detail text scale with bounded steps and a reset command:
+
+- `Cmd++`: increase central reading text scale.
+- `Cmd+-`: decrease central reading text scale.
+- `Cmd+0`: reset central reading text scale.
+
+Implementation plan:
+
+- Add a persisted setting such as `workspaceTextScale` or `detailTextScale`, with conservative bounds around the default, for example `0.9...1.35`.
+- Apply the scale only inside the central card/detail transcript environment. Scale text size, line spacing, transcript block padding, and row/message vertical spacing together so the layout remains balanced.
+- Keep navigation, sidebars, metadata panes, status pills, quick chips, composer controls, and Settings at system/default size.
+- Use explicit menu commands under View, with labels such as `Increase Workspace Text Size`, `Decrease Workspace Text Size`, and `Reset Workspace Text Size`, so users do not expect full-window zoom.
+- Add regression coverage or a UI smoke test that verifies the central transcript grows while surrounding chrome does not shift materially.
+
+### 2026-05-09: Relay Backend Mac → Backend E2E
+
+Sign in with Apple + Cloudflare Workers relay verified end-to-end on Mac. The Mac app signs in once via `ASAuthorizationAppleIDProvider`, the worker verifies the Apple identity token against Apple's JWKS, mints a 30-day session JWT (kept in macOS keychain), and the running Steer process publishes every active card to D1 each reload tick. Verified by reading D1 `cards` rows back via REST. Open follow-ups: iOS sign-in + WebSocket card receive (#204) and the launch-time main-window restoration regression (#205, `open .app` shows zero windows; `open -F` works).
 
 ## Open Questions
 

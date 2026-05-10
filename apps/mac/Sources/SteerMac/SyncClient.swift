@@ -3,6 +3,30 @@ import AuthenticationServices
 import AppKit
 import SteerCore
 
+/// File log for the relay client. unified log filtering has been
+/// flaky for sandboxless dev builds; ~/.steer/relay-client.log
+/// gives us a reliable trail to diagnose sign-in stalls.
+enum SignInDebugLog {
+    static let path: String = {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let dir = home.appendingPathComponent(".steer")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("relay-client.log").path
+    }()
+    static func write(_ msg: String) {
+        let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(msg)\n"
+        if let data = line.data(using: .utf8) {
+            if let h = FileHandle(forWritingAtPath: path) {
+                _ = try? h.seekToEnd()
+                try? h.write(contentsOf: data)
+                try? h.close()
+            } else {
+                try? data.write(to: URL(fileURLWithPath: path))
+            }
+        }
+    }
+}
+
 /// REST + WebSocket client against the Steer relay backend.
 ///
 /// Lifecycle:
@@ -40,22 +64,23 @@ public final class SyncClient: ObservableObject {
     private var receiveTask: Task<Void, Never>?
 
     private init() {
-        // Default to localhost during development; flip to the
-        // deployed Workers URL via UserDefaults once the user runs
-        // `wrangler deploy` and points the app at it.
+        // Default to the deployed Workers relay. Override via
+        // UserDefaults `ai.steer.relay.baseURL` when running a local
+        // wrangler dev server.
         let stored = UserDefaults.standard.string(forKey: "ai.steer.relay.baseURL")
-            ?? "http://127.0.0.1:8787"
+            ?? "https://steer-relay.ilwonyoon-turtleneck.workers.dev"
         self.baseURL = URL(string: stored)!
+        SignInDebugLog.write("[init] baseURL=\(self.baseURL.absoluteString)")
         self.tokenStore = SessionTokenStore()
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 30
         cfg.waitsForConnectivity = true
         self.urlSession = URLSession(configuration: cfg)
         if let _ = tokenStore.read() {
-            // We have a session JWT but haven't verified it yet —
-            // refreshMe will set status to .signedIn or clear the
-            // token if the server rejects it.
+            SignInDebugLog.write("[init] keychain JWT present, will refreshMe")
             Task { await refreshMe() }
+        } else {
+            SignInDebugLog.write("[init] no JWT in keychain")
         }
     }
 
@@ -83,31 +108,54 @@ public final class SyncClient: ObservableObject {
 
     /// Kicks off Sign in with Apple. The presenting window must be
     /// available; SwiftUI Settings/onboarding contexts both work.
+    /// Strong reference holder so the delegate + controller stay
+    /// alive between performRequests() and the system callback.
+    /// Both delegate (controller.delegate is weak) and controller
+    /// would otherwise deallocate the moment startSignInWithApple
+    /// returns past `await`, which is exactly when the system tries
+    /// to invoke them.
+    private var pendingSignIn: PendingSignIn?
+
     public func startSignInWithApple() async {
-        let provider = ASAuthorizationAppleIDProvider()
-        let request = provider.createRequest()
-        request.requestedScopes = [.fullName, .email]
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        let delegate = AppleSignInDelegate()
-        controller.delegate = delegate
-        controller.presentationContextProvider = delegate
-        controller.performRequests()
-        // Wait for the delegate to resolve.
         do {
-            let credential = try await delegate.result
+            let credential = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<ASAuthorizationAppleIDCredential, Error>) in
+                let provider = ASAuthorizationAppleIDProvider()
+                let request = provider.createRequest()
+                request.requestedScopes = [.fullName, .email]
+                let controller = ASAuthorizationController(authorizationRequests: [request])
+                let delegate = AppleSignInDelegate(continuation: cont)
+                controller.delegate = delegate
+                controller.presentationContextProvider = delegate
+                self.pendingSignIn = PendingSignIn(controller: controller, delegate: delegate)
+                controller.performRequests()
+                SignInDebugLog.write("[apple-signin] performRequests called")
+            }
+            self.pendingSignIn = nil
+            SignInDebugLog.write("[apple-signin] credential received")
             await handleAppleCredential(credential)
         } catch {
+            self.pendingSignIn = nil
+            SignInDebugLog.write("[apple-signin] failed: \(error)")
             lastError = "Apple sign-in failed: \(error.localizedDescription)"
         }
     }
 
+    private struct PendingSignIn {
+        let controller: ASAuthorizationController
+        let delegate: AppleSignInDelegate
+    }
+
     private func handleAppleCredential(_ credential: ASAuthorizationAppleIDCredential) async {
+        SignInDebugLog.write("[apple-signin] handleAppleCredential start, user=\(credential.user)")
         guard let tokenData = credential.identityToken,
               let identityToken = String(data: tokenData, encoding: .utf8)
         else {
+            SignInDebugLog.write("[apple-signin] no identityToken on credential")
             lastError = "Apple sign-in returned no identity token."
+            status = .signedOut
             return
         }
+        SignInDebugLog.write("[apple-signin] identityToken bytes=\(tokenData.count)")
         let displayName: String? = {
             if let formatted = credential.fullName?.givenName {
                 return formatted
@@ -116,27 +164,33 @@ public final class SyncClient: ObservableObject {
         }()
         let body = AuthAppleRequest(identityToken: identityToken, displayName: displayName)
         do {
+            SignInDebugLog.write("[apple-signin] POST \(baseURL.absoluteString)/v1/auth/apple")
             let response: AuthAppleResponse = try await postJSON(
                 "/v1/auth/apple",
                 body: body,
                 requireAuth: false
             )
+            SignInDebugLog.write("[apple-signin] backend OK, user=\(response.user.userId)")
             tokenStore.write(response.sessionToken)
             status = .signedIn(response.user)
             connectWebSocket()
         } catch {
+            SignInDebugLog.write("[apple-signin] backend FAILED: \(error)")
             lastError = "Auth POST failed: \(error.localizedDescription)"
+            status = .signedOut
         }
     }
 
     public func refreshMe() async {
         struct MeResponse: Decodable { let user: SyncUser }
         do {
+            SignInDebugLog.write("[refreshMe] GET /v1/me")
             let me: MeResponse = try await getJSON("/v1/me")
+            SignInDebugLog.write("[refreshMe] OK user=\(me.user.userId)")
             status = .signedIn(me.user)
             connectWebSocket()
         } catch {
-            // Token rejected — nuke it so the next sign-in is clean.
+            SignInDebugLog.write("[refreshMe] FAILED, clearing token: \(error)")
             tokenStore.clear()
             status = .signedOut
         }
@@ -145,10 +199,15 @@ public final class SyncClient: ObservableObject {
     // MARK: - Cards
 
     public func publishCard(_ card: CardPayload) async {
-        guard isSignedIn else { return }
+        guard isSignedIn else {
+            SignInDebugLog.write("[publish] skipped (not signed in) card=\(card.cardId)")
+            return
+        }
         do {
             try await putJSON("/v1/sync/cards/\(card.cardId)", body: card)
+            SignInDebugLog.write("[publish] OK card=\(card.cardId) state=\(card.state)")
         } catch {
+            SignInDebugLog.write("[publish] FAILED card=\(card.cardId): \(error)")
             lastError = "publishCard failed: \(error.localizedDescription)"
         }
     }
@@ -343,34 +402,45 @@ extension Notification.Name {
     public static let syncDidReceiveUpdate = Notification.Name("ai.steer.sync.didReceiveUpdate")
 }
 
-/// Apple sign-in delegate that bridges callback into a Swift async
-/// continuation. One-shot: re-create per request.
+/// Apple sign-in delegate. Bridges the AuthenticationServices
+/// callback into a Swift continuation. The owning SyncClient holds
+/// a strong reference (PendingSignIn) so this object stays alive
+/// for the entire round trip — controller.delegate is weak and the
+/// system invokes it asynchronously.
 @MainActor
 private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     private var continuation: CheckedContinuation<ASAuthorizationAppleIDCredential, Error>?
 
-    var result: ASAuthorizationAppleIDCredential {
-        get async throws {
-            try await withCheckedThrowingContinuation { c in
-                self.continuation = c
+    init(continuation: CheckedContinuation<ASAuthorizationAppleIDCredential, Error>) {
+        self.continuation = continuation
+        super.init()
+    }
+
+    nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        Task { @MainActor in
+            guard let cont = self.continuation else { return }
+            self.continuation = nil
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                cont.resume(throwing: NSError(domain: "SyncClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected credential type"]))
+                return
             }
+            cont.resume(returning: credential)
         }
     }
 
-    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
-        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-            continuation?.resume(throwing: NSError(domain: "SyncClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected credential type"]))
-            return
+    nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        Task { @MainActor in
+            guard let cont = self.continuation else { return }
+            self.continuation = nil
+            cont.resume(throwing: error)
         }
-        continuation?.resume(returning: credential)
     }
 
-    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-        continuation?.resume(throwing: error)
-    }
-
-    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        return NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+    nonisolated func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        // Run sync on main thread to grab key window.
+        return MainActor.assumeIsolated {
+            NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+        }
     }
 }
 

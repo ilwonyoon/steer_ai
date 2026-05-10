@@ -18,6 +18,25 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
         SparkleController.shared.start()
+        // Touch SyncClient so it init's and (if a session JWT exists)
+        // restores the signed-in state + WebSocket without waiting for
+        // the main window to open. The status bar can be the only
+        // visible UI while sync still needs to run in the background.
+        _ = SyncClient.shared
+        // SwiftUI sometimes restores the "last window was closed"
+        // state and starts with zero visible windows. Force the
+        // primary scene to materialize once at launch.
+        DispatchQueue.main.async {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            for w in NSApplication.shared.windows where w.canBecomeKey {
+                w.makeKeyAndOrderFront(nil)
+                return
+            }
+            // No window exists yet — ask AppKit to reopen the scene.
+            _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
+                NSApplication.shared, hasVisibleWindows: false
+            )
+        }
         Task.detached(priority: .background) {
             AttachmentService.cleanupStaleTempFiles()
         }
@@ -89,10 +108,25 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSteer() {
         NSApplication.shared.activate(ignoringOtherApps: true)
+        var reopened = false
         for window in NSApplication.shared.windows where window.canBecomeKey {
             window.deminiaturize(nil)
             window.makeKeyAndOrderFront(nil)
+            reopened = true
         }
+        if !reopened {
+            // SwiftUI WindowGroup gets fully released after the last
+            // window closes; ask AppKit to recreate it via the standard
+            // "reopen" path that Dock-icon clicks use.
+            _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
+                NSApplication.shared, hasVisibleWindows: false
+            )
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Returning true tells AppKit to reopen the SwiftUI WindowGroup.
+        return true
     }
 
     @objc private func handleConfigure() {

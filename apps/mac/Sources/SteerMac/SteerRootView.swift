@@ -279,13 +279,17 @@ struct SteerRootView: View {
         }
         SteerAppDelegate.status.waitingCount = loadedCards.count
 
-        if SteerSettings.shared.iPhoneSyncEnabled && SyncClient.shared.isSignedIn {
+        let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
+        let signedIn = SyncClient.shared.isSignedIn
+        SignInDebugLog.write("[reload] toggle=\(toggleOn) signedIn=\(signedIn) cards=\(loadedCards.count)")
+        if toggleOn && signedIn {
             await syncToiPhone(cards: loadedCards)
             await drainQueuedInstructions()
         }
     }
 
     private func syncToiPhone(cards: [ActionCard]) async {
+        SignInDebugLog.write("[syncToiPhone] publishing \(cards.count) cards")
         for card in cards {
             let payload = SteerCardMapping.payload(from: card)
             await SyncClient.shared.publishCard(payload)
