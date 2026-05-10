@@ -55,75 +55,61 @@ struct InboxView: View {
 
     @ViewBuilder
     private var content: some View {
-        // Two-layer stack:
-        //   1. The card column (header + chip row + ActionCardView).
-        //      Reserves carousel-sized bottom padding so the card
-        //      never sits under the carousel.
-        //   2. The carousel pinned to the bottom. Hidden via opacity
-        //      while typing; the keyboard covers the whole bottom
-        //      area anyway, so the empty space disappears visually.
-        // Layout is fully static across focus changes — no frame
-        // toggles, no animation modifiers — so SwiftUI's keyboard
-        // avoidance has full control over what moves.
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 12) {
-                HeaderBar()
+        // Single column. Bottom padding is dynamic: full carousel
+        // footprint when the carousel is visible, zero when typing.
+        // The padding change is driven by .ignoresSafeArea(.keyboard)
+        // off — i.e. we let the system push the column up — but the
+        // padding swap happens in the same gesture so layout settles
+        // in one step rather than oscillating.
+        VStack(spacing: 12) {
+            HeaderBar()
 
-                if !liveChips.isEmpty {
-                    LiveSessionChipRow(
-                        chips: liveChips,
-                        isExpanded: $liveChipsExpanded
-                    )
-                    .padding(.leading, 4)
-                }
-
-                if cards.isEmpty {
-                    EmptyStateView(
-                        message: "No waiting actions",
-                        detail: "Open Steer for Mac, turn on iPhone Sync, and let a wrapped session ask a question."
-                    )
-                    .frame(maxHeight: .infinity)
-                } else if let card = currentCard {
-                    ActionCardView(
-                        card: card,
-                        reply: replyBinding(for: card.sessionId),
-                        onSend: { text in send(text, to: card.sessionId) },
-                        replyFieldFocused: $replyFieldFocused
-                    )
-                    .id(card.id)
-                    .offset(x: cardDragOffset)
-                    .gesture(cardSwipeGesture)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 18)
-            // Reserve the carousel's footprint so the card column
-            // never overlaps the carousel layer below.
-            .padding(.bottom, carouselFootprint)
-            .animation(.easeOut(duration: 0.22), value: currentIndex)
-
-            if !cards.isEmpty {
-                ActionCardCarousel(
-                    cards: cards,
-                    currentIndex: currentIndex,
-                    onSelect: { tappedIndex in
-                        guard cards.indices.contains(tappedIndex) else { return }
-                        withAnimation(.easeOut(duration: 0.22)) {
-                            focusedSessionId = cards[tappedIndex].sessionId
-                        }
-                    }
+            if !liveChips.isEmpty {
+                LiveSessionChipRow(
+                    chips: liveChips,
+                    isExpanded: $liveChipsExpanded
                 )
-                .opacity(replyFieldFocused ? 0 : 1)
-                .allowsHitTesting(!replyFieldFocused)
-                .padding(.bottom, 12)
+                .padding(.leading, 4)
+            }
+
+            if cards.isEmpty {
+                EmptyStateView(
+                    message: "No waiting actions",
+                    detail: "Open Steer for Mac, turn on iPhone Sync, and let a wrapped session ask a question."
+                )
+                .frame(maxHeight: .infinity)
+            } else if let card = currentCard {
+                ActionCardView(
+                    card: card,
+                    reply: replyBinding(for: card.sessionId),
+                    onSend: { text in send(text, to: card.sessionId) },
+                    replyFieldFocused: $replyFieldFocused
+                )
+                .id(card.id)
+                .offset(x: cardDragOffset)
+                .gesture(cardSwipeGesture)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if !replyFieldFocused {
+                    ActionCardCarousel(
+                        cards: cards,
+                        currentIndex: currentIndex,
+                        onSelect: { tappedIndex in
+                            guard cards.indices.contains(tappedIndex) else { return }
+                            withAnimation(.easeOut(duration: 0.22)) {
+                                focusedSessionId = cards[tappedIndex].sessionId
+                            }
+                        }
+                    )
+                    .padding(.horizontal, -14)
+                }
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
+        .animation(.easeOut(duration: 0.22), value: currentIndex)
     }
-
-    /// Bottom padding that keeps the card column above the carousel
-    /// layer. Carousel scroll height (100) + bottom inset (12).
-    private var carouselFootprint: CGFloat { 100 + 12 }
 
     private func replyBinding(for sessionId: String) -> Binding<String> {
         Binding(
