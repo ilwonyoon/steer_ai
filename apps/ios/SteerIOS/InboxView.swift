@@ -82,7 +82,6 @@ struct InboxView: View {
                 )
                 .id(card.id)
                 .offset(x: cardDragOffset)
-                .rotationEffect(.degrees(cardDragOffset / 34))
                 .gesture(cardSwipeGesture)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -140,7 +139,10 @@ struct InboxView: View {
                 let horizontal = value.translation.width
                 let vertical = abs(value.translation.height)
                 guard abs(horizontal) > 82, abs(horizontal) > vertical else {
-                    withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.08)) {
+                    // Snap back without spring overshoot — Mac uses
+                    // a softer interactive spring but on iPhone the
+                    // bounce reads as the card "shaking".
+                    withAnimation(.easeOut(duration: 0.18)) {
                         cardDragOffset = 0
                     }
                     return
