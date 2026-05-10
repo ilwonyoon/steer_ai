@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "SteerCore", targets: ["SteerCore"])
     ],
     targets: [
-        .target(name: "SteerCore")
+        .target(name: "SteerCore"),
+        .testTarget(name: "SteerCoreTests", dependencies: ["SteerCore"])
     ]
 )

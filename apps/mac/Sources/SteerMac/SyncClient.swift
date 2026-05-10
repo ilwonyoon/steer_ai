@@ -373,10 +373,16 @@ public final class SyncClient: ObservableObject {
         }
     }
 
+    /// Tracked across reconnect attempts so the backoff grows. Reset
+    /// to 0 on every successful frame.
+    private var reconnectAttempt: Int = 0
+    private let backoff = WSReconnectBackoff()
+
     private func receiveLoop(task: URLSessionWebSocketTask) async {
         while !Task.isCancelled {
             do {
                 let message = try await task.receive()
+                if reconnectAttempt > 0 { reconnectAttempt = 0 }
                 switch message {
                 case .string(let s):
                     handleWSText(s)
@@ -386,9 +392,13 @@ public final class SyncClient: ObservableObject {
                     break
                 }
             } catch {
-                // Reconnect after a short delay; the relay drops idle
-                // sockets and we want to come back automatically.
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                // Exponential backoff: 1s, 2s, 4s, 8s, 16s, then 30s
+                // capped. Avoids hammering the relay during a network
+                // outage (subway, weak cell, captive portal). See
+                // WSReconnectBackoffTests for the cadence proof.
+                reconnectAttempt += 1
+                let delay = backoff.delaySeconds(forAttempt: reconnectAttempt)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 connectWebSocket()
                 return
             }
@@ -471,24 +481,12 @@ public final class SyncClient: ObservableObject {
         if let token = tokenStore.read() {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        // Reuses the existing per-install deviceId defined above for
+        // the device-presence flow. Same identity, so a sign-in's
+        // `did` claim aligns with whatever the heartbeat already
+        // registered server-side.
         req.setValue(Self.deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
     }
-
-    /// Stable per-install device id. We persist a UUID in UserDefaults
-    /// so the same Mac install presents the same id forever (until
-    /// the user reinstalls the app). The relay binds this into the
-    /// JWT's `did` claim when the user signs in, then verifies it on
-    /// every request to reject a stolen token replayed from another
-    /// Mac.
-    static let deviceId: String = {
-        let key = "ai.steer.relay.deviceId"
-        if let existing = UserDefaults.standard.string(forKey: key) {
-            return existing
-        }
-        let fresh = UUID().uuidString
-        UserDefaults.standard.set(fresh, forKey: key)
-        return fresh
-    }()
 
     private func sendDecoding<T: Decodable>(_ req: URLRequest) async throws -> T {
         let (data, _) = try await sendRaw(req)

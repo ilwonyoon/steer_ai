@@ -107,6 +107,21 @@ When fixing a bug:
 
 The fake provider at `packages/cli/test/helpers/fake_provider.js` accepts a JSON plan via `STEER_FAKE_PLAN`. Each plan turn can specify `responseBytes`, `responseDelayMs`, `ptyRepaints`, and a `preamble` string. To imitate a real Claude / Codex turn closely, give it 8–30 KB of body, 1–4 seconds of delay, and a few PTY repaints sprinkled across the duration. The harness in `packages/cli/test/helpers/harness.js` exposes `setPlan`, `spawnWrappedSession`, `sendInstruction`, `fireStopHook`, `stopAgent`, and `waitFor` — most new scenarios can be expressed in five or six harness calls.
 
+## 5. SteerCore unit tests (cross-platform)
+
+`packages/SteerCore/Tests/SteerCoreTests/` holds platform-agnostic
+helpers that both Mac and iOS depend on. Run with plain Swift:
+
+```sh
+swift test --package-path packages/SteerCore
+```
+
+Currently covers `WSReconnectBackoff` — the exponential backoff
+strategy the WS receiveLoop uses to recover from network outages.
+Five tests prove the cadence (1, 2, 4, 8, 16, 30, 30…), bound the
+jitter, and assert at least a 3× attempt-count reduction over a 60s
+outage and 8× over a 10-min outage vs. the previous fixed 3s delay.
+
 ## Pre-merge gate
 
 `scripts/verify-steer-regression.sh` should run `npm test`, `npm run test:integration`, `swift build --package-path apps/mac`, and `scripts/build-mac-app.sh` before any commit that touches the wrapper, classifier, Mac card loading, notifications, or terminal rendering.

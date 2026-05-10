@@ -395,10 +395,19 @@ public final class SyncInbox: ObservableObject {
         }
     }
 
+    /// Tracked across reconnect attempts so the backoff grows. Reset
+    /// to 0 inside connectWebSocket() whenever a connection succeeds
+    /// long enough to actually receive a frame — see `handleWSText`.
+    private var reconnectAttempt: Int = 0
+    private let backoff = WSReconnectBackoff()
+
     private func receiveLoop(task: URLSessionWebSocketTask) async {
         while !Task.isCancelled {
             do {
                 let message = try await task.receive()
+                // First successful frame after a (re)connect means we
+                // really are connected — reset the attempt counter.
+                if reconnectAttempt > 0 { reconnectAttempt = 0 }
                 switch message {
                 case .string(let s):
                     handleWSText(s)
@@ -408,7 +417,9 @@ public final class SyncInbox: ObservableObject {
                     break
                 }
             } catch {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                reconnectAttempt += 1
+                let delay = backoff.delaySeconds(forAttempt: reconnectAttempt)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 connectWebSocket()
                 return
             }
