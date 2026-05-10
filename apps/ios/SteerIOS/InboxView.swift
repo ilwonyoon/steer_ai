@@ -109,13 +109,9 @@ struct InboxView: View {
         .padding(.top, 18)
         .padding(.bottom, 12)
         .animation(.easeOut(duration: 0.22), value: currentIndex)
-        // Match the system's keyboard avoidance curve so the carousel's
-        // re-insert is in lockstep with the keyboard sliding back down.
-        // iOS uses a damped spring with response ~0.5, dampingFraction 1
-        // for keyboard transitions; matching it here means the card
-        // settles in one continuous motion instead of jumping when the
-        // carousel reappears.
-        .animation(.spring(response: 0.5, dampingFraction: 1.0), value: replyFieldFocused)
+        // Carousel insert/remove is intentionally NOT animated.
+        // Static UI + system keyboard avoidance only — no extra
+        // motion competing with the keyboard.
     }
 
     private func replyBinding(for sessionId: String) -> Binding<String> {
