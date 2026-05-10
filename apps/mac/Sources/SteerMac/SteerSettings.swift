@@ -133,7 +133,7 @@ private struct GeneralPane: View {
             }
 
             Section("Folder access") {
-                Text("Steer usually doesn't need any extra permission. If a session under Documents, Desktop, or Downloads ever stops appearing, open Full Disk Access in System Settings, click the + button, and add Steer (the Reveal button below opens its location in Finder).")
+                Text("If a session under Documents/Desktop/Downloads stops appearing, grant Full Disk Access.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -314,7 +314,7 @@ private struct IPhoneSyncSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Mirror your action cards to the iPhone Steer app via the Steer relay backend (Cloudflare Workers + Sign in with Apple). Your data stays in your own iCloud Apple ID; replies travel through the relay encrypted in transit.")
+            Text("Mirror action cards to iPhone via the Steer relay. Encrypted in transit.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -373,7 +373,7 @@ private struct IPhoneSyncSection: View {
                         Label(item, systemImage: "xmark.circle.fill")
                             .labelStyle(WhatSyncsRowStyle(color: .secondary))
                     }
-                    Text("iPhone replies queue while this Mac is offline and deliver as soon as Steer for Mac comes back online.")
+                    Text("Replies queue while this Mac is offline.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.top, 6)

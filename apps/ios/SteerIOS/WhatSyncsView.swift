@@ -21,7 +21,7 @@ struct WhatSyncsView: View {
             } header: {
                 Text("What Syncs")
             } footer: {
-                Text("Synced through the Steer relay between your own Mac and iPhone signed in with the same Apple account.")
+                Text("Between your Mac and iPhone via the Steer relay.")
             }
 
             Section {
@@ -35,11 +35,11 @@ struct WhatSyncsView: View {
             } header: {
                 Text("What Does Not Sync")
             } footer: {
-                Text("Full raw transcripts, environment variables, and arbitrary file contents stay on your Mac. Terminal excerpts may still contain sensitive data if the underlying CLI prints it.")
+                Text("Full transcripts and file contents stay on your Mac. Terminal excerpts may show sensitive output if your CLI prints it.")
             }
 
             Section {
-                Text("Live delivery requires Steer for Mac to be running. iPhone replies queue while the Mac is offline and deliver as soon as it returns.")
+                Text("Needs Steer for Mac running. Replies queue while offline.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } header: {

@@ -89,7 +89,7 @@ struct MacSyncStatusView: View {
                 } header: {
                     Text(recoveryTitle)
                 } footer: {
-                    Text("Replies you send while the Mac is unreachable are queued and delivered as soon as Steer for Mac comes back online.")
+                    Text("Replies queue while the Mac is offline.")
                 }
             }
             .navigationTitle("Mac Sync Status")

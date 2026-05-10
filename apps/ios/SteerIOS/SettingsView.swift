@@ -180,16 +180,12 @@ struct AccountDetailView: View {
                 }
             } header: {
                 Text("Identity")
-            } footer: {
-                Text("Apple gives apps a per-app relay address by default. Replies to that address forward to your real email until you turn the relay off.")
             }
 
             Section {
                 LabeledRow(label: "User ID", value: user.userId, monospaced: true)
             } header: {
                 Text("Server")
-            } footer: {
-                Text("Your relay user id. Cards and replies are scoped to this id.")
             }
 
             Section {
@@ -206,13 +202,13 @@ struct AccountDetailView: View {
                 }
                 .disabled(isDeleting)
             } footer: {
-                Text("Removes your relay account, synced cards, queued replies, and session metadata from Steer's server, revokes your Sign in with Apple grant, and clears the session token stored in this device's Keychain. Your Mac's local SQLite store is not touched.")
+                Text("Deletes your server data and signs you out. Your Mac files are untouched.")
             }
         }
         .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
-            "Delete your Steer relay account?",
+            "Delete your account?",
             isPresented: $confirmsDeletion,
             titleVisibility: .visible
         ) {
@@ -225,7 +221,7 @@ struct AccountDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the relay-side data only. Your Mac sessions and local SQLite store are untouched.")
+            Text("Your Mac data is untouched.")
         }
     }
 }

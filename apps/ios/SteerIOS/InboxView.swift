@@ -142,37 +142,37 @@ struct InboxView: View {
         case .demo:
             EmptyStateView(
                 icon: "tray",
-                message: "Sample workspace",
-                detail: "You're browsing demo cards. Tap Use Live Sync above to connect your own Mac."
+                message: "Demo cards",
+                detail: "Tap Use Live Sync to connect your Mac."
             )
         case .neverConnected:
             EmptyStateView(
                 icon: "rectangle.stack.fill",
                 message: "Set up Steer for Mac",
-                detail: "Live cards appear after Steer for Mac is installed, signed in, iPhone Sync is enabled, and a Steer-managed session is running.",
-                primaryCTA: ("Set Up Mac First", { showsMacSyncStatus = true }),
+                detail: "Install Steer for Mac and turn on iPhone Sync to receive cards.",
+                primaryCTA: ("Set Up Mac", { showsMacSyncStatus = true }),
                 secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
             )
         case .connected:
             EmptyStateView(
                 icon: "tray",
-                message: "No live cards yet",
-                detail: "Your Mac is connected. Start or resume a session with steer codex or steer claude, then waiting moments will appear here.",
+                message: "No cards yet",
+                detail: "Run steer codex or steer claude on your Mac.",
                 secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
             )
         case .stale, .offline:
             EmptyStateView(
                 icon: "wifi.slash",
                 message: "Mac offline",
-                detail: "Replies will queue until Steer for Mac comes back online.",
-                primaryCTA: ("Open Steer for Mac", { showsMacSyncStatus = true })
+                detail: "Replies will queue until your Mac is back.",
+                primaryCTA: ("Mac Status", { showsMacSyncStatus = true })
             )
         case .error:
             EmptyStateView(
                 icon: "exclamationmark.triangle",
                 message: "Sync issue",
-                detail: "We couldn't reach the Steer relay. Pull to retry from the Mac Sync Status sheet.",
-                primaryCTA: ("Open Mac Sync Status", { showsMacSyncStatus = true })
+                detail: "Can't reach the relay.",
+                primaryCTA: ("Mac Status", { showsMacSyncStatus = true })
             )
         }
     }
@@ -448,9 +448,9 @@ private struct SignInPrompt: View {
             Image(systemName: "rectangle.stack.fill")
                 .font(.system(size: 56))
                 .foregroundStyle(SteerColors.tertiaryInk)
-            Text("AI coding action inbox")
+            Text("Steer")
                 .font(.title3.weight(.semibold))
-            Text("Review waiting moments from your own Mac coding agents and queue replies from iPhone.")
+            Text("Approve your Mac AI from your phone.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
