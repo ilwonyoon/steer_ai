@@ -157,8 +157,18 @@ app.delete("/v1/sync/cards/:cardId", async (c) => {
 app.post("/v1/sync/instructions", async (c) => {
   const body = await c.req.json<InstructionRequest>();
   const store = new Store(c.env);
+  const userId = c.get("user").userId;
+  // Security: only let the user enqueue instructions for sessions
+  // they actually own (a session is owned if it has a card or a
+  // session row under their user_id). Without this check anyone with
+  // a valid JWT could push instructions into another user's Mac
+  // session by guessing a session_id.
+  const ownsSession = await store.userOwnsSession(userId, body.targetSessionId);
+  if (!ownsSession) {
+    return c.json({ error: "session not found for this user" }, 403);
+  }
   const record = await store.enqueueInstruction(
-    c.get("user").userId,
+    userId,
     body.instructionId,
     body.targetSessionId,
     body.text

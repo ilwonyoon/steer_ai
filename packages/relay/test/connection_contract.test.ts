@@ -298,6 +298,15 @@ describe("instruction queue ordering", () => {
   it("queued instructions return in created_at order", async () => {
     await bootstrapUser("u-q");
     const t = await token("u-q");
+    const seedNow = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO cards (card_id, user_id, session_id, category, priority,
+                          title, summary, payload_json, state,
+                          created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind("c-q", "u-q", "s", "question", "normal", "T", ".", "{}", "active", seedNow, seedNow)
+      .run();
     for (let i = 0; i < 5; i++) {
       await worker.request(
         "/v1/sync/instructions",
@@ -366,11 +375,12 @@ describe("auth boundaries", () => {
     expect(body.cards).toHaveLength(0);
   });
 
-  it("instructions endpoint accepts targetSessionId without ownership check (P0 audit)", async () => {
-    // This documents the security-audit P0 finding: the relay does not
-    // currently verify that targetSessionId belongs to a session owned
-    // by the calling user. We assert the *current* behavior so a fix
-    // will flip the assertion and force us to update this test.
+  it("instructions endpoint rejects unowned targetSessionId with 403", async () => {
+    // Was an open P0 in the security audit. Fixed via Store.userOwnsSession
+    // — the relay now verifies that the targetSessionId belongs to a
+    // card or session row under the calling user's user_id before
+    // accepting the instruction. This test inverted from accepting
+    // (200) to rejecting (403) when the fix landed.
     await bootstrapUser("u-attacker");
     const t = await token("u-attacker");
     const res = await worker.request(
@@ -386,9 +396,37 @@ describe("auth boundaries", () => {
       },
       env
     );
-    expect(res.status).toBe(200);
-    console.warn(
-      "[contract] /v1/sync/instructions accepts arbitrary targetSessionId — see security audit P0 #2"
+    expect(res.status).toBe(403);
+  });
+
+  it("instructions endpoint accepts targetSessionId backed by an owned card", async () => {
+    await bootstrapUser("u-legit");
+    const t = await token("u-legit");
+    const now = Date.now();
+    // Seed a card so the session_id is registered as belonging to
+    // this user.
+    await env.DB.prepare(
+      `INSERT INTO cards (card_id, user_id, session_id, category, priority,
+                          title, summary, payload_json, state,
+                          created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind("c-legit", "u-legit", "session-mine", "question", "normal",
+            "T", ".", "{}", "active", now, now)
+      .run();
+    const res = await worker.request(
+      "/v1/sync/instructions",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructionId: "ok-1",
+          targetSessionId: "session-mine",
+          text: "go",
+        }),
+      },
+      env
     );
+    expect(res.status).toBe(200);
   });
 });

@@ -119,6 +119,24 @@ export class Store {
       .run();
   }
 
+  /// Returns true if the given user has at least one card or session
+  /// row with this session_id. Used as the ownership check before
+  /// accepting an instruction targeted at a session.
+  async userOwnsSession(userId: string, sessionId: string): Promise<boolean> {
+    const card = await this.env.DB.prepare(
+      `SELECT 1 FROM cards WHERE user_id = ? AND session_id = ? LIMIT 1`
+    )
+      .bind(userId, sessionId)
+      .first();
+    if (card) return true;
+    const session = await this.env.DB.prepare(
+      `SELECT 1 FROM sessions WHERE user_id = ? AND session_id = ? LIMIT 1`
+    )
+      .bind(userId, sessionId)
+      .first();
+    return session != null;
+  }
+
   async enqueueInstruction(
     userId: string,
     instructionId: string,

@@ -66,6 +66,25 @@ async function bootstrapUser(userId: string) {
     .run();
 }
 
+/// Seed a card so the user "owns" the given session_id. The
+/// /v1/sync/instructions ownership check (added with the security
+/// audit P0 fix) requires this — otherwise instructions are 403.
+async function bootstrapCardForSession(userId: string, sessionId: string) {
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO cards (
+       card_id, user_id, session_id, category, priority,
+       title, summary, payload_json, state,
+       created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      `card-for-${sessionId}`, userId, sessionId,
+      "question", "normal", "T", ".", "{}", "active", now, now
+    )
+    .run();
+}
+
 beforeEach(async () => {
   await runMigrations();
   await env.DB.prepare("DELETE FROM cards").run();
@@ -352,6 +371,7 @@ describe("devices", () => {
 describe("instructions", () => {
   it("queues an instruction and returns it from queued list", async () => {
     await bootstrapUser("user-inst");
+    await bootstrapCardForSession("user-inst", "session-1");
     const token = await freshSessionToken("user-inst");
     const post = await worker.request(
       "/v1/sync/instructions",
@@ -380,6 +400,7 @@ describe("instructions", () => {
 
   it("marks an instruction injected and removes it from queued", async () => {
     await bootstrapUser("user-mark");
+    await bootstrapCardForSession("user-mark", "session-1");
     const token = await freshSessionToken("user-mark");
     await worker.request(
       "/v1/sync/instructions",
