@@ -2,13 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Keep direct-distribution entitlements minimal. Restricted
+         capabilities such as com.apple.developer.applesignin require a
+         valid provisioning profile; without one, macOS 26 rejects the app
+         before the SwiftUI entry point runs. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
-    <key>com.apple.developer.applesignin</key>
-    <array>
-        <string>Default</string>
-    </array>
 </dict>
 </plist>

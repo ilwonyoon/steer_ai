@@ -9,6 +9,7 @@
 #   APP_BUILD       CFBundleVersion (default: commit count `git rev-list --count HEAD`)
 #   SIGN_IDENTITY   codesign identity (default: "-", i.e. ad-hoc)
 #   ENTITLEMENTS    path to entitlements plist (default: apps/mac/Steer.entitlements)
+#   PROVISIONING_PROFILE optional provisioning profile copied to Contents/embedded.provisionprofile
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,6 +22,13 @@ MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 ENTITLEMENTS="${ENTITLEMENTS:-$MAC_DIR/Steer.entitlements}"
+PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
+
+has_entitlement() {
+  local plist="$1"
+  local key="$2"
+  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" >/dev/null 2>&1
+}
 
 if [ -z "${APP_VERSION:-}" ]; then
   if APP_VERSION="$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null)"; then
@@ -37,12 +45,36 @@ if [ -z "${APP_BUILD:-}" ]; then
   fi
 fi
 
+if [ -n "$ENTITLEMENTS" ] && [ -f "$ENTITLEMENTS" ] \
+  && has_entitlement "$ENTITLEMENTS" "com.apple.developer.applesignin" \
+  && [ -z "$PROVISIONING_PROFILE" ]; then
+  cat >&2 <<'EOF'
+error: com.apple.developer.applesignin requires a provisioning profile.
+
+macOS 26 rejects SwiftPM-built ad-hoc/Developer ID app bundles that carry
+this restricted entitlement without Contents/embedded.provisionprofile,
+surfacing as RBSRequestErrorDomain Code=5 / errno=163 at open time.
+
+Remove the entitlement for local dogfood builds, or pass:
+  PROVISIONING_PROFILE=/path/to/profile.provisionprofile
+EOF
+  exit 1
+fi
+
 swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION"
 BINARY_PATH="$(swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BINARY_PATH" "$MACOS_DIR/$APP_NAME"
+
+if [ -n "$PROVISIONING_PROFILE" ]; then
+  if [ ! -f "$PROVISIONING_PROFILE" ]; then
+    echo "error: provisioning profile not found: $PROVISIONING_PROFILE" >&2
+    exit 1
+  fi
+  cp "$PROVISIONING_PROFILE" "$CONTENTS_DIR/embedded.provisionprofile"
+fi
 
 if [ -f "$MAC_DIR/Resources/AppIcon.icns" ]; then
   cp "$MAC_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"

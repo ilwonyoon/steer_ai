@@ -100,6 +100,8 @@ Live config at `apps/mac/Steer.entitlements`. Start minimal; only add an entitle
 - `com.apple.security.cs.allow-jit` — for any node-pty / Python pty fallback that JITs.
 - `com.apple.security.cs.allow-unsigned-executable-memory` — same reason.
 
+Do not add `com.apple.developer.applesignin` to the direct-distribution entitlements unless the build also embeds a valid provisioning profile via `PROVISIONING_PROFILE=/path/to/profile.provisionprofile`. On macOS 26, a SwiftPM-built bundle with that restricted entitlement and no profile is rejected before launchd spawns the app, reported by `open` as `RBSRequestErrorDomain Code=5` with POSIX `errno=163`.
+
 If the wrapper ever needs to load a non-Apple-signed dylib, add:
 
 - `com.apple.security.cs.disable-library-validation`

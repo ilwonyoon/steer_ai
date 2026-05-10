@@ -10,6 +10,7 @@
 #   APP_VERSION            CFBundleShortVersionString. Defaults to the current git tag.
 #   APP_BUILD              CFBundleVersion. Defaults to git rev-list --count HEAD.
 #   ENTITLEMENTS           defaults to apps/mac/Steer.entitlements
+#   PROVISIONING_PROFILE   copied to Contents/embedded.provisionprofile for restricted capabilities.
 #   DMG_VOLNAME            DMG volume name. Defaults to "Steer".
 #
 # Output:
@@ -69,6 +70,7 @@ APP_DIR="$(
   APP_BUILD="${APP_BUILD:-}" \
   SIGN_IDENTITY="$STEER_SIGN_IDENTITY" \
   ENTITLEMENTS="${ENTITLEMENTS:-$ROOT_DIR/apps/mac/Steer.entitlements}" \
+  PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}" \
   bash "$ROOT_DIR/scripts/build-mac-app.sh" | tail -1
 )"
 
