@@ -186,7 +186,8 @@ public final class SyncClient: ObservableObject {
         let body = AuthAppleRequest(
             identityToken: identityToken,
             displayName: displayName,
-            authorizationCode: authCode
+            authorizationCode: authCode,
+            deviceId: Self.deviceId
         )
         do {
             SignInDebugLog.write("[apple-signin] POST \(baseURL.absoluteString)/v1/auth/apple")
@@ -361,6 +362,7 @@ public final class SyncClient: ObservableObject {
         let wsURL = baseURL.appendingPathComponent("/v1/stream")
         var req = URLRequest(url: wsURL)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(Self.deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
         webSocketTask?.cancel()
         let task = urlSession.webSocketTask(with: req)
         webSocketTask = task
@@ -469,7 +471,24 @@ public final class SyncClient: ObservableObject {
         if let token = tokenStore.read() {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        req.setValue(Self.deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
     }
+
+    /// Stable per-install device id. We persist a UUID in UserDefaults
+    /// so the same Mac install presents the same id forever (until
+    /// the user reinstalls the app). The relay binds this into the
+    /// JWT's `did` claim when the user signs in, then verifies it on
+    /// every request to reject a stolen token replayed from another
+    /// Mac.
+    static let deviceId: String = {
+        let key = "ai.steer.relay.deviceId"
+        if let existing = UserDefaults.standard.string(forKey: key) {
+            return existing
+        }
+        let fresh = UUID().uuidString
+        UserDefaults.standard.set(fresh, forKey: key)
+        return fresh
+    }()
 
     private func sendDecoding<T: Decodable>(_ req: URLRequest) async throws -> T {
         let (data, _) = try await sendRaw(req)

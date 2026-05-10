@@ -44,6 +44,7 @@ app.post("/v1/auth/apple", async (c) => {
     identityToken?: string;
     displayName?: string;
     authorizationCode?: string;
+    deviceId?: string;
   }>();
   if (!body.identityToken) {
     return c.json({ error: "missing identityToken" }, 400);
@@ -66,7 +67,11 @@ app.post("/v1/auth/apple", async (c) => {
     appleEmail: identity.email,
     displayName: body.displayName,
   };
-  const sessionToken = await mintSessionJWT(user, c.env);
+  // Bind the JWT to the caller's device id when supplied. Older
+  // clients (pre-device-binding rollout) omit it and get an
+  // unbound token, which the auth middleware still accepts until
+  // it expires.
+  const sessionToken = await mintSessionJWT(user, c.env, body.deviceId);
   return c.json({ sessionToken, user });
 });
 
@@ -75,7 +80,8 @@ app.post("/v1/auth/apple", async (c) => {
  */
 async function authMiddleware(c: any, next: any) {
   const auth = c.req.header("Authorization");
-  const user = await extractAuthorizedUser(auth ?? null, c.env);
+  const deviceId = c.req.header("X-Steer-Device-Id");
+  const user = await extractAuthorizedUser(auth ?? null, deviceId ?? null, c.env);
   if (!user) return c.json({ error: "unauthorized" }, 401);
   c.set("user", user);
   await next();

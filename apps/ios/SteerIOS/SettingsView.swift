@@ -206,7 +206,7 @@ struct AccountDetailView: View {
                 }
                 .disabled(isDeleting)
             } footer: {
-                Text("Removes your relay account, synced cards, queued replies, and session metadata from Steer's server. Local Mac files are not touched.")
+                Text("Removes your relay account, synced cards, queued replies, and session metadata from Steer's server, revokes your Sign in with Apple grant, and clears the session token stored in this device's Keychain. Your Mac's local SQLite store is not touched.")
             }
         }
         .navigationTitle("Account")

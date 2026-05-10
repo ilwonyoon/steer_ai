@@ -141,15 +141,22 @@ public struct AuthAppleRequest: Codable, Sendable {
     /// during account deletion. Optional for backwards compatibility
     /// with older clients.
     public let authorizationCode: String?
+    /// Per-install device id. Sent so the relay can bind this value
+    /// into the JWT's `did` claim — every subsequent request must
+    /// carry the matching `X-Steer-Device-Id` header. Lets us reject
+    /// a stolen token being replayed from another device.
+    public let deviceId: String?
 
     public init(
         identityToken: String,
         displayName: String?,
-        authorizationCode: String? = nil
+        authorizationCode: String? = nil,
+        deviceId: String? = nil
     ) {
         self.identityToken = identityToken
         self.displayName = displayName
         self.authorizationCode = authorizationCode
+        self.deviceId = deviceId
     }
 }
 

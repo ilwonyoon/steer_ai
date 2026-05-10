@@ -57,16 +57,26 @@ export async function verifyAppleIdentityToken(
  * clients drop it in the Authorization header for every subsequent
  * REST/WebSocket request. We hand-roll claims so we're not bound to
  * Apple's token TTL (which is 10 minutes — too short for our flow).
+ *
+ * deviceId is bound into the `did` claim so a stolen token cannot
+ * be replayed from a different device — the request handler also
+ * checks the `X-Steer-Device-Id` header for equality.
  */
-export async function mintSessionJWT(user: SessionUser, env: Env): Promise<string> {
+export async function mintSessionJWT(
+  user: SessionUser,
+  env: Env,
+  deviceId?: string
+): Promise<string> {
   const secret = new TextEncoder().encode(env.SESSION_JWT_SECRET);
   const now = Math.floor(Date.now() / 1000);
   const exp = now + 60 * 60 * 24 * 30; // 30 days
-  return await new SignJWT({
+  const claims: Record<string, unknown> = {
     sub: user.userId,
     email: user.appleEmail,
     name: user.displayName,
-  })
+  };
+  if (deviceId) claims.did = deviceId;
+  return await new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt(now)
     .setExpirationTime(exp)
@@ -74,7 +84,7 @@ export async function mintSessionJWT(user: SessionUser, env: Env): Promise<strin
     .sign(secret);
 }
 
-export async function verifySessionJWT(token: string, env: Env): Promise<SessionUser> {
+export async function verifySessionJWT(token: string, env: Env): Promise<SessionUser & { deviceId?: string }> {
   const secret = new TextEncoder().encode(env.SESSION_JWT_SECRET);
   const { payload } = await jwtVerify(token, secret, {
     issuer: "ai.steer.relay",
@@ -84,6 +94,7 @@ export async function verifySessionJWT(token: string, env: Env): Promise<Session
     userId: payload.sub,
     appleEmail: typeof payload.email === "string" ? payload.email : undefined,
     displayName: typeof payload.name === "string" ? payload.name : undefined,
+    deviceId: typeof payload.did === "string" ? payload.did : undefined,
   };
 }
 
@@ -160,16 +171,31 @@ export async function revokeAppleAuthGrant(
 /**
  * Hono middleware: pull Authorization: Bearer <jwt>, verify, attach
  * the user to context.
+ *
+ * If the JWT carries a `did` (device id) claim, the request must
+ * also include the matching `X-Steer-Device-Id` header. Old tokens
+ * without a `did` claim continue to work for the 30-day rollout
+ * window — once those expire, every minted token carries `did` and
+ * the header check is hard.
  */
 export async function extractAuthorizedUser(
   authHeader: string | null,
+  deviceIdHeader: string | null,
   env: Env
 ): Promise<SessionUser | null> {
   if (!authHeader) return null;
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return null;
   try {
-    return await verifySessionJWT(match[1], env);
+    const user = await verifySessionJWT(match[1], env);
+    if (user.deviceId && user.deviceId !== deviceIdHeader) {
+      return null;
+    }
+    return {
+      userId: user.userId,
+      appleEmail: user.appleEmail,
+      displayName: user.displayName,
+    };
   } catch {
     return null;
   }

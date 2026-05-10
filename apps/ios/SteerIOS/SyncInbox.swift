@@ -196,7 +196,8 @@ public final class SyncInbox: ObservableObject {
         let body = AuthAppleRequest(
             identityToken: identityToken,
             displayName: displayName,
-            authorizationCode: authCode
+            authorizationCode: authCode,
+            deviceId: Self.deviceId
         )
         do {
             let response: AuthAppleResponse = try await postJSON(
@@ -225,13 +226,20 @@ public final class SyncInbox: ObservableObject {
 
     public func deleteAccount() async {
         guard isSignedIn else { return }
+        // App Store guideline 5.1.1(v) requires the deletion to be
+        // effective from the user's perspective even if the server
+        // call fails. We always clear the local Keychain token + UI
+        // state; surface the server error so the user can retry from
+        // a signed-out state instead of being stuck with a token that
+        // no longer matches anything on the backend.
+        var serverError: String? = nil
         do {
             try await deleteRequest("/v1/me")
-            signOut()
-            lastError = nil
         } catch {
-            lastError = "Account deletion failed: \(error.localizedDescription)"
+            serverError = "Server-side deletion failed (\(error.localizedDescription)). Local data has still been cleared; please contact support if your account persists on the server."
         }
+        signOut()  // clears Keychain token + cards + WS
+        lastError = serverError
     }
 
     public func refreshMe() async {
@@ -376,6 +384,7 @@ public final class SyncInbox: ObservableObject {
         let wsURL = baseURL.appendingPathComponent("/v1/stream")
         var req = URLRequest(url: wsURL)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(Self.deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
         webSocketTask?.cancel()
         let task = urlSession.webSocketTask(with: req)
         webSocketTask = task
@@ -475,7 +484,31 @@ public final class SyncInbox: ObservableObject {
         if let token = tokenStore.read() {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        // Always include the device id so a device-bound JWT can be
+        // verified. Tokens minted before device binding rolled out
+        // ignore this header server-side, so it's safe to send
+        // unconditionally.
+        req.setValue(Self.deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
     }
+
+    /// Stable per-install device id. We prefer identifierForVendor
+    /// since it survives iCloud restore (per Apple) and stays the
+    /// same for our app's installs. If the system hasn't issued one
+    /// yet (rare race during first launch), fall back to a random
+    /// UUID persisted in UserDefaults so the value stays stable for
+    /// this install.
+    static let deviceId: String = {
+        if let idfv = UIDevice.current.identifierForVendor?.uuidString {
+            return idfv
+        }
+        let key = "ai.steer.relay.deviceId"
+        if let existing = UserDefaults.standard.string(forKey: key) {
+            return existing
+        }
+        let fresh = UUID().uuidString
+        UserDefaults.standard.set(fresh, forKey: key)
+        return fresh
+    }()
 
     private func sendDecoding<T: Decodable>(_ req: URLRequest) async throws -> T {
         let (data, _) = try await sendRaw(req)
