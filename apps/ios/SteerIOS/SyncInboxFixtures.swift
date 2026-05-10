@@ -99,6 +99,36 @@ enum SyncInboxFixtures {
                 state: "active",
                 createdAt: now - 5_000,
                 updatedAt: now - 2_000
+            ),
+            // Failed-delivery sample card. Demo Mode flips this card's
+            // simulated reply status to "Failed — sample Mac went
+            // offline" so reviewers can see all three reply states.
+            CardPayload(
+                cardId: "fixture-failed",
+                sessionId: "claude-fixture-failed",
+                category: "completion",
+                priority: "normal",
+                title: "Claude Code · sample Mac disconnected",
+                summary: "Draft launch notes ready. Reply will queue until your Mac comes back online.",
+                actionPrompt: "Polish the draft or add a risk section before publishing.",
+                payload: [
+                    "provider": AnyCodable(("claude")),
+                    "project": AnyCodable(("demo/docs")),
+                    "branchLabel": AnyCodable(("launch-notes")),
+                    "options": AnyCodable(([
+                        "Polish the summary",
+                        "Add risk section"
+                    ])),
+                    "terminalLines": AnyCodable(([
+                        "✓ Generated launch-notes.md draft",
+                        "✓ Linked to roadmap",
+                        "",
+                        "Awaiting your review before publish."
+                    ]))
+                ],
+                state: "active",
+                createdAt: now - 1_000,
+                updatedAt: now - 500
             )
         ]
     }

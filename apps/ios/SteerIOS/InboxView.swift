@@ -101,7 +101,10 @@ struct InboxView: View {
     @ViewBuilder
     private var cardArea: some View {
         VStack(spacing: 12) {
-            HeaderBar()
+            HeaderBar(
+                isDemo: inbox.isDemoMode,
+                onExitDemo: { inbox.exitDemoMode() }
+            )
 
             if !liveChips.isEmpty {
                 LiveSessionChipRow(
@@ -178,7 +181,11 @@ struct InboxView: View {
         guard !trimmed.isEmpty else { return }
         Task {
             if let payload = inbox.cards.first(where: { $0.sessionId == sessionId }) {
-                await inbox.sendReply(text: trimmed, for: payload)
+                if inbox.isDemoMode {
+                    await inbox.sendDemoReply(text: trimmed, for: payload)
+                } else {
+                    await inbox.sendReply(text: trimmed, for: payload)
+                }
             }
             replyDrafts[sessionId] = nil
         }
@@ -217,13 +224,24 @@ struct InboxView: View {
 }
 
 private struct HeaderBar: View {
+    var isDemo: Bool = false
+    var onExitDemo: (() -> Void)? = nil
+
     var body: some View {
-        HStack {
-            Spacer()
-            Text("Steer")
+        ZStack {
+            Text(isDemo ? "Sample workspace" : "Steer")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(SteerColors.secondaryInk)
-            Spacer()
+                .foregroundStyle(isDemo ? Color.accentColor : SteerColors.secondaryInk)
+
+            if isDemo, let onExitDemo {
+                HStack {
+                    Spacer()
+                    Button("Use Live Sync", action: onExitDemo)
+                        .font(.system(size: 13, weight: .medium))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
         }
         .frame(height: 28)
     }
@@ -277,9 +295,13 @@ private struct SignInPrompt: View {
             Image(systemName: "rectangle.stack.fill")
                 .font(.system(size: 56))
                 .foregroundStyle(SteerColors.tertiaryInk)
-            Text("Sign in to see Steer cards from your Mac")
-                .font(.headline)
+            Text("AI coding action inbox")
+                .font(.title3.weight(.semibold))
+            Text("Review waiting moments from your own Mac coding agents and queue replies from iPhone.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
             if let err = inbox.lastError {
                 Text(err)
                     .font(.caption)
@@ -287,24 +309,44 @@ private struct SignInPrompt: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
-            // Apple's native button is required for App Store guideline
-            // 4.8 (custom black capsules can be flagged). It also adapts
-            // to light/dark automatically.
-            SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                Task {
-                    isSigningIn = true
-                    await inbox.handleAppleSignInResult(result)
-                    isSigningIn = false
+            VStack(spacing: 12) {
+                Button {
+                    inbox.enterDemoMode()
+                } label: {
+                    Text("Try Demo")
+                        .font(.callout.weight(.semibold))
+                        .frame(width: 240, height: 44)
+                        .background(Color.accentColor.opacity(0.12))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                // Apple's native button is required by App Store
+                // guideline 4.8 (custom black capsules get flagged).
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    Task {
+                        isSigningIn = true
+                        await inbox.handleAppleSignInResult(result)
+                        isSigningIn = false
+                    }
+                }
+                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                .frame(width: 240, height: 44)
+                .disabled(isSigningIn)
+                if isSigningIn {
+                    ProgressView().controlSize(.small)
                 }
             }
-            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-            .frame(width: 240, height: 44)
-            .disabled(isSigningIn)
-            if isSigningIn {
-                ProgressView().controlSize(.small)
+            HStack(spacing: 14) {
+                Link("Privacy", destination: URL(string: "https://steer.ai/privacy")!)
+                Link("Terms", destination: URL(string: "https://steer.ai/terms")!)
+                Link("Support", destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
             }
+            .font(.footnote)
+            .padding(.top, 8)
             Spacer()
         }
         .padding()

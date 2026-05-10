@@ -69,6 +69,55 @@ public final class SyncInbox: ObservableObject {
         return UserDefaults.standard.bool(forKey: "steer.ios.fixtures")
     }
 
+    /// True while the user is browsing sample data via Try Demo. Used
+    /// by the UI to render a "Sample workspace" badge instead of the
+    /// real Mac connection chip and to fake reply state transitions.
+    @Published public private(set) var isDemoMode: Bool = false
+
+    /// Demo reply log. Each card cycles through queued -> delivered
+    /// (or failed for the dedicated "fixture-failed" sample) so a
+    /// reviewer can see the full reply state machine without a Mac.
+    public enum DemoReplyState: Equatable {
+        case queued
+        case delivered
+        case failed(reason: String)
+    }
+    @Published public private(set) var demoReplyStates: [String: DemoReplyState] = [:]
+
+    /// Enter Demo Mode from the signed-out screen. Loads sample cards
+    /// and sets isDemoMode true. Safe to call repeatedly.
+    public func enterDemoMode() {
+        cards = SyncInboxFixtures.cards()
+        isDemoMode = true
+        status = .signedIn(SyncUser(
+            userId: "demo-user",
+            appleEmail: nil,
+            displayName: "Sample workspace"
+        ))
+    }
+
+    public func exitDemoMode() {
+        cards = []
+        demoReplyStates = [:]
+        isDemoMode = false
+        status = .signedOut
+    }
+
+    /// Demo path for replies. Doesn't hit the relay; just records a
+    /// queued state, then flips to delivered after a short delay
+    /// (or failed for the disconnected-Mac sample card).
+    public func sendDemoReply(text: String, for card: CardPayload) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        demoReplyStates[card.cardId] = .queued
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        if card.cardId == "fixture-failed" {
+            demoReplyStates[card.cardId] = .failed(reason: "sample Mac went offline")
+        } else {
+            demoReplyStates[card.cardId] = .delivered
+        }
+    }
+
     public var isSignedIn: Bool {
         if case .signedIn = status { return true }
         return false
