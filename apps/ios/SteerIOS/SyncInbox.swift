@@ -124,6 +124,17 @@ public final class SyncInbox: ObservableObject {
         receiveTask = nil
     }
 
+    public func deleteAccount() async {
+        guard isSignedIn else { return }
+        do {
+            try await deleteRequest("/v1/me")
+            signOut()
+            lastError = nil
+        } catch {
+            lastError = "Account deletion failed: \(error.localizedDescription)"
+        }
+    }
+
     public func refreshMe() async {
         struct MeResponse: Decodable { let user: SyncUser }
         do {

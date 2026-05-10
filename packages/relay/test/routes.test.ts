@@ -90,6 +90,72 @@ describe("auth", () => {
     const body = await res.json();
     expect((body as any).user.userId).toBe("user-test-1");
   });
+
+  it("deletes the signed-in user's relay account data", async () => {
+    await bootstrapUser("user-delete");
+    await bootstrapUser("user-keep");
+    const token = await freshSessionToken("user-delete");
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO cards (
+        card_id, user_id, session_id, category, priority, title, summary,
+        payload_json, state, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind("card-delete", "user-delete", "session-delete", "question", "normal", "Q", "?", "{}", "active", now, now)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO instructions (
+        instruction_id, user_id, target_session_id, text, status, created_at
+      ) VALUES (?, ?, ?, ?, 'queued', ?)`
+    )
+      .bind("instruction-delete", "user-delete", "session-delete", "go", now)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO sessions (
+        session_id, user_id, provider, project_name, run_state, last_activity_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`
+    )
+      .bind("session-delete", "user-delete", "codex", "repo/app", "waiting", now)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO cards (
+        card_id, user_id, session_id, category, priority, title, summary,
+        payload_json, state, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind("card-keep", "user-keep", "session-keep", "question", "normal", "Q", "?", "{}", "active", now, now)
+      .run();
+
+    const res = await worker.request(
+      "/v1/me",
+      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+      env
+    );
+    expect(res.status).toBe(200);
+
+    const deletedUser = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE user_id = ?")
+      .bind("user-delete")
+      .first<{ n: number }>();
+    const deletedCards = await env.DB.prepare("SELECT COUNT(*) AS n FROM cards WHERE user_id = ?")
+      .bind("user-delete")
+      .first<{ n: number }>();
+    const deletedInstructions = await env.DB.prepare("SELECT COUNT(*) AS n FROM instructions WHERE user_id = ?")
+      .bind("user-delete")
+      .first<{ n: number }>();
+    const deletedSessions = await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?")
+      .bind("user-delete")
+      .first<{ n: number }>();
+    const keptCards = await env.DB.prepare("SELECT COUNT(*) AS n FROM cards WHERE user_id = ?")
+      .bind("user-keep")
+      .first<{ n: number }>();
+
+    expect(deletedUser?.n).toBe(0);
+    expect(deletedCards?.n).toBe(0);
+    expect(deletedInstructions?.n).toBe(0);
+    expect(deletedSessions?.n).toBe(0);
+    expect(keptCards?.n).toBe(1);
+  });
 });
 
 describe("cards", () => {

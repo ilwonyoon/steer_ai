@@ -148,13 +148,12 @@ struct InboxView: View {
         // the reserved space too. This keeps card height stable
         // throughout the dismiss animation: the only thing changing is
         // the keyboard frame, which the system handles smoothly.
-        // Reserve carousel footprint always — toggling it on focus
-        // change makes the card content (terminal text, reply dock)
-        // visibly flash because our `keyboard.isVisible` publish
-        // always lags the system's own keyboard avoidance by ~10ms.
-        // With static padding the card frame only changes when the
-        // keyboard frame changes, in one continuous motion.
-        .padding(.bottom, carouselFootprint)
+        // Padding shrinks as the keyboard rises by the same amount
+        // the carousel slides off-screen. KeyboardObserver wraps the
+        // height update in UIKit's exact keyboard animation curve,
+        // so this padding follows the keyboard in lockstep — no flash,
+        // no empty band above the keyboard.
+        .padding(.bottom, max(12, carouselFootprint - keyboard.height))
         .animation(.easeOut(duration: 0.22), value: currentIndex)
     }
 

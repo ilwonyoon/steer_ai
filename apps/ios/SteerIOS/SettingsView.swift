@@ -1,64 +1,31 @@
 import SwiftUI
 import SteerCore
 
-/// Root of the Settings tab. Holds account, privacy, and (later) any
-/// runtime toggles. Mirrors what the Mac Settings… window exposes.
+/// iOS-conventional two-level Settings:
+///   Top level shows only what the user actually scans for —
+///     • who they're signed in as (a tappable identity card)
+///     • support links (Privacy / Terms)
+///     • destructive: Sign Out
+///   Identity details (Apple relay email, internal user id) and the
+///   Delete Account action move one tap deeper into the Account
+///   detail screen.  Mirrors how the system Settings app surfaces
+///   Apple ID: name + photo on top, the long technical fields are
+///   inside.
 struct SettingsView: View {
     @ObservedObject var inbox: SyncInbox
-    @State private var confirmsDeletion = false
-    @State private var isDeleting = false
-
-    private let privacyURL = URL(string: "https://steer.ai/privacy")!
-    private let termsURL = URL(string: "https://steer.ai/terms")!
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    if case .signedIn(let user) = inbox.status {
-                        if let name = user.displayName, !name.isEmpty {
-                            LabeledRow(label: "Name", value: name)
-                        }
-                        if let email = user.appleEmail, !email.isEmpty {
-                            LabeledRow(label: "Apple Relay", value: email)
-                        }
-                        LabeledRow(label: "User ID", value: shortId(user.userId), monospaced: true)
-                    } else {
-                        Text("Not signed in")
-                            .foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("Account")
-                }
-
-                Section {
-                    Link("Privacy Policy", destination: privacyURL)
-                    Link("Terms of Service", destination: termsURL)
-                }
-
+                identitySection
+                supportSection
                 if inbox.isSignedIn {
                     Section {
-                        Button("Sign Out") {
+                        Button("Sign Out", role: .destructive) {
                             inbox.signOut()
                         }
-
-                        Button(role: .destructive) {
-                            confirmsDeletion = true
-                        } label: {
-                            HStack {
-                                Text(isDeleting ? "Deleting Account..." : "Delete Account")
-                                if isDeleting {
-                                    Spacer()
-                                    ProgressView()
-                                }
-                            }
-                        }
-                        .disabled(isDeleting)
-                    } footer: {
-                        Text("Deleting your account removes relay sync data. Local Mac files are not deleted.")
                     }
                 }
-
                 if let error = inbox.lastError {
                     Section {
                         Text(error)
@@ -66,32 +33,51 @@ struct SettingsView: View {
                             .foregroundStyle(.red)
                     }
                 }
-
-                Section {
-                    LabeledRow(label: "App", value: "Steer iOS")
-                    LabeledRow(label: "Version", value: appVersion, monospaced: true)
-                } header: {
-                    Text("About")
-                }
+                aboutSection
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .confirmationDialog(
-                "Delete your Steer relay account?",
-                isPresented: $confirmsDeletion,
-                titleVisibility: .visible
-            ) {
-                Button("Delete Account", role: .destructive) {
-                    Task {
-                        isDeleting = true
-                        await inbox.deleteAccount()
-                        isDeleting = false
-                    }
+        }
+    }
+
+    @ViewBuilder
+    private var identitySection: some View {
+        Section {
+            if case .signedIn(let user) = inbox.status {
+                NavigationLink {
+                    AccountDetailView(inbox: inbox, user: user)
+                } label: {
+                    IdentityRow(user: user)
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes your relay account, synced cards, queued replies, and session metadata from Steer's server.")
+            } else {
+                Text("Not signed in")
+                    .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var supportSection: some View {
+        Section {
+            Link(destination: URL(string: "https://steer.ai/privacy")!) {
+                LinkLabel(title: "Privacy Policy", icon: "hand.raised")
+            }
+            Link(destination: URL(string: "https://steer.ai/terms")!) {
+                LinkLabel(title: "Terms of Service", icon: "doc.text")
+            }
+        }
+    }
+
+    private var aboutSection: some View {
+        Section {
+            HStack {
+                Text("Version")
+                Spacer()
+                Text(appVersion)
+                    .font(.system(size: 14, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("About")
         }
     }
 
@@ -100,12 +86,128 @@ struct SettingsView: View {
         let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
         return "\(v) (\(b))"
     }
+}
 
-    private func shortId(_ id: String) -> String {
-        guard id.count > 16 else { return id }
-        let head = id.prefix(8)
-        let tail = id.suffix(6)
-        return "\(head)…\(tail)"
+private struct IdentityRow: View {
+    let user: SyncUser
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.accentColor.opacity(0.15))
+                    .frame(width: 44, height: 44)
+                Text(initials)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("Apple ID · iPhone Sync")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var displayName: String {
+        if let n = user.displayName, !n.isEmpty { return n }
+        return "Signed in"
+    }
+
+    private var initials: String {
+        guard let n = user.displayName, let first = n.first else { return "—" }
+        return String(first).uppercased()
+    }
+}
+
+private struct LinkLabel: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        Label {
+            Text(title)
+                .foregroundStyle(.primary)
+        } icon: {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Account detail — second tier. The technical / sensitive bits
+/// (Apple relay address, server-assigned user id, account deletion)
+/// live here so the top-level Settings stays scannable.
+struct AccountDetailView: View {
+    @ObservedObject var inbox: SyncInbox
+    let user: SyncUser
+
+    @State private var confirmsDeletion = false
+    @State private var isDeleting = false
+
+    var body: some View {
+        List {
+            Section {
+                if let name = user.displayName, !name.isEmpty {
+                    LabeledRow(label: "Name", value: name)
+                }
+                if let email = user.appleEmail, !email.isEmpty {
+                    LabeledRow(label: "Apple Relay", value: email, monospaced: true)
+                }
+            } header: {
+                Text("Identity")
+            } footer: {
+                Text("Apple gives apps a per-app relay address by default. Replies to that address forward to your real email until you turn the relay off.")
+            }
+
+            Section {
+                LabeledRow(label: "User ID", value: user.userId, monospaced: true)
+            } header: {
+                Text("Server")
+            } footer: {
+                Text("Your relay user id. Cards and replies are scoped to this id.")
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    confirmsDeletion = true
+                } label: {
+                    HStack {
+                        Text(isDeleting ? "Deleting Account…" : "Delete Account")
+                        if isDeleting {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isDeleting)
+            } footer: {
+                Text("Removes your relay account, synced cards, queued replies, and session metadata from Steer's server. Local Mac files are not touched.")
+            }
+        }
+        .navigationTitle("Account")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Delete your Steer relay account?",
+            isPresented: $confirmsDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                Task {
+                    isDeleting = true
+                    await inbox.deleteAccount()
+                    isDeleting = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the relay-side data only. Your Mac sessions and local SQLite store are untouched.")
+        }
     }
 }
 

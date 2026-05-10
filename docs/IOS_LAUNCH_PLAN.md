@@ -1,6 +1,20 @@
 # iPhone Launch Design And Plan
 
-Last updated: 2026-05-09
+Last updated: 2026-05-10
+
+## Current Implementation Note
+
+This document still contains the original CloudKit launch plan for historical context. The current checked-in iOS/Mac sync implementation has pivoted to:
+
+```text
+Steer for Mac / Steer for iOS
+  -> Sign in with Apple
+  -> Cloudflare Workers relay
+  -> D1 users/cards/instructions/sessions
+  -> Durable Objects WebSocket fanout
+```
+
+For App Store privacy, Terms, account deletion, and review-submission work, use `docs/legal/` as the current source of truth. For the signed-out, demo, empty, offline, and pre-Mac-connection product experience, use `docs/IOS_PRE_CONNECTION_ONBOARDING.md`.
 
 ## Purpose
 

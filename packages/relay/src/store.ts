@@ -20,6 +20,13 @@ export class Store {
       .run();
   }
 
+  async deleteUserData(userId: string): Promise<void> {
+    await this.env.DB.prepare(`DELETE FROM cards WHERE user_id = ?`).bind(userId).run();
+    await this.env.DB.prepare(`DELETE FROM instructions WHERE user_id = ?`).bind(userId).run();
+    await this.env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId).run();
+    await this.env.DB.prepare(`DELETE FROM users WHERE user_id = ?`).bind(userId).run();
+  }
+
   async upsertCard(userId: string, card: CardPayload): Promise<void> {
     await this.env.DB.prepare(
       `INSERT INTO cards (

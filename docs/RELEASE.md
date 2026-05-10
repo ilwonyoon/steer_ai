@@ -2,6 +2,8 @@
 
 Direct-distribution release pipeline for the macOS app: signed with a Developer ID Application certificate, notarized through Apple's notary service, packaged into a `.dmg`. The Mac App Store path is intentionally out of scope; see the "MAS Out Of Scope" entry in `EXECUTION_PLAN.md` for the rationale.
 
+For the user-facing Mac-first setup order that should appear on GitHub Releases and the website, see `docs/CROSS_DEVICE_ONBOARDING_PLAN.md`.
+
 ## One-time setup on the release machine
 
 The release machine is whichever Mac actually runs `scripts/release-mac.sh`. Today that is a personal workstation; a CI runner is fine later.
@@ -107,6 +109,19 @@ If the agent process needs to attach to other PTYs in a way Apple's runtime rest
 ## Updating an existing release
 
 The Sparkle integration (Phase 6 P1, not yet wired up) will consume an `appcast.xml` hosted on GitHub Releases. Until that lands, an "update" is just: cut a new tag, run the script, attach the new `.dmg` to a GitHub release manually, and announce it.
+
+## GitHub Release Notes Checklist
+
+Each public release should include:
+
+- What Steer does: AI coding action inbox for local Mac coding agents.
+- Mac install steps: download DMG, drag to Applications, open Steer.
+- First-run setup: install `steer`, verify Codex/Claude, enable notifications.
+- iPhone Sync setup: sign in with Apple on Mac, review What Syncs, enable iPhone Sync.
+- First session commands: `steer codex` and `steer claude`.
+- iPhone setup: install the iPhone app, sign in with the same Apple account, confirm the top-right Mac chip shows the expected Mac.
+- Runtime requirement: keep Steer for Mac running for live delivery; iPhone replies queue while Mac is offline.
+- Privacy links: Privacy Policy, Terms, Support.
 
 ## Troubleshooting
 

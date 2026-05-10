@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-09 (relay backend Mac → backend E2E verified)
+Last updated: 2026-05-10 (iPhone App Store review gate added)
 
 ## Purpose
 
@@ -16,7 +16,10 @@ Steer is a macOS-first AI action queue for CLI coding agents. The core loop is s
 - `docs/MAC_UI_E2E.md`: current Mac UI end-to-end validation notes.
 - `docs/DOGFOOD_NOTES.md`: living log of observations during the dogfood week.
 - `docs/SETTINGS_PLAN.md`: phased settings/UX backlog and iOS sync prerequisites.
+- `docs/CROSS_DEVICE_ONBOARDING_PLAN.md`: Mac-first setup, iPhone sync onboarding, and GitHub Release instructions.
 - `docs/IOS_LAUNCH_PLAN.md`: iPhone launch architecture, CloudKit sync plan, and App Store review strategy.
+- `docs/IOS_PRE_CONNECTION_ONBOARDING.md`: iOS signed-out, demo, empty, offline, and pre-Mac connection UX spec.
+- `docs/legal/`: Privacy Policy, Terms, App Store privacy labels, App Review notes, and launch legal checklist.
 - Backtick Memory `Steer / prd`: product requirements and positioning.
 - Backtick Memory `Steer / tech-spec`: technical architecture and implementation notes.
 
@@ -35,6 +38,9 @@ Keep this document focused on execution. Durable product or architecture changes
 - Rooms are grouping/filtering constructs, and users may later create multiple rooms.
 - Room membership and session invitation/routing are follow-up specs.
 - v1 is Mac-first and local-first.
+- Real iPhone live use is Mac-first: users should install and configure Steer for Mac, start `steer codex` or `steer claude`, enable iPhone Sync on Mac, then sign in on iPhone with the same Apple account.
+- iPhone App Store release must be reviewable without a live Mac: the iOS app needs a full demo/offline action inbox path, not only a "connect your Mac" empty state.
+- App Store positioning must avoid remote-terminal language. Use "AI coding action inbox"; do not market it as remote shell, terminal control, command runner, or remote desktop.
 - The core loop requires bidirectional control: report capture plus instruction injection.
 - Hook-only mode is not sufficient for the product. It can only be a read-only fallback.
 - Happy is a reference implementation and possible source for wrapper/pty learnings, not the product architecture to fork wholesale.
@@ -217,6 +223,9 @@ Goal: ship Steer to non-developer Mac users without joining the Mac App Store. T
 - [x] First-run check: detect whether the Claude Stop/Notification hooks are installed; if not, offer to run `steer install-claude-hooks`. Implemented as a status check (parses `~/.claude/settings.local.json` for a steer hook command) plus a button that runs `steer install-claude-hooks` directly.
 - [x] First-run check: prompt the macOS Notification authorization (`UNUserNotificationCenter.requestAuthorization`).
 - [ ] First-run check: if the bundled launch path needs Documents folder access, trigger the TCC dialog explicitly (already partially done — verify it survives notarization).
+- [ ] Implement `docs/CROSS_DEVICE_ONBOARDING_PLAN.md` Mac-first checklist: CLI install, provider verification, notifications, Apple sign-in, iPhone Sync opt-in, first `steer codex` / `steer claude` session, and iPhone install handoff.
+- [ ] Mac Settings exposes signed-in Apple state, iPhone Sync toggle, What Syncs review, editable Mac device label, and "keep Steer for Mac running" guidance.
+- [ ] GitHub Release notes explain the Mac-first setup order and include iPhone setup once App Store/TestFlight URL exists.
 
 #### P1 — needed for sustainable distribution
 
@@ -225,7 +234,10 @@ Goal: ship Steer to non-developer Mac users without joining the Mac App Store. T
 - [ ] Wire a "Check for Updates…" menu item into the existing status menu and trigger Sparkle's update check on launch (silent if no update).
 - [ ] Crash + telemetry: opt-in MetricKit collector that writes to `~/.steer/diagnostics/`. Defer Sentry until we have a real install base.
 - [ ] About window: surface app version, agent version, link to `~/.steer/` log folder ("Reveal in Finder"), and a "Copy diagnostics" button that bundles the last N session logs.
+- [x] Draft Privacy Policy, Terms, App Store privacy labels, App Review notes, and legal launch checklist in `docs/legal/`.
 - [ ] Privacy + Terms static pages hosted at a stable URL (steer.ai or a GitHub Pages fallback). Sparkle's network call alone is enough that we should publish a one-page privacy statement.
+- [x] Relay account deletion API for App Store account-deletion requirements (`DELETE /v1/me`) with route coverage.
+- [x] iOS account/settings UI exposes Delete Account, Sign Out, Privacy Policy, and Terms.
 
 #### P1 — code health for shipping
 
@@ -243,6 +255,57 @@ Exit criteria:
 
 - A non-developer Mac user can download a notarized `.dmg`, drag-install, run through first-run, and receive their first card from a `steer codex` session — all without the terminal or developer tooling being involved beyond installing the CLI symlink.
 - An update can be shipped end-to-end (bump → sign → notarize → appcast → user receives prompt → user installs) on the release machine in under 30 minutes of human time.
+
+### Phase 7: iPhone App Store Review Gate
+
+Goal: make the iPhone app approvable as a real native App Store app, not a thin companion shell that fails review when the reviewer has no Mac setup. This phase is a release gate for TestFlight-to-App-Store submission and should be completed before uploading a public App Store candidate.
+
+#### Review Rejection Model
+
+The likely App Review objections are:
+
+- **4.2.3 Minimum Functionality**: if signed-out or no-card states only say "install/open Steer for Mac", the app appears useless without another app.
+- **2.1 App Completeness**: reviewers need a complete flow through cards, detail, reply, queued/delivered/failed status, account settings, and policy links without setting up a local Mac agent.
+- **4.2.7 Remote Desktop / remote terminal confusion**: wording such as "control terminal", "run commands", "remote shell", or screenshots that look like terminal mirroring can route the app into the wrong policy bucket.
+- **5.1.1 Privacy and account deletion**: Sign in with Apple, relay storage, user content sync, Privacy Policy links, and Delete Account must all be complete and consistent.
+- **Privacy Nutrition Labels**: App Store Connect must disclose linked Contact Info, Identifiers, and User Content because relay data is stored beyond real-time request handling.
+
+#### P0 — must finish before App Store submission
+
+- [ ] Implement `docs/IOS_PRE_CONNECTION_ONBOARDING.md` as the source of truth for signed-out, demo, signed-in-empty, and Mac-offline states.
+- [ ] Treat the `App Review Pass Strategy` section in `docs/IOS_PRE_CONNECTION_ONBOARDING.md` as a submission gate: reviewer can complete the demo flow without Mac, privacy/legal links are reachable before sign-in, account deletion is reachable after sign-in, and Mac-first setup is explained without blocking review.
+- [ ] Build **Demo Mode** available from the signed-out screen and from the empty signed-in state. It must show the full native flow: action card stack, detail, terminal excerpt, suggested replies, reply composer, and simulated queued / delivered / failed status.
+- [ ] Replace any signed-out dead end with a useful first-run surface: Sign in with Apple, Try Demo, Privacy Policy, Terms, Support, and a short explanation that live delivery requires the user's own Mac.
+- [ ] Use Apple's native `SignInWithAppleButton` styling instead of a custom black capsule button.
+- [ ] Publish live public URLs for `https://steer.ai/privacy`, `https://steer.ai/terms`, and `https://steer.ai/support`; remove all `TODO` placeholders from legal docs before publishing.
+- [ ] Ensure Privacy Policy and Terms are reachable without signing in and from Account/Settings after signing in.
+- [ ] Complete Delete Account for Sign in with Apple: reauthenticate as needed, revoke Apple tokens using Apple's revocation flow, call relay `DELETE /v1/me`, clear Keychain token, and return to signed-out state.
+- [ ] Add Mac-side **Enable iPhone Sync** consent screen listing exactly what leaves the Mac: card title, summary, short terminal excerpt, suggested replies, project/provider/branch labels, iPhone reply text, and delivery status.
+- [ ] Add a setting or launch-time choice for terminal excerpt sync. Default should be conservative: either off until explicitly enabled, or on only after the sync consent screen clearly explains the risk.
+- [ ] Align iPhone setup and recovery copy with the Mac-first flow in `docs/CROSS_DEVICE_ONBOARDING_PLAN.md`: install/open Mac app, sign in on Mac, enable iPhone Sync, start `steer codex` or `steer claude`, keep Mac running.
+- [ ] Add iOS **What Syncs?** screen reachable before and after sign-in, matching the field list in `docs/IOS_PRE_CONNECTION_ONBOARDING.md`.
+- [ ] Add relay-backed Mac device presence/heartbeat (`deviceId`, `platform`, `displayName`, `deviceClass`, `appVersion`, `lastSeenAt`, `syncEnabled`) and an authenticated iPhone status endpoint.
+- [ ] Add persistent top-right iOS Mac connection chip using the Mac's recognizable label (`MacBook Air`, `Mac mini`, user display name, or fallback `Mac`) with `Sample`, `No Mac`, `online`, `idle`, `offline`, and `sync issue` states; tapping opens a `Mac Sync Status` sheet with setup/recovery instructions.
+- [ ] Update App Store Connect privacy answers from `docs/legal/APP_STORE_PRIVACY_LABELS.md`: Tracking = No; data linked to user includes Contact Info, Identifiers, and Other User Content for app functionality.
+- [ ] Finalize App Review notes from `docs/legal/APP_REVIEW_NOTES.md`, including reviewer demo instructions and explicit "not remote terminal / not remote desktop / not arbitrary command launcher" language.
+- [ ] Audit App Store metadata, screenshots, onboarding, and in-app copy for banned framing. Avoid: "remote terminal", "remote shell", "control your Mac terminal", "run commands from iPhone", "terminal mirror". Prefer: "AI coding action inbox", "review waiting agent cards", "queue replies to your own Mac sessions".
+
+#### P1 — strong risk reduction before first public release
+
+- [ ] Add secret redaction before card payload publish for common patterns such as API keys, private keys, bearer tokens, `.env` lines, and obvious password assignments. Redaction should run before data reaches the relay.
+- [ ] Add server-side retention cleanup for resolved cards and old instruction records, with retention periods reflected in the Privacy Policy.
+- [ ] Add a local data deletion/help screen that explains what account deletion removes from the relay and what remains on the Mac under local Steer storage.
+- [ ] Add a "What Syncs" inspection screen that shows current sync scope and last sync status.
+- [ ] Document production Cloudflare log retention and whether IP/request logs are retained in a way that changes privacy labels.
+
+#### Submission Exit Criteria
+
+- Reviewer can complete the iPhone product loop without a Mac by using Demo Mode.
+- Reviewer can verify live relay behavior if review credentials or a prepared Mac account are provided.
+- User can see Mac connection state before sending a reply, and offline replies clearly queue instead of pretending to deliver.
+- Privacy Policy, Terms, Support URL, Account deletion, and App Store privacy labels are all live and internally consistent.
+- The app and metadata frame Steer as an action inbox for the user's own coding agents, not as a remote terminal or remote desktop client.
+- TestFlight build passes on-device smoke test for sign-in, card load, reply send, WebSocket reconnect, account deletion, and demo mode.
 
 ## Current Backlog
 

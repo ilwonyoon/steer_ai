@@ -77,6 +77,17 @@ app.use("/v1/stream", authMiddleware);
 app.get("/v1/me", (c) => c.json({ user: c.get("user") }));
 
 /**
+ * DELETE /v1/me
+ * Account deletion entry point for App Store compliance. Removes the
+ * relay account row and all user-owned sync data we persist in D1.
+ */
+app.delete("/v1/me", async (c) => {
+  const store = new Store(c.env);
+  await store.deleteUserData(c.get("user").userId);
+  return c.json({ ok: true });
+});
+
+/**
  * GET /v1/sync/cards?since=<ms>
  * Returns active cards updated after the cursor. iPhone polls or
  * uses the WebSocket stream below.

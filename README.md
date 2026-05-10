@@ -16,6 +16,7 @@ This repository is in the planning and early execution stage. It contains produc
 - `docs/PRD.md`: product requirements export.
 - `docs/TECH_SPEC.md`: technical specification export.
 - `docs/IOS_LAUNCH_PLAN.md`: iPhone launch, CloudKit sync, and App Store strategy.
+- `docs/legal/`: Privacy Policy, Terms, App Store privacy labels, and App Review notes for iPhone launch.
 - `docs/HAPPY_WRAPPER_RESEARCH.md`: notes from studying Happy's current provider-control architecture.
 
 ## Product Direction
