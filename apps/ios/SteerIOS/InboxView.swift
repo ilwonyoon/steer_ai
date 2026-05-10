@@ -216,6 +216,13 @@ struct InboxView: View {
                 .id(card.id)
                 .offset(x: cardDragOffset)
                 .gesture(cardSwipeGesture)
+                // Tap anywhere on the card body (header, terminal,
+                // chips area) dismisses the keyboard. simultaneousGesture
+                // doesn't steal taps from inner TextField — it just
+                // adds a parallel listener for non-text-field hits.
+                .simultaneousGesture(
+                    TapGesture().onEnded { replyFieldFocused = false }
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
                     GeometryReader { proxy in
