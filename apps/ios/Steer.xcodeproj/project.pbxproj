@@ -15,6 +15,7 @@
 		4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */; };
 		543EFCA3684DA845C2A274D9 /* DevicePresenceObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */; };
 		60A907D6E745CD578C1248C0 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 37598AC73146CD126426965A /* SteerCore */; };
+		6C64F9AC4A73935473AF49FB /* DevicePresenceObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B456FEC1FC4609F9410FDAB1 /* DevicePresenceObserverTests.swift */; };
 		74D5D52E1823197EF214A412 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = AB63FB2F0D6D4043252C1385 /* SteerCore */; };
 		81D04E76A2C0A0F68BBC47F0 /* CardPayloadMappingPerfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4579B87D0A851F8AEE59DC /* CardPayloadMappingPerfTests.swift */; };
 		99BAA46CD0A9C05FAE5E7028 /* CardStackChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */; };
@@ -63,6 +64,7 @@
 		A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStackChrome.swift; sourceTree = "<group>"; };
 		AF4579B87D0A851F8AEE59DC /* CardPayloadMappingPerfTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPayloadMappingPerfTests.swift; sourceTree = "<group>"; };
 		B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacConnectionChip.swift; sourceTree = "<group>"; };
+		B456FEC1FC4609F9410FDAB1 /* DevicePresenceObserverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePresenceObserverTests.swift; sourceTree = "<group>"; };
 		C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxFixtures.swift; sourceTree = "<group>"; };
 		CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPayloadMapping.swift; sourceTree = "<group>"; };
 		CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxOptimisticTests.swift; sourceTree = "<group>"; };
@@ -130,6 +132,7 @@
 			isa = PBXGroup;
 			children = (
 				AF4579B87D0A851F8AEE59DC /* CardPayloadMappingPerfTests.swift */,
+				B456FEC1FC4609F9410FDAB1 /* DevicePresenceObserverTests.swift */,
 				CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */,
 			);
 			path = SteerIOSTests;
@@ -242,6 +245,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				81D04E76A2C0A0F68BBC47F0 /* CardPayloadMappingPerfTests.swift in Sources */,
+				6C64F9AC4A73935473AF49FB /* DevicePresenceObserverTests.swift in Sources */,
 				4B186F5237BFAC367284F909 /* SyncInboxOptimisticTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
