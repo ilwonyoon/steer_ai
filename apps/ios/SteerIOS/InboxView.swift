@@ -42,6 +42,8 @@ struct InboxView: View {
     var body: some View {
         ZStack(alignment: .top) {
             SteerColors.appBackground.ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { replyFieldFocused = false }
 
             if !inbox.isSignedIn {
                 SignInPrompt(inbox: inbox)
@@ -49,6 +51,7 @@ struct InboxView: View {
                 content
             }
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     @ViewBuilder

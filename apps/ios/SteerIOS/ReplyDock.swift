@@ -42,6 +42,10 @@ struct ReplyDock: View {
         guard canSend else { return }
         onSend(text)
         reply = ""
+        // Drop the keyboard so the carousel reappears immediately
+        // after sending — matches Mac's "send and move on" feel.
+        externalFocus?.wrappedValue = false
+        fallbackFocus = false
     }
 
     @ViewBuilder
@@ -57,10 +61,26 @@ struct ReplyDock: View {
             .padding(.vertical, 12)
             .frame(minHeight: 42)
 
+        // Done button on the keyboard accessory bar gives the user an
+        // explicit dismiss in addition to tap-outside.
         if let externalFocus {
-            base.focused(externalFocus)
+            base
+                .focused(externalFocus)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { externalFocus.wrappedValue = false }
+                    }
+                }
         } else {
-            base.focused($fallbackFocus)
+            base
+                .focused($fallbackFocus)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { fallbackFocus = false }
+                    }
+                }
         }
     }
 
