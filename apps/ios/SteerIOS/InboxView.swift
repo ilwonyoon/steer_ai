@@ -19,24 +19,13 @@ struct InboxView: View {
         inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
     }
 
-    private var liveChips: [LiveSessionChip] {
-        // For now we synthesize chips from the same cards that aren't
-        // the focused one — Mac shows all *running* sessions here, but
-        // the relay payload doesn't carry separate running-state metadata
-        // yet. Treat every card whose category is waiting/blocker/running
-        // as a live chip so the UI parity with Mac is visible. When the
-        // backend gains a dedicated session feed we'll switch over.
-        cards.map { card in
-            LiveSessionChip(
-                sessionId: card.sessionId,
-                provider: card.provider,
-                project: card.project,
-                cwd: nil,
-                runState: card.state.rawValue,
-                lastActivityAt: Date()
-            )
-        }
-    }
+    /// Mac populates this from `loadLiveSessions(excluding: activeSessionIds)`
+    /// — sessions that are running but not currently surfacing an action
+    /// card. The relay payload doesn't carry a separate live-session
+    /// feed yet, so iOS leaves it empty until the backend exposes it.
+    /// Don't synthesize chips from cards: that's what Mac explicitly
+    /// excludes.
+    private var liveChips: [LiveSessionChip] { [] }
 
     private var currentIndex: Int {
         guard let focusedSessionId,
@@ -118,6 +107,7 @@ struct InboxView: View {
                         }
                     }
                 )
+                .padding(.horizontal, -14) // bleed past parent's 14pt h-padding so the last tile isn't clipped at the screen edge
             }
         }
         .padding(.horizontal, 14)

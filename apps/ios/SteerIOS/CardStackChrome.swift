@@ -137,9 +137,11 @@ struct ActionCardCarousel: View {
                                 ))
                         }
                     }
-                    .padding(.horizontal, 4)
+                    // Match the parent's horizontal padding so the
+                    // first/last tile both inset cleanly from the
+                    // screen edge instead of clipping under the bezel.
+                    .padding(.horizontal, 18)
                     .padding(.vertical, 0)
-                    .padding(.trailing, 18)
                 }
                 .frame(height: 100)
             }

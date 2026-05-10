@@ -61,7 +61,7 @@ struct DetailView: View {
                 .padding(.vertical, 12)
             }
 
-            ReplyDock(chips: card.chips, reply: $reply, onSend: { text in
+            ReplyDock(reply: $reply, onSend: { text in
                 onSend(text)
                 reply = ""
             })

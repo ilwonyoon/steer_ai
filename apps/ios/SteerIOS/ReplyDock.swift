@@ -8,29 +8,23 @@ import SwiftUI
 ///   - chip row above input
 ///   - floating bottom-right send button that appears only when canSend
 struct ReplyDock: View {
-    let chips: [String]
     @Binding var reply: String
     let onSend: (String) -> Void
     var tint: Color = SteerColors.inputFill
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !chips.isEmpty {
-                chipRow
-            }
-            ZStack(alignment: .bottomTrailing) {
-                textInput
-                    .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(SteerColors.softSeparator, lineWidth: 1)
-                    }
-                if canSend {
-                    sendButton
+        ZStack(alignment: .bottomTrailing) {
+            textInput
+                .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(SteerColors.softSeparator, lineWidth: 1)
                 }
+            if canSend {
+                sendButton
             }
-            .animation(.snappy(duration: 0.16), value: canSend)
         }
+        .animation(.snappy(duration: 0.16), value: canSend)
     }
 
     private var trimmedReply: String {
@@ -43,27 +37,6 @@ struct ReplyDock: View {
         guard canSend else { return }
         onSend(text)
         reply = ""
-    }
-
-    private var chipRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(chips, id: \.self) { chip in
-                    Button { reply = chip } label: {
-                        Text(chip)
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundStyle(SteerColors.ink)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(SteerColors.subtleFill, in: Capsule())
-                            .overlay {
-                                Capsule().stroke(SteerColors.softSeparator, lineWidth: 1)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
     }
 
     private var textInput: some View {
