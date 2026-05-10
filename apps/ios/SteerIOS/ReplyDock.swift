@@ -61,26 +61,15 @@ struct ReplyDock: View {
             .padding(.vertical, 12)
             .frame(minHeight: 42)
 
-        // Done button on the keyboard accessory bar gives the user an
-        // explicit dismiss in addition to tap-outside.
+        // Dismiss paths: tap outside the card, send-and-clear, or
+        // the system swipe-down gesture inside the terminal scroll.
+        // We deliberately don't add a keyboard accessory toolbar
+        // because InboxView isn't inside a NavigationStack and the
+        // resulting "Done" button floats awkwardly.
         if let externalFocus {
-            base
-                .focused(externalFocus)
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") { externalFocus.wrappedValue = false }
-                    }
-                }
+            base.focused(externalFocus)
         } else {
-            base
-                .focused($fallbackFocus)
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") { fallbackFocus = false }
-                    }
-                }
+            base.focused($fallbackFocus)
         }
     }
 
