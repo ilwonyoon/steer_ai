@@ -32,11 +32,20 @@ struct ActionCardView: View {
 
             Divider()
 
+            // Expand the tap-target so taps anywhere in the bottom
+            // strip — not just inside the input pill — bring up the
+            // keyboard. contentShape on the padded wrapper makes the
+            // padding hit-testable; onTapGesture forwards focus to
+            // the field via the parent's @FocusState binding.
             ReplyDock(reply: $reply, onSend: onSend, externalFocus: replyFieldFocused)
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
                 .padding(.bottom, 12)
                 .fixedSize(horizontal: false, vertical: true)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    replyFieldFocused?.wrappedValue = true
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(SteerColors.cardBackground)
