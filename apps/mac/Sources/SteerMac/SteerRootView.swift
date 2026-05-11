@@ -110,6 +110,16 @@ struct SteerRootView: View {
         .task {
             await refreshLoop()
         }
+        // Drain the relay's queued instructions when the WebSocket
+        // reports a new one. Without this, drain falls back to the
+        // 60s sweeper inside refreshLoop, which is fine for
+        // correctness but adds visible reply latency for the first
+        // iPhone reply after the Mac launches. Phase A3.
+        .onReceive(
+            NotificationCenter.default.publisher(for: .syncDidReceiveUpdate)
+        ) { _ in
+            Task { await drainQueuedInstructions() }
+        }
     }
 
     @ViewBuilder
@@ -350,7 +360,16 @@ struct SteerRootView: View {
                     await syncLiveSessionsToiPhone(chips: chipsToPublish)
                 }
             }
-            await drainQueuedInstructions()
+            // Drain on every 60s tick at most. The primary drain
+            // trigger is the WebSocket instruction.queued message —
+            // SyncClient handles that path. This 60s sweeper is the
+            // fallback for when the WS connection is dropping
+            // reconnects so we never lose an instruction sitting in
+            // the relay for more than a minute. Previously this ran
+            // every 2s, which made /v1/sync/instructions/queued the
+            // single dominant request type on Cloudflare. Phase A3
+            // of docs/SYNC_STABILITY_AND_COST_PLAN.md.
+            await maybeDrainQueuedInstructions()
         }
         // Heartbeat at most once per 60s; reload runs ~every 2s but we
         // only post when we cross the cooldown.
@@ -367,6 +386,21 @@ struct SteerRootView: View {
         }
         lastHeartbeatAt = now
         await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: syncEnabled)
+    }
+
+    /// 60s sweeper. The primary drain trigger is the WS
+    /// instruction.queued message; this fallback catches anything
+    /// that slipped through during a reconnect or while the WS was
+    /// dropped. Was every-tick (2s) before Phase A3 — easily the
+    /// dominant request type on Cloudflare per the relay tail.
+    @State private var lastDrainAt: Date? = nil
+    private func maybeDrainQueuedInstructions() async {
+        let now = Date()
+        if let last = lastDrainAt, now.timeIntervalSince(last) < 60 {
+            return
+        }
+        lastDrainAt = now
+        await drainQueuedInstructions()
     }
 
     /// Push the running-session chip list to the relay so the iPhone
