@@ -33,6 +33,9 @@ final class ActionNotificationService {
             "cardId": card.id,
             "sessionId": card.sessionId
         ]
+        if let attachment = providerIconAttachment(for: card) {
+            content.attachments = [attachment]
+        }
 
         let request = UNNotificationRequest(
             identifier: "steer-card-\(card.id)-\(stableNotificationSuffix(for: card))",
@@ -41,6 +44,39 @@ final class ActionNotificationService {
         )
 
         try? await UNUserNotificationCenter.current().add(request)
+    }
+
+    // UNNotificationAttachment requires the file to live somewhere
+    // UserNotificationsUI can read it from after we hand it over. The bundled
+    // PNG inside SteerMac_SteerMac.bundle works at load time but the system
+    // re-reads attachments on its own daemon, which can't see our bundle
+    // contents directly — copying once to NSTemporaryDirectory() makes the
+    // file readable by the notification daemon without leaking outside the
+    // sandbox. We cache by provider so we don't write on every notification.
+    private var iconAttachmentCache: [String: URL] = [:]
+
+    private func providerIconAttachment(for card: ActionCard) -> UNNotificationAttachment? {
+        guard let iconName = card.provider.iconName else { return nil }
+        let url: URL
+        if let cached = iconAttachmentCache[iconName] {
+            url = cached
+        } else {
+            guard let bundled = Bundle.module.url(forResource: iconName, withExtension: "png") else { return nil }
+            let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .appendingPathComponent("steer-notification-icons", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dest = dir.appendingPathComponent("\(iconName).png")
+            if !FileManager.default.fileExists(atPath: dest.path) {
+                try? FileManager.default.copyItem(at: bundled, to: dest)
+            }
+            iconAttachmentCache[iconName] = dest
+            url = dest
+        }
+        return try? UNNotificationAttachment(
+            identifier: "provider-\(iconName)",
+            url: url,
+            options: [UNNotificationAttachmentOptionsTypeHintKey: "public.png"]
+        )
     }
 
     private func ensureAuthorization() async -> Bool {
