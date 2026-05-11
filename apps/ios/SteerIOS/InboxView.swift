@@ -72,9 +72,14 @@ struct InboxView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            // Solid fill only. Putting onTapGesture on the background
+            // here intercepted the first tap on HeaderBar buttons —
+            // the buttons sit on top in z-order, but SwiftUI's
+            // gesture priority quirk meant the user had to tap
+            // Settings 2× before the sheet opened. Keyboard dismiss
+            // moved into ReplyDock's own contentShape + the system
+            // .scrollDismissesKeyboard behaviour on the carousel.
             SteerColors.appBackground.ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { replyFieldFocused = false }
 
             if !inbox.isSignedIn {
                 SignInPrompt(inbox: inbox)
