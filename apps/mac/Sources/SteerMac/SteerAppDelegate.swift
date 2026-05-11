@@ -53,13 +53,14 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Heartbeat must run independent of the main window — SteerRootView's
     /// reload loop is gated on the window being mounted, but the user
-    /// often has Mac running with the window closed. Run a 60s timer
-    /// here so /v1/sync/devices stays fresh and iPhone's chip stays
-    /// accurate regardless of UI state.
+    /// often has Mac running with the window closed. Run a 15s timer
+    /// here so /v1/sync/devices stays fresh and iPhone's chip flips
+    /// Connected ↔ Stale within ~20s of the Mac going offline (down
+    /// from the prior 60s cadence the user noticed as laggy).
     private var heartbeatTimer: Timer?
     private func startHeartbeatTimer() {
         // Wait 5s for refreshMe to settle isSignedIn, then fire the
-        // first heartbeat. After that, repeat every 60s.
+        // first heartbeat. After that, repeat every 15s.
         // Timer must be retained (heartbeatTimer property) — earlier
         // version stored it as a local inside DispatchQueue.asyncAfter
         // and the closure freed it immediately, so the timer fired 0
@@ -68,7 +69,7 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.fireHeartbeat()
             self.heartbeatTimer = Timer.scheduledTimer(
-                withTimeInterval: 60,
+                withTimeInterval: 15,
                 repeats: true
             ) { [weak self] _ in
                 self?.fireHeartbeat()

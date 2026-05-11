@@ -44,7 +44,12 @@ final class DevicePresenceObserver: ObservableObject {
     func start() {
         Task { await refresh() }
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        // 5s poll lets the chip flip Connected ↔ Stale within ~10s
+        // of the Mac going offline. Previously this was 30s and the
+        // user noticed the lag. The endpoint is cheap (single D1 row
+        // read) and we already share a URLSession, so 12 req/min is
+        // well under any rate limit.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refresh() }
         }
     }
@@ -78,8 +83,12 @@ final class DevicePresenceObserver: ObservableObject {
         }
         let label = mac.deviceClass ?? mac.displayName ?? "Mac"
         let ageMs = Double(Date().timeIntervalSince1970 * 1000) - Double(mac.lastSeenAt)
-        if ageMs < 90_000 { return .connected(label: label) }
-        if ageMs < 600_000 { return .stale(label: label) }
+        // Mac heartbeats every 15s, so a 30s window covers one
+        // missed beat (jitter / wake-from-sleep) without flapping.
+        if ageMs < 30_000 { return .connected(label: label) }
+        // 5 minutes of silence ≈ Mac is sleeping or app killed; we
+        // call this "stale" so replies still queue rather than fail.
+        if ageMs < 300_000 { return .stale(label: label) }
         return .offline(label: label)
     }
 
