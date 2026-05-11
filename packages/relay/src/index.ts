@@ -190,6 +190,19 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
     if (targets.length === 0) return;
     const title = card.title || "Steer";
     const bodyText = card.summary || card.actionPrompt || "";
+    // Map the card's provider (set by SteerCardMapping on Mac) to the
+    // asset name the iOS NSE will look up in its bundle. We deliberately
+    // skip unknown providers so an older Mac with a new provider name
+    // doesn't ship a broken cardIcon hint. Falls through to "no icon"
+    // and the system shows the default app glyph.
+    const provider =
+      typeof card.payload?.provider === "string"
+        ? card.payload.provider.toLowerCase()
+        : undefined;
+    const cardIcon =
+      provider === "claude" ? "claude" :
+      provider === "codex"  ? "codex-color" :
+      undefined;
     const results = await Promise.all(
       targets.map(async (d) => {
         try {
@@ -197,6 +210,7 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
             deviceToken: d.apnsToken!,
             title,
             body: bodyText,
+            cardIcon,
             customPayload: { cardId: card.cardId, sessionId: card.sessionId },
           });
           console.log(

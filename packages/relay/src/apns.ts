@@ -63,6 +63,14 @@ interface PushRequest {
   /// Optional opaque payload the iOS app can read on tap. We embed
   /// the cardId so the InboxView can deep-link to the relevant card.
   customPayload?: Record<string, unknown>;
+  /// Provider identifier the iOS Notification Service Extension uses
+  /// to look up a bundled provider icon (claude / codex-color) and
+  /// attach it to the banner. Sending this also flips
+  /// `mutable-content: 1` in the aps so APNS hands the payload to
+  /// the NSE before delivery. Without an NSE on the receiving device
+  /// the flag is silently ignored, so this change is safe to ship
+  /// ahead of the NSE target.
+  cardIcon?: string;
 }
 
 export interface PushResult {
@@ -90,8 +98,15 @@ export async function sendAPNSPush(env: Env, req: PushRequest): Promise<PushResu
     alert: { title: req.title, body: req.body },
     sound: "default",
   };
+  if (req.cardIcon) {
+    // Tells APNS to hand the payload to the iOS NSE so it can swap in
+    // the provider icon before display. Harmless when the NSE doesn't
+    // exist — older clients just see the same banner without an icon.
+    aps["mutable-content"] = 1;
+  }
   const payload = {
     aps,
+    ...(req.cardIcon ? { cardIcon: req.cardIcon } : {}),
     ...(req.customPayload ?? {}),
   };
 
