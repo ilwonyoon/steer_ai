@@ -29,6 +29,14 @@ new_sqlite_classes = ["UserHub"]
 APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
 APPLE_AUDIENCES = "ai.steer.mac,ai.steer.ios"
 APPLE_ISSUER = "https://appleid.apple.com"
+# APNS routing.
+# Debug-signed iOS builds (xcodebuild Debug → aps-environment =
+# development) get sandbox device tokens. Production APNS endpoint
+# silently drops those, which manifests as "no banner on the
+# iPhone" while every other signal looks fine. Flip this to "0" (or
+# remove the var) when shipping a TestFlight / App Store build,
+# which gets aps-environment = production and a production token.
+APNS_USE_SANDBOX = "1"
 
 # Used by /v1/auth/apple to mint our own session JWT after the Apple
 # identity token validates. Set via:
