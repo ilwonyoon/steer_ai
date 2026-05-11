@@ -173,6 +173,7 @@ Goal: make reports actionable without becoming noisy.
 - [x] `steer stats` CLI for session/card/instruction summary + avg reply→inject latency.
 - [x] Surface a `waiting` "ready" card the moment a session is registered (run_state=running, no trusted output, no user reply). Card body uses a canned summary; PTY content never sources card body.
 - [x] Auto-resolve the active card when the user types directly in the wrapped terminal (wrapper sends `user_input` debounced; agent records a synthetic user transcript entry and resolves the card). Prevents double-replying via Steer + terminal.
+- [ ] Fix Codex PTY-only post-reply false negative: after a Steer reply hides a card, a later Codex TUI response can arrive only on `stream="pty"` with no `report/stdout/stderr`; classifier then keeps the card `answered/done` because no trusted output appears after the latest user instruction. Add a provider-native report path or a tightly scoped Codex PTY fallback so stopped Codex sessions resurface cards after follow-up answers without reintroducing terminal chrome/user echo noise.
 - [ ] Run classifier against a broader real transcript sample set.
 - [ ] Track false positive and false negative notifications. *(dogfood-driven)*
 - [ ] Tune prompts for high precision on `requiresAction`. *(dogfood-driven)*

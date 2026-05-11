@@ -16,6 +16,10 @@ Goal: collect concrete signal that should drive the next round of fixes
 
 ## Daily log
 
+### 2026-05-11
+
+- [bug] [fn] `codex-mp1jug4f-ogt6zd` in `/Users/ilwonyoon/Documents/Portfolio_deck_2026` — user replied through Steer, the active card became `done/answered`, Codex later produced more terminal output, but no new card surfaced. Local DB showed only `pty` traffic after the reply (`102k+` PTY chunks, no `report/stdout/stderr`), so `latestOutputIndex` stayed empty and the classifier kept the card in `answered/done`. Expected: once Codex stops with a meaningful follow-up answer, the session should become an active `waiting/question/decision/blocker` card again.
+
 ### YYYY-MM-DD
 
 - [bug] short description — session id if relevant — what happened — what
