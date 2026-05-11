@@ -59,11 +59,15 @@ struct TerminalExcerptView: View {
     }
 
     private func weight(for kind: TerminalLineKind) -> Font.Weight {
+        // Body baseline is regular — was reading too heavy when every
+        // standard line landed at medium. Strong kinds drop to medium
+        // so a "Decision needed:" line is still distinguishable from
+        // surrounding prose without shouting.
         switch kind {
         case .accent, .success, .warning:
-            .semibold
-        case .standard:
             .medium
+        case .standard:
+            .regular
         case .muted:
             .regular
         }
