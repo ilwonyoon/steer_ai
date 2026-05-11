@@ -15,7 +15,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MAC_DIR="$ROOT_DIR/apps/mac"
 CONFIGURATION="${CONFIGURATION:-debug}"
-APP_NAME="SteerMac"
+# SwiftPM target name (drives the binary at $SWIFT_BIN_PATH/$EXECUTABLE_NAME
+# and the resource bundle naming `${EXECUTABLE_NAME}_${EXECUTABLE_NAME}.bundle`).
+# Renaming the SwiftPM target is invasive, so we keep it as SteerMac.
+EXECUTABLE_NAME="SteerMac"
+# Bundle file name the user sees in Finder / drags out of the DMG.
+# Steer.app reads better than SteerMac.app once the product is shipped;
+# Info.plist's CFBundleExecutable still points at the SteerMac binary
+# below so the system finds the right Mach-O at launch.
+APP_NAME="Steer"
 APP_DIR="$ROOT_DIR/.build/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
@@ -63,17 +71,22 @@ fi
 
 swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION"
 SWIFT_BIN_PATH="$(swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION" --show-bin-path)"
-BINARY_PATH="$SWIFT_BIN_PATH/$APP_NAME"
+BINARY_PATH="$SWIFT_BIN_PATH/$EXECUTABLE_NAME"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
-cp "$BINARY_PATH" "$MACOS_DIR/$APP_NAME"
+# The Mach-O inside Contents/MacOS keeps the SwiftPM target name so
+# Bundle.module / @rpath / install_name_tool calls below all line up
+# with what SwiftPM emitted. Info.plist's CFBundleExecutable points
+# at this same name, so launchd resolves the right binary regardless
+# of what the .app folder is called on disk.
+cp "$BINARY_PATH" "$MACOS_DIR/$EXECUTABLE_NAME"
 
 # SwiftPM packages an executable's `resources: [.process(...)]` into a
 # sibling `${TARGET}_${TARGET}.bundle` directory and the binary loads
 # them via Bundle.module. We need to ship that bundle inside the app
 # so NSImage(named:) etc. resolve at runtime.
-SPM_RESOURCE_BUNDLE="$SWIFT_BIN_PATH/${APP_NAME}_${APP_NAME}.bundle"
+SPM_RESOURCE_BUNDLE="$SWIFT_BIN_PATH/${EXECUTABLE_NAME}_${EXECUTABLE_NAME}.bundle"
 if [ -d "$SPM_RESOURCE_BUNDLE" ]; then
   cp -R "$SPM_RESOURCE_BUNDLE" "$RESOURCES_DIR/"
 fi
@@ -153,7 +166,7 @@ if [ -d "$SPARKLE_BUILT_PATH" ]; then
   mkdir -p "$FRAMEWORKS_DIR"
   rm -rf "$FRAMEWORKS_DIR/Sparkle.framework"
   cp -R "$SPARKLE_BUILT_PATH" "$FRAMEWORKS_DIR/Sparkle.framework"
-  install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/$APP_NAME" 2>/dev/null || true
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/$EXECUTABLE_NAME" 2>/dev/null || true
 fi
 
 CODESIGN_FLAGS=("--force" "--timestamp")
