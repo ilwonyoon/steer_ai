@@ -72,7 +72,12 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 withTimeInterval: 15,
                 repeats: true
             ) { [weak self] _ in
-                self?.fireHeartbeat()
+                // Timer fires on a nonisolated runloop tick. Hop back
+                // to the main actor before calling fireHeartbeat,
+                // which is @MainActor-isolated (touches AppKit).
+                Task { @MainActor [weak self] in
+                    self?.fireHeartbeat()
+                }
             }
             if let timer = self.heartbeatTimer {
                 RunLoop.main.add(timer, forMode: .common)

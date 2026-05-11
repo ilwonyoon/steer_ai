@@ -5,7 +5,13 @@ import PackageDescription
 let package = Package(
     name: "SteerMac",
     platforms: [
-        .macOS(.v15)
+        // macOS 26 is the floor: the app's chrome relies on the
+        // Liquid Glass material (`.glassEffect`) introduced in
+        // macOS 26. swift-tools-version 6.0 doesn't yet expose
+        // `.v26` as a symbolic platform version, so we pass the
+        // raw string — SwiftPM still threads this through to the
+        // -target deployment-version flag correctly.
+        .macOS("26.0")
     ],
     products: [
         .executable(name: "SteerMac", targets: ["SteerMac"])
