@@ -9,12 +9,66 @@ struct SteerIOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView(inbox: inbox)
+            RootView(inbox: inbox)
                 .task {
                     if !SyncInbox.fixtureModeEnabled {
                         await inbox.refreshMe()
                     }
                 }
+        }
+    }
+}
+
+/// Single-screen root. The bottom TabView is gone; Settings now
+/// lives behind a Liquid-Glass capsule in the top-left of the inbox,
+/// matching the Mac shell. Removes the persistent bar at the bottom
+/// and lets the card stack use the full height.
+private struct RootView: View {
+    @ObservedObject var inbox: SyncInbox
+    @State private var showsSettings = false
+
+    var body: some View {
+        InboxView(inbox: inbox)
+            .overlay(alignment: .topLeading) {
+                Button {
+                    showsSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(SteerColors.secondaryInk)
+                        .frame(width: 36, height: 36)
+                        .glassEffect()
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 14)
+                .padding(.top, 8)
+                .accessibilityIdentifier("settings-button")
+            }
+            .sheet(isPresented: $showsSettings) {
+                NavigationStack {
+                    SettingsView(inbox: inbox)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showsSettings = false }
+                            }
+                        }
+                }
+            }
+    }
+}
+
+/// Liquid Glass capsule background. Falls back to a translucent
+/// material on older iOS versions so the button still reads against
+/// the card stack.
+extension View {
+    @ViewBuilder
+    fileprivate func glassEffect() -> some View {
+        if #available(iOS 26.0, *) {
+            self.background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(SteerColors.softSeparator, lineWidth: 0.5))
+        } else {
+            self.background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(SteerColors.softSeparator, lineWidth: 0.5))
         }
     }
 }
@@ -105,28 +159,3 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency U
     }
 }
 
-/// Bottom tab nav. iOS 26+ renders the bar with the system Liquid
-/// Glass material automatically, and child scrollables (the inbox
-/// card-stack content) auto-inset for the bar — no manual padding.
-private struct RootTabView: View {
-    @ObservedObject var inbox: SyncInbox
-
-    var body: some View {
-        TabView {
-            InboxView(inbox: inbox)
-                .tabItem {
-                    // Image's accessibilityIdentifier ends up on the
-                    // tab-bar button — InboxView's own identifier is
-                    // owned by its body and isn't what XCUITest needs
-                    // to switch tabs.
-                    Image(systemName: "rectangle.stack.fill")
-                        .accessibilityIdentifier("tab-inbox")
-                }
-            SettingsView(inbox: inbox)
-                .tabItem {
-                    Image(systemName: "gearshape")
-                        .accessibilityIdentifier("tab-settings")
-                }
-        }
-    }
-}

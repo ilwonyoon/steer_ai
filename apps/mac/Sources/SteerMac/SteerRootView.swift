@@ -248,7 +248,14 @@ struct SteerRootView: View {
         let loadedCards = await store.loadCards()
         await notifyForNewCards(loadedCards)
         let activeSessionIds = Set(loadedCards.map(\.sessionId))
-        let loadedChips = await store.loadLiveSessions(excluding: activeSessionIds)
+        let loadedChipsRaw = await store.loadLiveSessions(excluding: activeSessionIds)
+        // Belt-and-suspenders: loadLiveSessions runs a separate sqlite3
+        // subprocess from loadCards, so a session that flipped from
+        // `running` to `waiting` between the two queries can briefly
+        // show up in BOTH lists ("1 running · 1 waiting" for what is
+        // really one session). Filter the chip list one more time
+        // here, in the same tick, against the cards we just observed.
+        let loadedChips = loadedChipsRaw.filter { !activeSessionIds.contains($0.sessionId) }
         cards = loadedCards
         liveChips = loadedChips
         isLoading = false

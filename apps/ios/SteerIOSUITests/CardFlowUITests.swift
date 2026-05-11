@@ -87,16 +87,16 @@ final class CardFlowUITests: XCTestCase {
         // Wait for inbox so we know we're past the launch screen.
         XCTAssertTrue(app.otherElements["inbox-content"].waitForExistence(timeout: 8))
 
-        // .tabItem strips most of our custom identifiers and replaces
-        // them with the SF Symbol's accessibility label (e.g. "Album"
-        // for `rectangle.stack.fill`). System TabBar buttons are
-        // best located by index or by the system-assigned label.
-        let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 2))
-        XCTAssertEqual(tabBar.buttons.count, 2, "Expected exactly 2 tabs (Inbox, Settings)")
-        // Settings is the second tab.
-        tabBar.buttons.element(boundBy: 1).tap()
-        // Round-trip back to Inbox so subsequent tests start clean.
-        tabBar.buttons.element(boundBy: 0).tap()
+        // The bottom TabView is gone — Settings now lives behind a
+        // Liquid Glass capsule in the top-left of the inbox. Tap it
+        // to push the Settings sheet, then dismiss via Done so the
+        // next test starts on the inbox.
+        let settingsButton = app.buttons["settings-button"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 2))
+        settingsButton.tap()
+
+        let doneButton = app.buttons["Done"]
+        XCTAssertTrue(doneButton.waitForExistence(timeout: 2))
+        doneButton.tap()
     }
 }

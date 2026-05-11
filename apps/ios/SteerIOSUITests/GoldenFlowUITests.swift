@@ -165,9 +165,10 @@ final class GoldenFlowUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["inbox-content"].waitForExistence(timeout: 6))
 
-        let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 2))
-        tabBar.buttons.element(boundBy: 1).tap()  // Settings
+        // Tab bar replaced by top-left Liquid Glass settings button.
+        let settingsButton = app.buttons["settings-button"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 2))
+        settingsButton.tap()
 
         // SettingsView is a Form/List. We don't pin identifiers on
         // every row because labels are stable. Instead we sanity-check
@@ -180,8 +181,10 @@ final class GoldenFlowUITests: XCTestCase {
             XCTAssertTrue(app.tables.firstMatch.waitForExistence(timeout: 2))
         }
 
-        // Round-trip back to Inbox.
-        tabBar.buttons.element(boundBy: 0).tap()
+        // Round-trip back to Inbox via the Done button in the sheet.
+        let doneButton = app.buttons["Done"]
+        XCTAssertTrue(doneButton.waitForExistence(timeout: 2))
+        doneButton.tap()
         XCTAssertTrue(app.otherElements["inbox-content"].waitForExistence(timeout: 2))
     }
 }
