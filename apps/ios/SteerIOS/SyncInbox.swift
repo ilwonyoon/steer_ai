@@ -193,7 +193,20 @@ public final class SyncInbox: ObservableObject {
         // /v1/auth/apple/revoke flow during account deletion.
         let authCode: String? = credential.authorizationCode
             .flatMap { String(data: $0, encoding: .utf8) }
-        let displayName = credential.fullName?.givenName
+        // Apple returns the user's full name only on the FIRST sign-in
+        // for a given Apple ID + bundle. Stitch given + family so the
+        // server sees the actual name, not just the first token.
+        // Subsequent sign-ins return fullName == nil — once that
+        // happens the only way to get it back is for the user to
+        // revoke the grant via Settings → Apple ID → Sign in with
+        // Apple → Steer → Stop Using, then sign in again.
+        let displayName: String? = {
+            guard let name = credential.fullName else { return nil }
+            let parts = [name.givenName, name.familyName]
+                .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+        }()
         let body = AuthAppleRequest(
             identityToken: identityToken,
             displayName: displayName,
