@@ -129,17 +129,29 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshStatusItem(waitingCount: 0)
     }
 
-    /// Updates the menu-bar button to reflect the number of waiting
-    /// cards. With 0 cards we show only the SF Symbol so the bar
-    /// stays uncluttered; with N > 0 we add a small numeric badge
-    /// next to the icon. The symbol stays the same shape either way
-    /// so the user's spatial muscle memory doesn't shift.
+    /// Updates the menu-bar button. The icon is the Steer gear-shift
+    /// mark exported as a template image — the shape is solid black
+    /// with anti-aliased alpha, so macOS auto-tints it for the
+    /// current menu-bar appearance (white on dark, black on light).
+    /// waitingCount > 0 appends a small numeric badge.
     private func refreshStatusItem(waitingCount: Int) {
         guard let button = statusItem?.button else { return }
-        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
-        let symbolName = waitingCount > 0 ? "rectangle.stack.fill.badge.person.crop" : "rectangle.stack.fill"
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Steer")?
-            .withSymbolConfiguration(config)
+        // SwiftPM packages executableTarget resources under Bundle.module.
+        // NSImage(named:) only looks at the main bundle, which is why we
+        // load directly from .module here.
+        let image: NSImage?
+        if let url = Bundle.module.url(forResource: "MenuBarIcon", withExtension: "png"),
+           let loaded = NSImage(contentsOf: url) {
+            image = loaded
+        } else {
+            // Fallback so the bar item is never blank in a broken build.
+            image = NSImage(systemSymbolName: "rectangle.stack.fill",
+                            accessibilityDescription: "Steer")
+        }
+        image?.isTemplate = true   // macOS auto-tints template images
+        // Default menu-bar item size is 22pt; the @2x/@3x renditions
+        // packaged alongside MenuBarIcon.png handle retina densities.
+        image?.size = NSSize(width: 18, height: 18)
         button.image = image
         button.imagePosition = waitingCount > 0 ? .imageLeading : .imageOnly
         button.title = waitingCount > 0 ? " \(waitingCount)" : ""

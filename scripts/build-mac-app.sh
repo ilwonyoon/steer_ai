@@ -62,11 +62,21 @@ EOF
 fi
 
 swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION"
-BINARY_PATH="$(swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION" --show-bin-path)/$APP_NAME"
+SWIFT_BIN_PATH="$(swift build --package-path "$MAC_DIR" --configuration "$CONFIGURATION" --show-bin-path)"
+BINARY_PATH="$SWIFT_BIN_PATH/$APP_NAME"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BINARY_PATH" "$MACOS_DIR/$APP_NAME"
+
+# SwiftPM packages an executable's `resources: [.process(...)]` into a
+# sibling `${TARGET}_${TARGET}.bundle` directory and the binary loads
+# them via Bundle.module. We need to ship that bundle inside the app
+# so NSImage(named:) etc. resolve at runtime.
+SPM_RESOURCE_BUNDLE="$SWIFT_BIN_PATH/${APP_NAME}_${APP_NAME}.bundle"
+if [ -d "$SPM_RESOURCE_BUNDLE" ]; then
+  cp -R "$SPM_RESOURCE_BUNDLE" "$RESOURCES_DIR/"
+fi
 
 if [ -n "$PROVISIONING_PROFILE" ]; then
   if [ ! -f "$PROVISIONING_PROFILE" ]; then
