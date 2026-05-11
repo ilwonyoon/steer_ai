@@ -215,6 +215,7 @@ struct InboxView: View {
                 isDemo: inbox.isDemoMode,
                 onExitDemo: { inbox.exitDemoMode() },
                 connectionState: devicePresence.state,
+                waitingCount: cards.count,
                 onTapChip: { showsMacSyncStatus = true },
                 onTapSettings: { showsSettings = true }
             )
@@ -361,54 +362,65 @@ private struct HeaderBar: View {
     var isDemo: Bool = false
     var onExitDemo: (() -> Void)? = nil
     var connectionState: DevicePresenceObserver.State = .neverConnected
+    var waitingCount: Int = 0
     var onTapChip: (() -> Void)? = nil
     var onTapSettings: (() -> Void)? = nil
 
     var body: some View {
-        ZStack {
-            // Centered title sits in the same row as the leading
-            // settings capsule and the trailing connection chip. The
-            // ZStack lets the title own the row's center independent
-            // of either capsule's intrinsic width.
-            Text(isDemo ? "Sample workspace" : "Steer")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(isDemo ? Color.accentColor : SteerColors.secondaryInk)
-
-            HStack(spacing: 8) {
-                if let onTapSettings {
-                    Button(action: onTapSettings) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(SteerColors.secondaryInk)
-                            .frame(width: 30, height: 30)
-                            .background(
-                                Group {
-                                    if #available(iOS 26.0, *) {
-                                        Circle().fill(.regularMaterial)
-                                    } else {
-                                        Circle().fill(.ultraThinMaterial)
-                                    }
+        // No centered title — the two glass capsules ARE the
+        // wayfinding. They match the iOS 26 HIG button hit-target
+        // (44×44 minimum), so the header reserves 56pt of vertical
+        // room with comfortable breathing space above and below.
+        HStack(spacing: 8) {
+            if let onTapSettings {
+                Button(action: onTapSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(SteerColors.ink)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Group {
+                                if #available(iOS 26.0, *) {
+                                    Circle().fill(.regularMaterial)
+                                } else {
+                                    Circle().fill(.ultraThinMaterial)
                                 }
-                            )
-                            .overlay(Circle().stroke(SteerColors.softSeparator, lineWidth: 0.5))
-                    }
+                            }
+                        )
+                        .overlay(Circle().stroke(SteerColors.softSeparator, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings-button")
+            }
+
+            Spacer()
+
+            if isDemo, let onExitDemo {
+                Button("Use Live Sync", action: onExitDemo)
+                    .font(.system(size: 14, weight: .medium))
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier("settings-button")
-                }
-
-                Spacer()
-
-                if isDemo, let onExitDemo {
-                    Button("Use Live Sync", action: onExitDemo)
-                        .font(.system(size: 13, weight: .medium))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
-                } else if let onTapChip {
-                    MacConnectionChip(state: connectionState, onTap: onTapChip)
-                }
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 14)
+                    .frame(height: 44)
+                    .background(
+                        Group {
+                            if #available(iOS 26.0, *) {
+                                Capsule().fill(.regularMaterial)
+                            } else {
+                                Capsule().fill(.ultraThinMaterial)
+                            }
+                        }
+                    )
+                    .overlay(Capsule().stroke(SteerColors.softSeparator, lineWidth: 0.5))
+            } else if let onTapChip {
+                MacConnectionChip(
+                    state: connectionState,
+                    waitingCount: waitingCount,
+                    onTap: onTapChip
+                )
             }
         }
-        .frame(height: 30)
+        .frame(height: 56)
     }
 }
 
