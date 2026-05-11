@@ -173,19 +173,32 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
     const targets = devices.filter(
       (d) => d.platform === "ios" && d.apnsToken && d.syncEnabled
     );
+    console.log(
+      `[apns] fanout card=${card.cardId} user=${userId} total_devices=${devices.length} targets=${targets.length}`
+    );
     if (targets.length === 0) return;
     const title = card.title || "Steer";
     const bodyText = card.summary || card.actionPrompt || "";
-    await Promise.all(
-      targets.map((d) =>
-        sendAPNSPush(env, {
-          deviceToken: d.apnsToken!,
-          title,
-          body: bodyText,
-          customPayload: { cardId: card.cardId, sessionId: card.sessionId },
-        }).catch((e) => console.warn(`[apns] push failed for ${d.deviceId}: ${e}`))
-      )
+    const results = await Promise.all(
+      targets.map(async (d) => {
+        try {
+          const r = await sendAPNSPush(env, {
+            deviceToken: d.apnsToken!,
+            title,
+            body: bodyText,
+            customPayload: { cardId: card.cardId, sessionId: card.sessionId },
+          });
+          console.log(
+            `[apns] sent device=${d.deviceId.slice(0, 8)} ok=${r.ok} status=${r.status}${r.reason ? ` reason=${r.reason}` : ""}`
+          );
+          return r;
+        } catch (e) {
+          console.warn(`[apns] push failed for ${d.deviceId}: ${e}`);
+          return null;
+        }
+      })
     );
+    void results;
   } catch (e) {
     console.warn(`[apns] fanout error: ${e}`);
   }
