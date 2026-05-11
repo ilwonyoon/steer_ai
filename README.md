@@ -6,7 +6,7 @@
 <p align="center">Inbox for your CLI coding agents on macOS.</p>
 
 <p align="center">
-  <a href="https://github.com/ilwonyoon/steer_ai/releases/latest/download/Steer-0.1.1.dmg">
+  <a href="https://github.com/ilwonyoon/steer_ai/releases/latest/download/Steer-0.1.2.dmg">
     <img src="./docs/assets/download-macos-badge.svg" alt="Download Steer for macOS" width="200" />
   </a>
 </p>
@@ -59,7 +59,7 @@ The wrapper owns the PTY, so your reply on the card is just stdin to the wrapped
 
 ## Install
 
-<a href="https://github.com/ilwonyoon/steer_ai/releases/latest/download/Steer-0.1.1.dmg">
+<a href="https://github.com/ilwonyoon/steer_ai/releases/latest/download/Steer-0.1.2.dmg">
   <img src="./docs/assets/download-macos-badge.svg" alt="Download Steer for macOS" width="200" />
 </a>
 
@@ -95,7 +95,7 @@ steer wrap -- node    # wrap anything else
 
 ## Status
 
-Early dogfooding. iPhone companion is in progress; today's [`v0.1.1` release](https://github.com/ilwonyoon/steer_ai/releases/tag/v0.1.1) is Mac-only. See [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) for the active backlog.
+Early dogfooding. iPhone companion is in progress; today's [`v0.1.2` release](https://github.com/ilwonyoon/steer_ai/releases/tag/v0.1.2) is Mac-only. See [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) for the active backlog.
 
 ## For contributors
 
