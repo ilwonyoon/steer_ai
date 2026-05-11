@@ -28,6 +28,17 @@ public final class SyncInbox: ObservableObject {
         case offline
     }
 
+    /// Cold-start phase. The card area uses this to render
+    /// SyncingPlaceholder during the first bootstrap so cards don't
+    /// land one-by-one and reshuffle. Section B2 of
+    /// docs/SYNC_ARCHITECTURE_V2.md.
+    public enum LoadPhase: Equatable {
+        case idle           // not signed in, or bootstrap hasn't run
+        case bootstrapping  // first /v1/sync/cards GET is in flight
+        case ready          // first card list landed; UI can render
+    }
+    @Published public private(set) var loadPhase: LoadPhase = .idle
+
     private let baseURL: URL
     private let tokenStore: SessionTokenStore
     private let urlSession: URLSession
@@ -59,6 +70,12 @@ public final class SyncInbox: ObservableObject {
         }
 
         if tokenStore.read() != nil {
+            // Start cold-start sync immediately. Setting loadPhase
+            // here (instead of waiting for reload() to enter the
+            // function) means the UI sees the placeholder from the
+            // very first frame, not from whenever refreshMe's first
+            // await returns.
+            loadPhase = .bootstrapping
             Task { await refreshMe() }
         }
     }
@@ -330,6 +347,7 @@ public final class SyncInbox: ObservableObject {
         tokenStore.clear()
         cards = []
         status = .signedOut
+        loadPhase = .idle
         webSocketTask?.cancel()
         webSocketTask = nil
         receiveTask?.cancel()
@@ -375,6 +393,7 @@ public final class SyncInbox: ObservableObject {
 
     public func reload() async {
         guard isSignedIn else { return }
+        if loadPhase == .idle { loadPhase = .bootstrapping }
         do {
             let resp: CardListResponse = try await getJSON("/v1/sync/cards")
             // Filter out cards we're optimistically replying to so
@@ -385,6 +404,9 @@ public final class SyncInbox: ObservableObject {
             cards = resp.cards
                 .filter { !pendingCardIds.contains($0.cardId) }
                 .sorted { $0.updatedAt < $1.updatedAt }
+            // First card list landed — UI can leave the cold-start
+            // placeholder, even when the list is empty.
+            loadPhase = .ready
             lastError = nil
         } catch {
             lastError = "Failed to load cards: \(error.localizedDescription)"
@@ -625,6 +647,10 @@ public final class SyncInbox: ObservableObject {
                 cards.append(card)
             }
             cards.sort { $0.updatedAt < $1.updatedAt }
+            // First WS upsert during cold-start counts as ready —
+            // we have at least one real card even if the bootstrap
+            // GET hasn't returned yet.
+            if loadPhase != .ready { loadPhase = .ready }
         case .cardResolved(let id):
             cards.removeAll { $0.cardId == id }
             // A resolve from the server is the authoritative signal

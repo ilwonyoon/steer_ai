@@ -244,7 +244,17 @@ struct InboxView: View {
                 .padding(.leading, 4)
             }
 
-            if cards.isEmpty {
+            if inbox.loadPhase != .ready && cards.isEmpty {
+                // Cold-start placeholder. HeaderBar above stays
+                // rendered and tappable; the card area waits until
+                // the first card list lands so the user doesn't see
+                // cards reshuffling. We also gate on cards.isEmpty
+                // so a warm-launch (process still alive with cards
+                // in memory) jumps straight to the cards instead of
+                // flashing the spinner for one frame.
+                SyncingPlaceholder()
+                    .frame(maxHeight: .infinity)
+            } else if cards.isEmpty {
                 emptyState
                     .frame(maxHeight: .infinity)
             } else if let card = currentCard {
@@ -257,13 +267,13 @@ struct InboxView: View {
                 .id(card.id)
                 .offset(x: cardDragOffset)
                 .gesture(cardSwipeGesture)
-                // Tap anywhere on the card body (header, terminal,
-                // chips area) dismisses the keyboard. simultaneousGesture
-                // doesn't steal taps from inner TextField — it just
-                // adds a parallel listener for non-text-field hits.
-                .simultaneousGesture(
-                    TapGesture().onEnded { replyFieldFocused = false }
-                )
+                // Keyboard-dismiss on tap is delegated to the
+                // appBackground layer (which never sits over a
+                // Button). Re-adding a simultaneousGesture here
+                // steals first taps from HeaderBar's Settings/chip
+                // buttons (they live inside this card-area subtree),
+                // and the user has to tap 4–5x to actually open
+                // Settings.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
                     GeometryReader { proxy in
@@ -389,25 +399,11 @@ private struct HeaderBar: View {
     var onTapSettings: (() -> Void)? = nil
 
     var body: some View {
-        // No centered title — the two glass capsules ARE the
-        // wayfinding. They match the iOS 26 HIG button hit-target
-        // (44×44 minimum), so the header reserves 56pt of vertical
-        // room with comfortable breathing space above and below.
+        // Layout: Mac connection status on the leading edge (the
+        // first glance answers "is this even connected?"), Settings
+        // on the trailing edge (where Done buttons live).
+        // 44×44 hit targets per iOS 26 HIG.
         HStack(spacing: 8) {
-            if let onTapSettings {
-                Button(action: onTapSettings) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(SteerColors.ink)
-                        .frame(width: 44, height: 44)
-                        .steerGlass(shape: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings-button")
-            }
-
-            Spacer()
-
             if isDemo, let onExitDemo {
                 Button("Use Live Sync", action: onExitDemo)
                     .font(.system(size: 14, weight: .medium))
@@ -422,6 +418,20 @@ private struct HeaderBar: View {
                     runningCount: runningCount,
                     onTap: onTapChip
                 )
+            }
+
+            Spacer()
+
+            if let onTapSettings {
+                Button(action: onTapSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(SteerColors.ink)
+                        .frame(width: 44, height: 44)
+                        .steerGlass(shape: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings-button")
             }
         }
         .frame(height: 56)
@@ -440,6 +450,24 @@ private struct PageIndicator: View {
             }
         }
         .padding(.top, 4)
+    }
+}
+
+/// Cold-start placeholder. Renders quietly while
+/// `SyncInbox.loadPhase` != .ready. HeaderBar stays mounted above
+/// so Settings and the Mac chip are tappable from frame zero.
+/// See section B2 of docs/SYNC_ARCHITECTURE_V2.md.
+private struct SyncingPlaceholder: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .controlSize(.regular)
+            Text("Syncing…")
+                .font(.system(size: 14))
+                .foregroundStyle(SteerColors.secondaryInk)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("syncing-placeholder")
     }
 }
 
