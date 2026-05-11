@@ -121,10 +121,19 @@ jobs:
           fi
           bash scripts/generate-app-icon.sh
 
+      - name: Install provisioning profile
+        env:
+          PROVISIONING_PROFILE_B64: ${{ secrets.PROVISIONING_PROFILE }}
+        run: |
+          PP_PATH="$RUNNER_TEMP/steer.provisionprofile"
+          echo "$PROVISIONING_PROFILE_B64" | base64 --decode > "$PP_PATH"
+          echo "PROVISIONING_PROFILE=$PP_PATH" >> "$GITHUB_ENV"
+
       - name: Run release-mac.sh
         env:
           STEER_NOTARY_PROFILE: steer-notary
           APP_VERSION: ${{ steps.tag.outputs.version }}
+          PROVISIONING_PROFILE: ${{ env.PROVISIONING_PROFILE }}
         run: bash scripts/release-mac.sh
 
       - name: Compute checksum
