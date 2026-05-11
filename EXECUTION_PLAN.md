@@ -510,19 +510,43 @@ Mac deployment target raised macOS 15 → 26 because GlassSurface.swift relies o
 
 End-to-end pipeline validated on the local release machine: `scripts/release-mac.sh` with the Developer ID cert + `steer-notary` keychain profile + `Steer_Mac_Developer_ID.provisionprofile` produced a notarized stapled `.build/release/Steer-0.1.1.dmg`. App and DMG both Accepted by Apple notary service, stapled successfully. CI release workflow (run 25655009842) for tag v0.1.1 passed swift build / npm tests / cert import, then failed at "Register notarytool credentials" with HTTP 401 — one of NOTARY_APPLE_ID / NOTARY_TEAM_ID / NOTARY_APP_SPECIFIC_PASSWORD secrets is wrong (user task #273). Provisioning profile entitlements audit: neither the Developer ID nor the Development profile carries `com.apple.developer.applesignin`, so a locally built v0.1.1 DMG would launch and run but would fail Sign-in-with-Apple at `iPhone Sync → Sign in`. To unblock the full iPhone Sync flow, user must enable "Sign In with Apple" on the ai.steer.mac App ID in Apple Developer Portal and regenerate both profiles.
 
-### 2026-05-11: UI Polish — Typography, Dark Palette, Project-Identity Color, iOS Icon
+### 2026-05-11: UI Polish — Typography, Dark Palette, Project-Identity Color, iOS Icon (PR #4 + #5)
 
-Four cross-platform polish fixes bundled into one PR (`feat/ui-polish-typography-darkmode`):
+Two PRs landed in sequence — PR #4 was overreaching, PR #5 narrowed scope. Final state on `main`:
 
-1. **iOS push-notification icon** — `AppIcon-1024.png` had alpha at the corners (RGBA, rounded-rect mask baked in). Apple rejects icons with transparency for notifications, which is why iPhone lock-screen banners showed no app icon. Flattened against the icon's own orange gradient (top `#FF641F` → bottom `#F97852`) and exported as RGB. iOS auto-rounds the corners at render time.
+**Kept (shipped):**
 
-2. **Card-header color = project identity** — `hueForCwd()` in `LocalSteerStore.swift` now resolves a real project identity (FNV-1a hash of the normalized git origin URL, e.g. `github.com/ilwonyoon/steer_ai`) instead of hashing the raw cwd path. Two worktrees of the same repo (or `Documents/Steer_ai/` vs. `Developer/Steer_ai/`) share a hue; truly different repos still bucket distinctly via golden-angle rotation. Origin extraction walks `.git/config` → `[remote "origin"] url`, with worktree support via `commondir`. Falls back to cwd-path hashing when no remote is configured. Mac forwards `accentHue` on the `CardPayload` wire (new `AnyCodable(Double)` initializer in `SteerCore`), iOS `CardPayloadMapping` prefers the relay-provided hue and falls back to the legacy category-based palette only for payloads predating this change.
+1. **iOS push-notification icon** — `AppIcon-1024.png` had alpha at the corners (RGBA, rounded-rect mask baked in). Apple drops icons with transparency from lock-screen banners, which is why iPhone alerts showed no app icon. Flattened against the icon's own orange gradient (`#FF641F` → `#F97852`) and exported as opaque RGB. iOS auto-rounds the corners at render time.
 
-3. **Dark-mode brighter + warm orange undertone** — Lifted dark surfaces (`appBackground`, `cardBackground`, `cardBackplate`) and gave R a tiny edge over G/B so neutrals carry a subtle warm cast that echoes the orange brand mark without tinting. Header `hueTint` brightness 0.22 → 0.30 + 0.05·intensity, saturation 0.32 → 0.34. Status colors (waiting / blocked / running / disconnected) also lifted in dark to read against the brighter surface. Mac and iOS mirrors of `SteerColors.swift` updated in lockstep.
+2. **Card-header tint = project identity** — `hueForCwd()` in `LocalSteerStore.swift` now hashes the normalized git origin URL (`github.com/owner/repo`) instead of the raw cwd path. Two worktrees of the same repo share a hue; different repos still bucket distinctly via golden-angle rotation. Origin extraction walks `.git/config` → `[remote "origin"] url`, with worktree support via `commondir`. Falls back to cwd-path hashing when no remote is configured. Mac forwards `accentHue` on the `CardPayload` wire (new `AnyCodable(Double)` initializer in `SteerCore`), iOS `CardPayloadMapping` reads it back.
 
-4. **Typography reset to platform standards** — Dropped `.monospaced` from non-terminal UI (it was reading as "developer console"). Mac uses SF 13–14pt body (matches Claude Desktop / ChatGPT desktop): project name 14pt semibold, branch label 12pt regular, age pill 11pt, reply placeholder 13pt. iOS uses SF 17pt body per HIG (matches Messages / Mail): project name 17pt semibold, branch label 14pt, age 13pt, reply placeholder 17pt at min-height 48. Terminal excerpt stays SF Mono: Mac 11.5 → 12pt, iOS 14 → 15pt. Empty-state command snippets stay mono since they're literal shell text the user copies.
+3. **Dark palette brightened** — Surfaces lifted from v1 (`appBackground` 0.075 → 0.105, `cardBackground` 0.12 → 0.155, `cardBackplate` similar). Pure neutral grey (R = G = B); no warm undertone. `hueTint` brightness 0.22 → 0.28+0.05·intensity, saturation 0.32 → 0.28. Status colors also lifted to read against the brighter surface. Light palette untouched.
 
-Verification: `swift build --package-path apps/mac` clean; `xcodebuild -scheme Steer build` clean; `npm test` 70/70 pass; on-screen check in macOS 26 with the new `.build/SteerMac.app` confirmed the new palette, project-identity color (Steer_ai vs aido visible as distinct hues; Steer_ai's two carousel entries share a hue), and SF typography.
+4. **Terminal body weight + size** — `TerminalExcerptView.weight(for:)` dropped: standard `.medium` → `.regular`, accent / success / warning `.semibold` → `.medium`. Size bumped Mac 11.5 → 12pt, iOS 14 → 15pt. Standard lines previously landed at medium, which read as "everything is bold."
+
+**Rolled back in PR #5 (after on-screen review with user):**
+
+- Card-chrome typography changes — project name, branch label, age pill, running badge, carousel labels, reply placeholder all returned to their v1 monospaced look (10–13pt). The original ask was about the central streaming text area, not the surrounding chrome.
+- Dark palette warm undertone — light palette was already dialed in by the user; pushing R > G > B on dark was overreach. Reverted to pure neutral grey on dark.
+
+Verification: `swift build` clean, `xcodebuild` iOS clean, `npm test` 70/70 pass, on-screen check on macOS 26 confirmed final look.
+
+### 2026-05-11: Keychain Prompt Storm + Sign-in-with-Apple Block (Diagnosed, Partial Fix)
+
+While dogfooding the UI polish builds, a "Steer wants to use your confidential information stored in 'ai.steer.relay.session' in your keychain" dialog started popping repeatedly — 10+ times per launch. Two distinct issues surfaced in sequence:
+
+1. **Prompt storm (mitigated).** Every reload tick (~2s) called `SessionTokenStore.read()` from multiple sites (drainQueuedInstructions, fanout, heartbeat). The keychain item's ACL was bound to the *previous* build's designated requirement (re-signing across ad-hoc / Developer ID flips the requirement), so macOS prompted on every read. Fix: in-process cache in `SessionTokenStore` — first read populates, subsequent reads return cached. `write` and `clear` keep the cache in sync. Result: at most one prompt per launch (or zero, once user picks "Always Allow"). The stale keychain item was also deleted from login keychain to start clean.
+
+2. **Sign-in-with-Apple Error 1000 (still blocked).** After clearing the keychain and signing back in to verify the cache, Apple Sign-In failed with `com.apple.AuthenticationServices.AuthorizationError error 1000`. Root cause confirmed: current `.build/SteerMac.app` entitlements (`codesign -d --entitlements -`) only carry `com.apple.security.cs.allow-jit` + `allow-unsigned-executable-memory` — **no `com.apple.developer.applesignin`**. Same blocker noted in the 2026-05-11 v0.1.1 entry: provisioning profile lacks the capability. Workaround for dogfooding: leave iPhone Sync off, run Mac-only mode (no keychain prompts trigger).
+
+Outstanding: enable "Sign In with Apple" on `ai.steer.mac` App ID in Apple Developer Portal, regenerate Developer ID + Development profiles, rebuild with `PROVISIONING_PROFILE=...`. Until then iPhone Sync remains unreachable on locally signed builds.
+
+### 2026-05-11: Local Branch / PR State
+
+- `feat/ui-polish-typography-darkmode` — PR #4 and #5 both merged into `main`. Local branch deleted; remote branch still present (left in case a re-issue is needed).
+- `main` is at `57ab652 fix(ui): narrow polish scope to terminal body only`.
+- Untracked in working tree: `WAKE_UP.md`, `setup-github-secrets.sh`, `update-notary-secrets.sh`, `docs/NOTARY_SECRETS.md` — user-authored notes / helper scripts, not yet tracked or decided.
+- Closed CI/release branches still on remote: `release/mac-dmg-distribution`, `fix/mac-launchd-spawn`, `ios-spike`, `fix-terminal-excerpt-formatting`. Same status as 2026-05-11 macOS 26 deployment entry — pending user cleanup.
 
 ## Open Questions
 
