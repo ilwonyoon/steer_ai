@@ -173,11 +173,19 @@ public final class SyncClient: ObservableObject {
             return
         }
         SignInDebugLog.write("[apple-signin] identityToken bytes=\(tokenData.count)")
+        // Apple returns fullName only on the FIRST sign-in for a given
+        // Apple ID + bundle. Stitch given + family so the server sees
+        // the actual name, not just the first token. Subsequent
+        // sign-ins return fullName == nil; the only way to get it
+        // back is to revoke the grant via System Settings → Apple ID
+        // → Sign in with Apple → Steer → Stop Using, then sign in
+        // again.
         let displayName: String? = {
-            if let formatted = credential.fullName?.givenName {
-                return formatted
-            }
-            return nil
+            guard let name = credential.fullName else { return nil }
+            let parts = [name.givenName, name.familyName]
+                .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
         }()
         // authorizationCode lets the relay later call Apple's revoke
         // endpoint when the user deletes their account.
