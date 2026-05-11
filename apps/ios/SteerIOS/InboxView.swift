@@ -216,7 +216,6 @@ struct InboxView: View {
                 onExitDemo: { inbox.exitDemoMode() },
                 connectionState: devicePresence.state,
                 runningCount: devicePresence.runningCount,
-                waitingCount: cards.count,
                 onTapChip: { showsMacSyncStatus = true },
                 onTapSettings: { showsSettings = true }
             )
@@ -386,7 +385,6 @@ private struct HeaderBar: View {
     var onExitDemo: (() -> Void)? = nil
     var connectionState: DevicePresenceObserver.State = .neverConnected
     var runningCount: Int = 0
-    var waitingCount: Int = 0
     var onTapChip: (() -> Void)? = nil
     var onTapSettings: (() -> Void)? = nil
 
@@ -422,7 +420,6 @@ private struct HeaderBar: View {
                 MacConnectionChip(
                     state: connectionState,
                     runningCount: runningCount,
-                    waitingCount: waitingCount,
                     onTap: onTapChip
                 )
             }

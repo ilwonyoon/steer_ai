@@ -8,11 +8,11 @@ import SteerCore
 struct MacConnectionChip: View {
     let state: DevicePresenceObserver.State
     /// Sessions the Mac is actively executing (no card yet — waiting
-    /// for stop). Mirrors the Mac status-bar "1 running" badge.
+    /// for stop). Mirrors the Mac status-bar "1 running" badge. Cards
+    /// already in the stack are NOT counted here: they're already
+    /// visible in the carousel below, so surfacing them in the chip
+    /// would just duplicate the same number on screen.
     var runningCount: Int = 0
-    /// Cards already on the iPhone waiting for a reply. The user's
-    /// attention surface.
-    var waitingCount: Int = 0
     let onTap: () -> Void
 
     var body: some View {
@@ -32,19 +32,16 @@ struct MacConnectionChip: View {
             .steerGlass(shape: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Mac connection: \(state.label). \(waitingCount) waiting.")
+        .accessibilityLabel("Mac connection: \(label).")
     }
 
-    /// Combined label. When the Mac is connected we substitute the
-    /// generic "Mac" with the live workload — "1 waiting" gets
-    /// priority since cards need user attention, otherwise we show
-    /// the number of running sessions ("1 running"). With no live
-    /// workload we fall back to the connection-state label so the
-    /// user knows the device is reachable.
+    /// Connected Mac with at least one running session → "N running".
+    /// No running sessions → connection-state label ("Mac" / "Stale"
+    /// / "Offline"). Waiting cards live in the carousel; we never
+    /// duplicate that count up here.
     private var label: String {
-        if case .connected = state {
-            if waitingCount > 0 { return "\(waitingCount) waiting" }
-            if runningCount > 0 { return "\(runningCount) running" }
+        if case .connected = state, runningCount > 0 {
+            return "\(runningCount) running"
         }
         return state.label
     }
