@@ -11,7 +11,7 @@
 #   NOTARY_APPLE_ID              — Apple ID used for notarization
 #   NOTARY_TEAM_ID               — Apple Team ID (LG7667PAS6)
 #   NOTARY_APP_SPECIFIC_PASSWORD — app-specific password for the Apple ID
-#   PROVISIONING_PROFILE_BASE64  — base64-encoded .provisionprofile that grants
+#   PROVISIONING_PROFILE  — base64-encoded .provisionprofile that grants
 #                                  com.apple.developer.applesignin to ai.steer.mac.
 #                                  Required because Steer.entitlements requests
 #                                  Sign in with Apple, which build-mac-app.sh
@@ -157,18 +157,18 @@ jobs:
       - name: Decode provisioning profile
         id: profile
         env:
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+          PROVISIONING_PROFILE: ${{ secrets.PROVISIONING_PROFILE }}
         run: |
           set -e
-          if [ -z "$PROVISIONING_PROFILE_BASE64" ]; then
-            echo "error: PROVISIONING_PROFILE_BASE64 secret is not set" >&2
+          if [ -z "$PROVISIONING_PROFILE" ]; then
+            echo "error: PROVISIONING_PROFILE secret is not set" >&2
             echo "  Steer.entitlements requires com.apple.developer.applesignin," >&2
             echo "  which can only be embedded via a provisioning profile." >&2
             echo "  Export the .provisionprofile, base64 it, and register the secret." >&2
             exit 1
           fi
           PROFILE_PATH="${{ github.workspace }}/../steer.provisionprofile"
-          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+          echo "$PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_PATH"
           if [ ! -s "$PROFILE_PATH" ]; then
             echo "error: decoded provisioning profile is empty" >&2
             exit 1
