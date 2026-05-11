@@ -49,18 +49,51 @@ export class Store {
     await this.env.DB.prepare(`DELETE FROM users WHERE user_id = ?`).bind(userId).run();
   }
 
-  /// Upsert a card. Returns `true` when this is a brand-new card_id
-  /// for the user, `false` when the row already existed and was
-  /// updated in place. The caller uses this to decide whether to
-  /// fan out an APNS push — re-publishing the same card on every
-  /// reload tick would otherwise pump notifications every 2s.
-  async upsertCard(userId: string, card: CardPayload): Promise<{ inserted: boolean }> {
+  /// Upsert a card.
+  ///
+  /// Returns `inserted` (true when this card_id is new for the user)
+  /// and `changed` (true when the row is new OR any meaningful column
+  /// differs from what we previously stored). Callers gate on
+  /// `inserted` for APNS (one push per new card) and on `changed`
+  /// for the WebSocket broadcast (no-op upserts must not fan out).
+  ///
+  /// "Meaningful" here = everything except `updated_at`. Mac
+  /// re-publishes on its reload tick, bumping updated_at every time
+  /// without touching anything else. If we let that flow through to
+  /// the WS broadcast, every iPhone sees a stream of identical
+  /// upserts every 2s — which is what made the carousel jitter.
+  async upsertCard(
+    userId: string,
+    card: CardPayload
+  ): Promise<{ inserted: boolean; changed: boolean }> {
     const existing = await this.env.DB.prepare(
-      `SELECT 1 FROM cards WHERE card_id = ? AND user_id = ? LIMIT 1`
+      `SELECT session_id, category, priority, title, summary,
+              action_prompt, payload_json, state
+       FROM cards WHERE card_id = ? AND user_id = ? LIMIT 1`
     )
       .bind(card.cardId, userId)
-      .first();
+      .first<{
+        session_id: string;
+        category: string;
+        priority: string;
+        title: string;
+        summary: string;
+        action_prompt: string | null;
+        payload_json: string;
+        state: string;
+      }>();
     const inserted = existing == null;
+    const incomingPayload = JSON.stringify(card.payload ?? {});
+    const changed =
+      inserted ||
+      existing.session_id !== card.sessionId ||
+      existing.category !== card.category ||
+      existing.priority !== card.priority ||
+      existing.title !== card.title ||
+      existing.summary !== card.summary ||
+      (existing.action_prompt ?? null) !== (card.actionPrompt ?? null) ||
+      existing.payload_json !== incomingPayload ||
+      existing.state !== card.state;
 
     await this.env.DB.prepare(
       `INSERT INTO cards (
@@ -87,13 +120,13 @@ export class Store {
         card.title,
         card.summary,
         card.actionPrompt ?? null,
-        JSON.stringify(card.payload ?? {}),
+        incomingPayload,
         card.state,
         card.createdAt,
         card.updatedAt
       )
       .run();
-    return { inserted };
+    return { inserted, changed };
   }
 
   async listActiveCards(userId: string, sinceUpdatedAt = 0): Promise<CardPayload[]> {
