@@ -140,8 +140,18 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
   }
   const userId = c.get("user").userId;
   const store = new Store(c.env);
-  const { inserted } = await store.upsertCard(userId, body);
-  await broadcast(c.env, userId, { type: "card.upsert", card: body });
+  const { inserted, changed } = await store.upsertCard(userId, body);
+
+  // Only fan out the WS broadcast when something actually changed.
+  // Mac re-publishes every active card on its 2s reload tick; the
+  // store dedupe above turns those no-op publishes into a silent
+  // touch of updated_at, so iPhones don't see a stream of identical
+  // upserts (which is what makes the carousel jitter). Defense in
+  // depth — Mac also dedupes client-side, but a single source of
+  // truth at the relay protects against future drift.
+  if (changed) {
+    await broadcast(c.env, userId, { type: "card.upsert", card: body });
+  }
 
   // Fan out APNS push only on FIRST insert of a given cardId. Mac
   // re-publishes every active card every reload tick (~2s); without
