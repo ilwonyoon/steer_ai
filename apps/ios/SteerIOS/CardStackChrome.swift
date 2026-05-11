@@ -165,12 +165,17 @@ struct CompactActionCardView: View {
         return AttributedString(raw)
     }
 
+    // Sizing mirrors Mac CompactActionCardView 1:1 so the two
+    // clients feel like the same product: 14pt provider mark, 10pt
+    // monospaced project label, 10.5pt body, 3-line summary
+    // reservesSpace so all cards land at the same height regardless
+    // of summary length.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                ProviderMark(provider: card.provider, size: 16)
+                ProviderMark(provider: card.provider, size: 14)
                 Text(card.project)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(SteerColors.ink)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -182,16 +187,16 @@ struct CompactActionCardView: View {
             .background(headerTint)
 
             Text(summaryLine)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: 10.5, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
-                .lineLimit(2, reservesSpace: true)
+                .lineLimit(3, reservesSpace: true)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 11)
                 .background(SteerColors.cardBackground)
         }
-        .frame(width: 156, alignment: .leading)
+        .frame(width: 132, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)

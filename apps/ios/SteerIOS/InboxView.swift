@@ -296,7 +296,12 @@ struct InboxView: View {
         .animation(.easeOut(duration: 0.22), value: currentIndex)
     }
 
-    private var carouselFootprint: CGFloat { 100 + 12 }
+    // Carousel height (100) + breathing room above (16) + breathing
+    // room below (12). The top breathing room is what visually
+    // separates the main card from the compact strip — matches the
+    // 12pt VStack spacing the Mac shell uses between cardStack and
+    // ActionCardCarousel.
+    private var carouselFootprint: CGFloat { 100 + 16 + 12 }
 
     private func replyBinding(for sessionId: String) -> Binding<String> {
         Binding(
