@@ -344,6 +344,20 @@ public final class SyncInbox: ObservableObject {
     }
 
     public func signOut() {
+        // Fire-and-forget DELETE so the relay drops our device row
+        // before we drop the JWT we'd need to authenticate the call.
+        // The user has already pressed Sign Out; if the network is
+        // down the row will fall off in the 24h prune sweep anyway.
+        // Phase B3 of docs/SYNC_STABILITY_AND_COST_PLAN.md.
+        if let token = tokenStore.read() {
+            let deviceId = Self.deviceId
+            let url = baseURL.appendingPathComponent("/v1/sync/devices/\(deviceId)")
+            var req = URLRequest(url: url)
+            req.httpMethod = "DELETE"
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            req.setValue(deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
+            Task { _ = try? await urlSession.data(for: req) }
+        }
         tokenStore.clear()
         cards = []
         status = .signedOut
@@ -731,20 +745,61 @@ public final class SyncInbox: ObservableObject {
     /// since it survives iCloud restore (per Apple) and stays the
     /// same for our app's installs. If the system hasn't issued one
     /// yet (rare race during first launch), fall back to a random
-    /// UUID persisted in UserDefaults so the value stays stable for
-    /// this install.
+    /// Stable across reinstalls and across iOS identifierForVendor
+    /// rotations. Keychain survives app uninstall (unlike UserDefaults
+    /// or IDFV), so storing the id there means a user who reinstalls
+    /// Steer keeps the same device row on the relay instead of
+    /// piling up new orphan rows on every fresh install — Phase B1
+    /// of docs/SYNC_STABILITY_AND_COST_PLAN.md.
+    ///
+    /// The keychain item uses `kSecAttrAccessibleAfterFirstUnlock`
+    /// so the value is readable in the background after the phone
+    /// has been unlocked once since boot (matches when push handling
+    /// and heartbeat actually need it). Not synced to iCloud — a new
+    /// device should get its own id.
     static let deviceId: String = {
-        if let idfv = UIDevice.current.identifierForVendor?.uuidString {
-            return idfv
+        let service = "ai.steer.relay.deviceId"
+        let account = "default"
+        if let stored = readDeviceIdFromKeychain(service: service, account: account) {
+            return stored
         }
-        let key = "ai.steer.relay.deviceId"
-        if let existing = UserDefaults.standard.string(forKey: key) {
-            return existing
-        }
+        // First launch on this device (or first launch after a
+        // pre-B1 build cleared the keychain). Mint a UUID, persist
+        // it, and use it from now on.
         let fresh = UUID().uuidString
-        UserDefaults.standard.set(fresh, forKey: key)
+        writeDeviceIdToKeychain(fresh, service: service, account: account)
         return fresh
     }()
+
+    private static func readDeviceIdFromKeychain(service: String, account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let s = String(data: data, encoding: .utf8) else { return nil }
+        return s
+    }
+
+    private static func writeDeviceIdToKeychain(_ value: String, service: String, account: String) {
+        let data = value.data(using: .utf8) ?? Data()
+        let base: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(base as CFDictionary)
+        var attrs = base
+        attrs[kSecValueData as String] = data
+        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(attrs as CFDictionary, nil)
+    }
 
     private func sendDecoding<T: Decodable>(_ req: URLRequest) async throws -> T {
         let (data, _) = try await sendRaw(req)
