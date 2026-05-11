@@ -50,6 +50,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          # workflow_dispatch defaults to the default-branch ref. Honour
+          # inputs.tag explicitly so a manual rerun builds exactly the commit
+          # the tag points at, not whatever main has drifted to.
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Resolve release tag
@@ -59,6 +63,16 @@ jobs:
         run: |
           if [ -n "$INPUT_TAG" ]; then
             tag="$INPUT_TAG"
+            # Checkout pinned this ref above; if it isn't a real tag on
+            # origin the resolve fails fast instead of bundling the wrong
+            # commit. action-gh-release would otherwise happily create the
+            # tag against the default branch.
+            if ! git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+              echo "error: tag '$tag' does not exist on origin after checkout" >&2
+              echo "  push the tag first:" >&2
+              echo "    git tag $tag && git push origin $tag" >&2
+              exit 1
+            fi
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
           else
@@ -97,7 +111,9 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           # Make this keychain the search default so `security find-identity`
-          # picks it up during release-mac.sh.
+          # picks it up during release-mac.sh. The existing keychain list is
+          # intentionally word-split so each path becomes its own argument.
+          # shellcheck disable=SC2046
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
           echo "$DEVELOPER_ID_CERT_P12" | base64 --decode > /tmp/cert.p12
@@ -165,7 +181,11 @@ jobs:
       - name: Compute checksum
         id: artifact
         run: |
-          DMG_PATH="$(ls .build/release/Steer-*.dmg | head -n1)"
+          DMG_PATH="$(find .build/release -maxdepth 1 -name 'Steer-*.dmg' -print -quit)"
+          if [ -z "$DMG_PATH" ]; then
+            echo "error: no DMG produced under .build/release" >&2
+            exit 1
+          fi
           shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"
           echo "dmg=$DMG_PATH" >> "$GITHUB_OUTPUT"
 
