@@ -13,6 +13,14 @@ import SteerCore
 ///   inside.
 struct SettingsView: View {
     @ObservedObject var inbox: SyncInbox
+    /// Settings is presented as a sheet by InboxView. Dismiss it
+    /// automatically after Sign Out so the user lands on the
+    /// signed-out main screen (with the Sign in with Apple button)
+    /// instead of being stuck inside a Settings list whose every
+    /// row is now meaningless. Without this dismiss the only way
+    /// out is Done in the navigation bar, which felt like one extra
+    /// hop after every sign-out.
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -24,6 +32,7 @@ struct SettingsView: View {
                     Section {
                         Button("Sign Out", role: .destructive) {
                             inbox.signOut()
+                            dismiss()
                         }
                     }
                 }
@@ -245,6 +254,10 @@ struct AccountDetailView: View {
 
     @State private var confirmsDeletion = false
     @State private var isDeleting = false
+    /// Same reasoning as SettingsView: after the account is gone the
+    /// signed-in UI in the parent sheet doesn't make sense, so
+    /// dismiss out to the main screen.
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
@@ -294,6 +307,7 @@ struct AccountDetailView: View {
                     isDeleting = true
                     await inbox.deleteAccount()
                     isDeleting = false
+                    dismiss()
                 }
             }
             Button("Cancel", role: .cancel) {}
