@@ -11,21 +11,28 @@ struct MacConnectionChip: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(dotColor)
-                    .frame(width: 6, height: 6)
+                    .frame(width: 7, height: 7)
                 Text(state.label)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(SteerColors.secondaryInk)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(SteerColors.cardBackground, in: Capsule())
-            .overlay(Capsule().stroke(SteerColors.softSeparator, lineWidth: 1))
-            .shadow(color: SteerColors.cardShadow.opacity(0.5), radius: 6, y: 2)
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .background(
+                Group {
+                    if #available(iOS 26.0, *) {
+                        Capsule().fill(.regularMaterial)
+                    } else {
+                        Capsule().fill(.ultraThinMaterial)
+                    }
+                }
+            )
+            .overlay(Capsule().stroke(SteerColors.softSeparator, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Mac connection: \(state.label)")

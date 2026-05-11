@@ -31,6 +31,7 @@ struct InboxView: View {
     @StateObject private var keyboard = KeyboardObserver()
     @StateObject private var devicePresence: DevicePresenceObserver
     @State private var showsMacSyncStatus = false
+    @State private var showsSettings = false
 
     init(inbox: SyncInbox) {
         self.inbox = inbox
@@ -87,6 +88,16 @@ struct InboxView: View {
         }
         .sheet(isPresented: $showsMacSyncStatus) {
             MacSyncStatusView(observer: devicePresence)
+        }
+        .sheet(isPresented: $showsSettings) {
+            NavigationStack {
+                SettingsView(inbox: inbox)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showsSettings = false }
+                        }
+                    }
+            }
         }
         .task {
             devicePresence.start()
@@ -162,19 +173,23 @@ struct InboxView: View {
                 detail: "Tap Use Live Sync to connect your Mac."
             )
         case .neverConnected:
+            // First-run, never paired. CTAs only here so the user has
+            // an obvious path forward before any real session exists.
             EmptyStateView(
-                icon: "rectangle.stack.fill",
-                message: "Set up Steer for Mac",
-                detail: "Install Steer for Mac and turn on iPhone Sync to receive cards.",
+                icon: "terminal",
+                message: "No Steer sessions yet",
+                detail: "In a terminal:\n  cd ~/your/project\n  steer codex   # or steer claude",
                 primaryCTA: ("Set Up Mac", { showsMacSyncStatus = true }),
                 secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
             )
         case .connected:
+            // Mac is reachable. Mirror Mac's "No waiting actions"
+            // exactly — same icon, same copy. No CTAs (the user is
+            // already wired up and just needs a session to pause).
             EmptyStateView(
-                icon: "tray",
-                message: "No cards yet",
-                detail: "Run steer codex or steer claude on your Mac.",
-                secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
+                icon: "terminal",
+                message: "No waiting actions",
+                detail: "Running sessions appear here when they stop."
             )
         case .stale, .offline:
             EmptyStateView(
@@ -200,7 +215,8 @@ struct InboxView: View {
                 isDemo: inbox.isDemoMode,
                 onExitDemo: { inbox.exitDemoMode() },
                 connectionState: devicePresence.state,
-                onTapChip: { showsMacSyncStatus = true }
+                onTapChip: { showsMacSyncStatus = true },
+                onTapSettings: { showsSettings = true }
             )
 
             if isMacOfflineWithCards {
@@ -346,15 +362,42 @@ private struct HeaderBar: View {
     var onExitDemo: (() -> Void)? = nil
     var connectionState: DevicePresenceObserver.State = .neverConnected
     var onTapChip: (() -> Void)? = nil
+    var onTapSettings: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
+            // Centered title sits in the same row as the leading
+            // settings capsule and the trailing connection chip. The
+            // ZStack lets the title own the row's center independent
+            // of either capsule's intrinsic width.
             Text(isDemo ? "Sample workspace" : "Steer")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(isDemo ? Color.accentColor : SteerColors.secondaryInk)
 
-            HStack {
+            HStack(spacing: 8) {
+                if let onTapSettings {
+                    Button(action: onTapSettings) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(SteerColors.secondaryInk)
+                            .frame(width: 30, height: 30)
+                            .background(
+                                Group {
+                                    if #available(iOS 26.0, *) {
+                                        Circle().fill(.regularMaterial)
+                                    } else {
+                                        Circle().fill(.ultraThinMaterial)
+                                    }
+                                }
+                            )
+                            .overlay(Circle().stroke(SteerColors.softSeparator, lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings-button")
+                }
+
                 Spacer()
+
                 if isDemo, let onExitDemo {
                     Button("Use Live Sync", action: onExitDemo)
                         .font(.system(size: 13, weight: .medium))
@@ -365,7 +408,7 @@ private struct HeaderBar: View {
                 }
             }
         }
-        .frame(height: 28)
+        .frame(height: 30)
     }
 }
 
@@ -442,6 +485,12 @@ private struct NotificationsDeniedBanner: View {
     }
 }
 
+/// Empty state styled exactly like Mac SteerRootView's
+/// EmptyStateView so the two clients feel like the same product:
+/// terminal SF Symbol, monospaced message, card-shaped container.
+/// Optional CTAs are only used by the signed-out / demo / never-
+/// connected paths; the canonical "no cards waiting" state shows
+/// only the icon + two lines of monospaced text, mirroring Mac.
 private struct EmptyStateView: View {
     let icon: String
     let message: String
@@ -450,18 +499,20 @@ private struct EmptyStateView: View {
     var secondaryCTA: (label: String, action: () -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Spacer()
             Image(systemName: icon)
-                .font(.system(size: 40))
+                .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(SteerColors.tertiaryInk)
             Text(message)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(SteerColors.ink)
-            Text(detail)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .multilineTextAlignment(.center)
+            Text(detail)
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundStyle(SteerColors.tertiaryInk)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
             if primaryCTA != nil || secondaryCTA != nil {
                 VStack(spacing: 8) {
@@ -481,9 +532,15 @@ private struct EmptyStateView: View {
                             .buttonStyle(.plain)
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, 6)
             }
             Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(SteerColors.separator, lineWidth: 1)
         }
     }
 }
