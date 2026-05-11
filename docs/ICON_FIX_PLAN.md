@@ -306,8 +306,18 @@ class NotificationService: UNNotificationServiceExtension {
 
 ## 보관 중인 stash 인벤토리
 
-- `stash@{0}: icon-fix-code-staged` — 영역 1/2 코드 변경 (iOS asset PNG + Contents.json, Mac ActionNotificationService 첨부, build-mac-app.sh CFBundleIconName)
-- `stash@{1}: sync-v2-spillover` — sync-v2 작업이 이 브랜치에 흘러들어온 변경 (InboxView/SyncInbox/ActionCardView LoadPhase). **design/sync-v2 에서 pop 해야 함**, 이 작업이랑 무관.
+stash 인덱스는 작업 중 변동된다. **라벨**로 식별하라:
+
+- **`icon-fix-code-staged`** — 영역 1/2 코드 변경 (iOS asset PNG + Contents.json, Mac ActionNotificationService 첨부, build-mac-app.sh CFBundleIconName). **이 작업 재개 시 fix/notification-icons 에서 pop.**
+- **`sync-v2-spillover*` / `sync-v2-inboxview-leak`** — sync-v2 작업이 fix 브랜치에 흘러들어온 변경 (InboxView/SyncInbox/ActionCardView LoadPhase). **sync-v2 작업 브랜치에서 처리해야 함**, 이 아이콘 작업과 무관.
+- **`ios-signin-debug-temp` / `pr5-merge-prep`** — 더 오래된 무관 stash, 손대지 말 것.
+
+찾고 복원:
+```sh
+git stash list | grep icon-fix-code-staged
+# stash@{N}: 형태로 인덱스 확인
+git stash pop stash@{N}
+```
 
 ---
 
