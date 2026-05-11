@@ -48,6 +48,7 @@ struct SettingsView: View {
             } label: {
                 LinkLabel(title: "What Syncs?", icon: "arrow.triangle.2.circlepath")
             }
+            NotificationsRow(inbox: inbox)
         } header: {
             Text("Sync")
         }
@@ -155,6 +156,64 @@ private struct LinkLabel: View {
         } icon: {
             Image(systemName: icon)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Notifications status + jump to iOS Settings when denied. Shows the
+/// current authorization so the user knows whether push will reach
+/// the lock screen, without having to leave the app to check.
+private struct NotificationsRow: View {
+    @ObservedObject var inbox: SyncInbox
+
+    var body: some View {
+        if inbox.notificationPermission == .denied {
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                HStack {
+                    Label {
+                        Text("Notifications")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "bell.slash")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("Off")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            HStack {
+                Label {
+                    Text("Notifications")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "bell")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(statusText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var statusText: String {
+        switch inbox.notificationPermission {
+        case .granted: return "On"
+        case .provisional: return "Quiet"
+        case .denied: return "Off"
+        case .notDetermined, .unknown: return "Not asked"
         }
     }
 }

@@ -91,9 +91,25 @@ struct InboxView: View {
         .task {
             devicePresence.start()
             cards = inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
+            await inbox.refreshNotificationPermission()
         }
         .onReceive(inbox.$cards) { newCards in
             cards = newCards.map { CardPayloadMapping.actionCard(from: $0) }
+            // If a deep-link tap arrived before the card showed up
+            // (relay round trip), re-honor it once the card lands.
+            if let pending = inbox.pendingFocusSessionId,
+               cards.contains(where: { $0.sessionId == pending }) {
+                focusedSessionId = pending
+                inbox.clearPendingFocus()
+            }
+        }
+        .onReceive(inbox.$pendingFocusSessionId) { pending in
+            guard let sessionId = pending,
+                  cards.contains(where: { $0.sessionId == sessionId }) else { return }
+            withAnimation(.easeOut(duration: 0.22)) {
+                focusedSessionId = sessionId
+            }
+            inbox.clearPendingFocus()
         }
         .onDisappear {
             devicePresence.stop()
@@ -189,6 +205,10 @@ struct InboxView: View {
 
             if isMacOfflineWithCards {
                 MacOfflineBanner { showsMacSyncStatus = true }
+            }
+
+            if inbox.notificationPermission == .denied {
+                NotificationsDeniedBanner()
             }
 
             if !inbox.pendingReplies.isEmpty {
@@ -388,6 +408,37 @@ private struct MacOfflineBanner: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct NotificationsDeniedBanner: View {
+    var body: some View {
+        Button(action: openSettings) {
+            HStack(spacing: 8) {
+                Image(systemName: "bell.slash")
+                    .foregroundStyle(SteerColors.secondaryInk)
+                Text("Allow notifications to get lock-screen banners")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(SteerColors.ink)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(SteerColors.tertiaryInk)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(SteerColors.softSeparator, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 

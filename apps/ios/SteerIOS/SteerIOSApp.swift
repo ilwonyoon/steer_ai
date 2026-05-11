@@ -20,20 +20,24 @@ struct SteerIOSApp: App {
 }
 
 /// Owns the APNS lifecycle: request authorization, register with
-/// Apple's push service, and forward the device token to SyncInbox so
-/// the relay can fan out push notifications to this device when a
-/// card lands.
-final class SteerAppDelegate: NSObject, UIApplicationDelegate {
+/// Apple's push service, forward the device token to SyncInbox, and
+/// route notification taps back into the inbox so the right card
+/// surfaces.
+final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // We don't request authorization here — the InboxView surfaces
-        // a "Enable notifications" CTA the user can opt into, and we
-        // call requestAuthorization there. But we DO call
-        // registerForRemoteNotifications immediately so iOS will hand
-        // us the device token if the user already granted permission
-        // in a previous session.
+        // Become the notification delegate so willPresent / didReceive
+        // come through us. SwiftUI's @main App also wires this up but
+        // only when one of its scenes is alive — using the AppDelegate
+        // is more durable across background launches.
+        UNUserNotificationCenter.current().delegate = self
+
+        // Register for remote notifications when the user already
+        // granted permission in a previous session. The first-launch
+        // prompt is driven from SyncInbox.requestNotificationPermissionIfNeeded
+        // after sign-in.
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized
                 || settings.authorizationStatus == .provisional else {
@@ -60,10 +64,39 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        // No-op: SyncInbox keeps the previous token if any. We don't
-        // surface this — Apple sometimes fails registration during
-        // captive portal / no network, and a later registerForRemote
-        // call recovers.
+        // No-op: SyncInbox keeps the previous token if any. A later
+        // registerForRemote call recovers from transient failures.
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    /// Foreground delivery: still show the banner + play the sound,
+    /// don't silently drop it. Without this iOS suppresses notifications
+    /// while the app is active.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
+    }
+
+    /// Tap on a notification (lock screen, banner, or Notification
+    /// Center). The relay-side fanout includes cardId/sessionId in the
+    /// payload; we hand it to SyncInbox so InboxView can scroll to
+    /// that card.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let info = response.notification.request.content.userInfo
+        let cardId = info["cardId"] as? String
+        let sessionId = info["sessionId"] as? String
+        Task { @MainActor in
+            SyncInbox.shared.requestFocus(cardId: cardId, sessionId: sessionId)
+            completionHandler()
+        }
     }
 }
 

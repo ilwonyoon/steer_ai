@@ -450,6 +450,46 @@ Implementation plan:
 
 Sign in with Apple + Cloudflare Workers relay verified end-to-end on Mac. The Mac app signs in once via `ASAuthorizationAppleIDProvider`, the worker verifies the Apple identity token against Apple's JWKS, mints a 30-day session JWT (kept in macOS keychain), and the running Steer process publishes every active card to D1 each reload tick. Verified by reading D1 `cards` rows back via REST. Open follow-ups: iOS sign-in + WebSocket card receive (#204) and the launch-time main-window restoration regression (#205, `open .app` shows zero windows; `open -F` works).
 
+### 2026-05-09: iOS Sign-in End-to-End on Real Device
+
+iPhone signs in via Apple, hits the relay, receives WebSocket card upserts. First end-to-end use of the relay path from a real iPhone — fixes iOS-side onboarding crash (#191), CloudKit→Workers pivot follow-through, and `open .app` window restoration regression on Mac (#205, `applicationShouldHandleReopen` + `newDocument:` selector).
+
+### 2026-05-09: Auto-mode App Review Compliance (12 items)
+
+One pass over App Store guideline requirements: legal placeholder docs replaced with launch defaults; server-side Sign in with Apple revocation on account deletion (`/v1/me` DELETE flow); device presence/heartbeat endpoint on the relay; Mac heartbeat publisher every ~60s; Settings "Report an Issue" GitHub deep link on both platforms; iOS "What Syncs?" disclosure and Mac mirror; marketing copy audit; native `SignInWithAppleButton` everywhere (was a custom black capsule, App Store guideline 4.8); Demo Mode (signed-out → sample card stack) for App Review; iOS top-right Mac connection chip + Mac Sync Status sheet; all 5 pre-connection inbox states. Tracks #210-#221.
+
+### 2026-05-10: Connection-Stability Harness (Terminal → Mac → Relay → iPhone)
+
+Four-phase harness covering the entire delivery path. Phase 1 (`packages/agent/test/connection_perf.test.js`, `store_perf.test.js`) measures classifier p50 0.006ms / store SQLite p50 0.081ms — both well under any user-visible budget. Phase 2 (`packages/relay/test/connection_contract.test.ts`) adds 8 contract tests for the Mac→Relay loop. Phase 3 (`apps/ios/SteerIOSTests/CardPayloadMappingPerfTests.swift`) pins iOS markdown mapping at 7µs/card after memoization. Phase 4 (`packages/relay/test/e2e_round_trip.test.ts`) simulates the full 8-hop loop in-process at <2s. Tracks #222-#225.
+
+### 2026-05-10: Security P0 — JWT Device Binding + Delete-Account Local Clear
+
+Two App Store / security P0s. `mintSessionJWT` now binds an optional `deviceId` into the `did` claim; `extractAuthorizedUser` cross-checks `X-Steer-Device-Id` against `did` and rejects mismatches (a stolen token from another device returns 401). Backward compat — tokens without `did` claim continue to work during the rollout window. iOS `deleteAccount()` now funnels through `signOut()` in BOTH success and failure paths so the Keychain token is cleared even if the relay DELETE fails (App Store guideline 5.1.1(v)). 4 new contract tests in `packages/relay/test/device_binding.test.ts`, 2 in `apps/ios/SteerIOSTests/DeleteAccountTokenClearTests.swift`. Tracks #242, #243.
+
+### 2026-05-10: WebSocket Exponential Backoff
+
+`WSReconnectBackoff` in SteerCore (1s, 2s, 4s, 8s, 16s, then 30s capped, ±20% jitter). Replaced the flat 3s sleep both clients used between WS reconnects. Numerical proof in `WSReconnectBackoffTests` (5/5 PASS): 60s outage drops attempts 20 → 6 (3.3×); 10-minute outage drops 200 → 25 (8×). First reconnect still under 2s so a single dropped frame recovers fast. Eliminates the battery drain + Cloudflare bill from network-hiccup retry storms. Tracks #244.
+
+### 2026-05-10: Mac LocalSteerStore Perf Harness
+
+Measured the cost of the `/usr/bin/sqlite3` subprocess fork on every Mac reload. Result: mean 3.7ms, p95 7.5ms across 50 sequential calls — well under the 50ms budget the dashboard's snappy-reload cadence demands. No replacement (in-process SQLite binding) needed; the test stays in the suite (`LocalSteerStorePerfTests`) so a future refactor that pushes p95 over budget fails fast. Tracks #245.
+
+### 2026-05-10: iOS XCUITest Harness (Smoke + Golden + Stress)
+
+11 scenarios across three suites driven from `xcodebuild test`. Smoke (`CardFlowUITests`, ~28s, 3 tests): launch → fixture card → reply send → tab switch. Golden (`GoldenFlowUITests`, ~47s, 4 tests): demo entry round-trip, multi-card swipe with per-card draft preservation, keyboard show/hide layout stability, Settings drill-down. Stress (`StressFlowUITests`, ~8min, 4 tests): 100× swipe under XCTMemoryMetric + XCTCPUMetric, 50× demo reply send, rotation + lifecycle churn (5 cycles × 4 orientations + 10 home/activate), 1800 input events typing test. Apple sign-in skipped via the `--uitest` launch arg → fixture mode wiring; `--uitest-signed-out` for the sign-in screen itself. Tracks #227-#241.
+
+### 2026-05-10: UX Writing Diet
+
+14 user-facing surfaces trimmed using "what does the user MUST know" as the only filter. Major reductions: sign-in subtitle 13w→7w, delete-account footer 41w→13w, empty states 14-21w→3-11w, Mac Settings privacy line 37w→12w, Folder Access guidance 41w→11w. Deletions (no info loss): Settings ▸ Identity Apple Relay paraphrase (Apple's UI explains this), Settings ▸ Server "scoped to this id" jargon, confirm-sheet message that restated the footer. Approximately 60% fewer words overall.
+
+### 2026-05-10: APNS Push Pipeline
+
+End-to-end push notifications. iOS: `SteerAppDelegate` registers for remote notifications, forwards device token to `SyncInbox.updateAPNSToken`, and triggers a `/v1/sync/devices` heartbeat carrying the new `apnsToken` field. Relay: new `packages/relay/src/apns.ts` (ES256 JWT bearer cached 50min) + `/v1/sync/cards/:cardId` PUT fans out to every iOS device with a token, only for actionable categories (blocker / decision / question / waiting). D1 migration 0004 adds `apns_token` column. UX layer: permission dialog auto-prompts after sign-in, denied state surfaces both a dismissible banner and a Settings row. Notification tap routes through `SyncInbox.requestFocus` → `InboxView` scrolls to the matching card. Open: user must provision APNS_KEY_ID / APNS_PRIVATE_KEY / APNS_BUNDLE_ID secrets + run D1 migration 0004 on prod. Tracks #255-#257, #260, #261.
+
+### 2026-05-10: Mac Instruction Drain Race + iPhone Sync Toggle Semantics
+
+Diagnosed user-visible "markInjected failed: cancelled" red banner: the reload loop (~2s) was reentrant — a slow `steer send` subprocess overlapped the next tick which re-fetched the same queued instruction and double-POSTed `markInstructionStatus`, with URLSession cancelling one of the two. Fix: `drainInFlight` flag serializes the drain. Same diagnosis revealed the iPhone Sync toggle was incorrectly gating BOTH outbound mirroring AND inbound instruction drain — meaning iPhone replies sat queued forever when the user hadn't flipped the toggle. Fix: outbound respects the toggle (privacy promise), inbound drain runs whenever signed in. Tracks #250-#253.
+
 ## Open Questions
 
 - Should the prototype agent be TypeScript/Node for speed or Swift/Rust for production shape?

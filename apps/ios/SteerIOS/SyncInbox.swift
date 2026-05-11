@@ -1,6 +1,7 @@
 import Foundation
 import AuthenticationServices
 import UIKit
+import UserNotifications
 import SteerCore
 
 /// iOS counterpart of the Mac SyncClient. Same wire shape (relay
@@ -209,8 +210,98 @@ public final class SyncInbox: ObservableObject {
             status = .signedIn(response.user)
             connectWebSocket()
             await reload()
+            // First-launch UX: as soon as the user is signed in we ask
+            // for notification permission. The Apple ID sheet just
+            // closed so the user's expecting one more permission
+            // dialog. We don't ask before sign-in — that would prompt
+            // people who haven't committed yet.
+            await requestNotificationPermissionIfNeeded()
         } catch {
             lastError = "Auth POST failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Notification permission
+
+    public enum NotificationPermission: Equatable {
+        case unknown
+        case notDetermined
+        case granted
+        case denied
+        case provisional
+    }
+    @Published public private(set) var notificationPermission: NotificationPermission = .unknown
+
+    /// Pulls the current authorization status without prompting. Run
+    /// on launch and on app-foreground so the UI reflects whatever
+    /// the user did in iOS Settings out of band.
+    public func refreshNotificationPermission() async {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        notificationPermission = Self.map(settings.authorizationStatus)
+        // If we already have permission, also kick off the APNS
+        // registration so the relay learns this device's token.
+        if notificationPermission == .granted || notificationPermission == .provisional {
+            await MainActor.run {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        }
+    }
+
+    /// Shows the system permission dialog if and only if the status
+    /// is `.notDetermined`. Already-granted / denied stays put.
+    public func requestNotificationPermissionIfNeeded() async {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let current = await UNUserNotificationCenter.current().notificationSettings()
+        guard current.authorizationStatus == .notDetermined else {
+            notificationPermission = Self.map(current.authorizationStatus)
+            return
+        }
+        do {
+            let granted = try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .badge])
+            notificationPermission = granted ? .granted : .denied
+            if granted {
+                await MainActor.run {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+        } catch {
+            notificationPermission = .denied
+        }
+    }
+
+    // MARK: - Notification deep link
+
+    /// Set when the user taps an APNS banner; InboxView observes this
+    /// and scrolls to the matching card. Cleared once the UI has
+    /// honored it so a second tap with the same card still works.
+    @Published public private(set) var pendingFocusSessionId: String? = nil
+
+    public func requestFocus(cardId: String?, sessionId: String?) {
+        // Prefer sessionId — the inbox is indexed by it. cardId is a
+        // useful fallback if the relay payload only carried that.
+        if let sid = sessionId, !sid.isEmpty {
+            pendingFocusSessionId = sid
+            return
+        }
+        guard let cid = cardId,
+              let card = cards.first(where: { $0.cardId == cid })
+        else { return }
+        pendingFocusSessionId = card.sessionId
+    }
+
+    public func clearPendingFocus() {
+        pendingFocusSessionId = nil
+    }
+
+    private static func map(_ s: UNAuthorizationStatus) -> NotificationPermission {
+        switch s {
+        case .notDetermined: return .notDetermined
+        case .denied: return .denied
+        case .authorized, .ephemeral: return .granted
+        case .provisional: return .provisional
+        @unknown default: return .unknown
         }
     }
 

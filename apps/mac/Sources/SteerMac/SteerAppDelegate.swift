@@ -129,13 +129,20 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshStatusItem(waitingCount: 0)
     }
 
+    /// Updates the menu-bar button to reflect the number of waiting
+    /// cards. With 0 cards we show only the SF Symbol so the bar
+    /// stays uncluttered; with N > 0 we add a small numeric badge
+    /// next to the icon. The symbol stays the same shape either way
+    /// so the user's spatial muscle memory doesn't shift.
     private func refreshStatusItem(waitingCount: Int) {
         guard let button = statusItem?.button else { return }
-        if waitingCount > 0 {
-            button.title = "Steer · \(waitingCount)"
-        } else {
-            button.title = "Steer"
-        }
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        let symbolName = waitingCount > 0 ? "rectangle.stack.fill.badge.person.crop" : "rectangle.stack.fill"
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Steer")?
+            .withSymbolConfiguration(config)
+        button.image = image
+        button.imagePosition = waitingCount > 0 ? .imageLeading : .imageOnly
+        button.title = waitingCount > 0 ? " \(waitingCount)" : ""
     }
 
     @objc private func openSteer() {
