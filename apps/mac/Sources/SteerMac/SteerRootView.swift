@@ -14,6 +14,15 @@ struct SteerRootView: View {
     @State private var lastError: String?
     @State private var didLoadInitialCards = false
     @State private var notifiedCardFingerprints = Set<String>()
+    /// Snapshots of what we last *published* to the relay. The 2s
+    /// reload tick is for local SwiftUI refresh; we publish only when
+    /// these snapshots disagree with the freshly loaded cards/chips.
+    /// Without this, every tick mirrors all active cards to the
+    /// relay regardless of whether anything changed, which is what
+    /// made the iPhone carousel jitter every two seconds.
+    @State private var lastPublishedCardIds = Set<String>()
+    @State private var lastPublishedCardHashes: [String: Int] = [:]
+    @State private var lastPublishedChipFingerprints: [String: String] = [:]
     @State private var liveChipsExpanded = false
     @State private var replyDrafts: [String: String] = [:]
     @State private var attachmentDrafts: [String: [ReplyAttachment]] = [:]
@@ -289,6 +298,22 @@ struct SteerRootView: View {
         let toggleOn = SteerSettings.shared.iPhoneSyncEnabled
         let signedIn = SyncClient.shared.isSignedIn
         SignInDebugLog.write("[reload] toggle=\(toggleOn) signedIn=\(signedIn) cards=\(loadedCards.count)")
+        // If we got signed out (or the toggle flipped off) since the
+        // last tick, drop our last-published snapshot so the very
+        // next sign-in publishes everything fresh. Otherwise the
+        // diff thinks the relay already knows about cards it never
+        // saw (different account, or pre-account state) and we ship
+        // a partial inbox to the iPhone.
+        if !signedIn || !toggleOn {
+            if !lastPublishedCardIds.isEmpty
+                || !lastPublishedCardHashes.isEmpty
+                || !lastPublishedChipFingerprints.isEmpty
+            {
+                lastPublishedCardIds.removeAll()
+                lastPublishedCardHashes.removeAll()
+                lastPublishedChipFingerprints.removeAll()
+            }
+        }
         // Outbound mirroring respects the toggle — that's a privacy
         // promise the iPhone Sync section makes. Inbound instructions
         // do NOT respect it: if the user once signed in and an iPhone
@@ -297,8 +322,27 @@ struct SteerRootView: View {
         // "delivered" state. Sign out is the real off switch.
         if signedIn {
             if toggleOn {
-                await syncToiPhone(cards: loadedCards)
-                await syncLiveSessionsToiPhone(chips: loadedChips)
+                // Diff-based publish. Only PUT the cards/chips that
+                // actually changed since our last successful publish,
+                // and only DELETE rows the iPhone still believes are
+                // active. SwiftUI tick runs every 2s but most ticks
+                // observe the same set of cards with identical
+                // contents; without this gate we re-publish them all
+                // on every tick and the iPhone sees a fresh WS upsert
+                // burst every two seconds.
+                let (cardsToPublish, idsToResolve) = diffCardsForPublish(
+                    loadedCards: loadedCards
+                )
+                let chipsToPublish = diffChipsForPublish(loadedChips: loadedChips)
+                if !cardsToPublish.isEmpty || !idsToResolve.isEmpty {
+                    await syncToiPhone(
+                        publishCards: cardsToPublish,
+                        idsToResolve: idsToResolve
+                    )
+                }
+                if !chipsToPublish.isEmpty {
+                    await syncLiveSessionsToiPhone(chips: chipsToPublish)
+                }
             }
             await drainQueuedInstructions()
         }
@@ -337,23 +381,78 @@ struct SteerRootView: View {
         }
     }
 
-    private func syncToiPhone(cards: [ActionCard]) async {
-        SignInDebugLog.write("[syncToiPhone] publishing \(cards.count) cards")
-        let localIds = Set(cards.map(\.id))
-        for card in cards {
+    /// Diff helper. Splits the freshly loaded card set against the
+    /// last-published snapshot into (cards that changed → PUT now)
+    /// and (card ids that disappeared locally → DELETE on the relay).
+    /// Updates the snapshots as a side effect so the next tick sees
+    /// the new baseline.
+    private func diffCardsForPublish(
+        loadedCards: [ActionCard]
+    ) -> (publish: [ActionCard], resolve: [String]) {
+        let currentIds = Set(loadedCards.map(\.id))
+        let cardsToPublish = loadedCards.filter { card in
+            let hash = SteerCardMapping.payload(from: card).publishFingerprint
+            let prev = lastPublishedCardHashes[card.id]
+            return prev != hash
+        }
+        let idsToResolve = Array(lastPublishedCardIds.subtracting(currentIds))
+        // Update the snapshots so the next tick doesn't re-publish
+        // these. We update OPTIMISTICALLY here; if a PUT/DELETE fails
+        // the request layer retries on its own and the next tick
+        // will catch any drift (the hashes still match if nothing
+        // actually changed server-side).
+        for card in cardsToPublish {
+            lastPublishedCardHashes[card.id] = SteerCardMapping.payload(from: card).publishFingerprint
+        }
+        for id in idsToResolve {
+            lastPublishedCardHashes.removeValue(forKey: id)
+        }
+        lastPublishedCardIds = currentIds
+        return (cardsToPublish, idsToResolve)
+    }
+
+    /// Diff helper for live-session chips. Each chip carries a hash
+    /// of (sessionId, runState, projectName, provider). Reload tick
+    /// emits hundreds of chip publishes otherwise.
+    private func diffChipsForPublish(
+        loadedChips: [LiveSessionChip]
+    ) -> [LiveSessionChip] {
+        var next: [LiveSessionChip] = []
+        for chip in loadedChips {
+            let fp = "\(chip.runState)|\(chip.project)|\(chip.provider.rawValue)"
+            if lastPublishedChipFingerprints[chip.sessionId] != fp {
+                next.append(chip)
+                lastPublishedChipFingerprints[chip.sessionId] = fp
+            }
+        }
+        // Prune fingerprints for chips that no longer exist locally
+        // so the dictionary doesn't grow unbounded across long-running
+        // sessions.
+        let liveIds = Set(loadedChips.map(\.sessionId))
+        for key in lastPublishedChipFingerprints.keys where !liveIds.contains(key) {
+            lastPublishedChipFingerprints.removeValue(forKey: key)
+        }
+        return next
+    }
+
+    private func syncToiPhone(
+        publishCards: [ActionCard],
+        idsToResolve: [String]
+    ) async {
+        SignInDebugLog.write(
+            "[syncToiPhone] publishing \(publishCards.count) cards, resolving \(idsToResolve.count) stale"
+        )
+        for card in publishCards {
             let payload = SteerCardMapping.payload(from: card)
             await SyncClient.shared.publishCard(payload)
         }
-        // Reconcile: any card the relay still considers active that
-        // is no longer in our local DB has been resolved on the Mac
-        // side (session ended, user dismissed, etc.) and must be
-        // removed from the relay so the iPhone stops showing it.
-        // Without this, every previous session piles up — user saw
-        // 5 cards on iPhone while Mac only had 1 live session.
-        let remoteActive = await SyncClient.shared.fetchActiveCards()
-        for remote in remoteActive where !localIds.contains(remote.cardId) {
-            SignInDebugLog.write("[reconcile] resolving stale \(remote.cardId)")
-            await SyncClient.shared.resolveCard(cardId: remote.cardId)
+        // Reconcile: anything that disappeared from our local DB
+        // since the last tick must be DELETEd from the relay so the
+        // iPhone stops showing it. We trust our own state — no need
+        // to round-trip through fetchActiveCards every tick.
+        for id in idsToResolve {
+            SignInDebugLog.write("[reconcile] resolving disappeared \(id)")
+            await SyncClient.shared.resolveCard(cardId: id)
         }
     }
 
