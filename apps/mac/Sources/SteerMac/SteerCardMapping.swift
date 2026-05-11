@@ -21,7 +21,13 @@ enum SteerCardMapping {
                 "options": AnyCodable(card.chips),
                 "project": AnyCodable(card.project),
                 "provider": AnyCodable(card.provider.rawValue),
-                "branchLabel": AnyCodable(card.branchLabel ?? "")
+                "branchLabel": AnyCodable(card.branchLabel ?? ""),
+                // Mac resolves the project identity hue from git origin
+                // (so two worktrees of the same repo share a color).
+                // Forward it on the wire so iOS uses the same hue
+                // instead of bucketing by category — keeps the two
+                // clients visually consistent for the same session.
+                "accentHue": AnyCodable(card.accentHue)
             ],
             state: cardState(card.state),
             createdAt: timestampMs(now),

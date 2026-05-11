@@ -14,18 +14,18 @@ struct DetailView: View {
             HStack {
                 Button("Back", action: onClose)
                     .buttonStyle(.plain)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
 
                 Spacer()
 
                 HStack(spacing: 8) {
                     Text("\(card.project) · \(card.provider.displayName)")
-                        .font(.system(size: 12))
+                        .font(.system(size: 14))
                         .foregroundStyle(SteerColors.secondaryInk)
                         .lineLimit(1)
                     Text(card.state.rawValue)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(SteerColors.secondaryInk)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 6)
@@ -39,7 +39,7 @@ struct DetailView: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Terminal tail")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(SteerColors.secondaryInk)
                         TerminalExcerptView(lines: card.terminalLines)
                             .padding(14)
@@ -77,7 +77,7 @@ private struct ThreadBubble: View {
 
     var body: some View {
         Text(message.text)
-            .font(.system(size: 15))
+            .font(.system(size: 17))
             .lineSpacing(4)
             .foregroundStyle(message.sender == .user ? SteerColors.userInk : SteerColors.ink)
             .padding(.horizontal, 14)

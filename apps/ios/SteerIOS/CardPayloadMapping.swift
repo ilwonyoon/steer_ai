@@ -24,10 +24,22 @@ enum CardPayloadMapping {
             terminalLines: lines.map { TerminalLine($0, kind: lineKind(for: $0)) },
             chips: chips,
             category: card.category,
-            accentHue: hue(for: card.category),
+            // Prefer the hue Mac computed from project identity (git
+            // origin) so both clients agree on color per repo. Fall
+            // back to the category-driven palette for legacy payloads
+            // that don't carry an accentHue yet.
+            accentHue: doubleValue(card.payload?["accentHue"]?.value) ?? hue(for: card.category),
             branchLabel: (branchLabel?.isEmpty == false) ? branchLabel : nil,
             thread: []
         )
+    }
+
+    private static func doubleValue(_ value: AnyCodableValue?) -> Double? {
+        switch value {
+        case .double(let d): return d
+        case .integer(let i): return Double(i)
+        default: return nil
+        }
     }
 
     private static func parseProvider(_ value: AnyCodableValue?) -> ProviderKind {

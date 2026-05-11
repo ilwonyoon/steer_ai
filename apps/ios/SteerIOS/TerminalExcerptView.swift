@@ -12,8 +12,13 @@ struct TerminalExcerptView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 5) {
                 ForEach(lines) { line in
+                    // iOS body 17pt is too dense for monospaced runs;
+                    // 15pt SF Mono (one notch under SF body) keeps
+                    // the terminal excerpt readable without
+                    // overwhelming the surrounding chrome. Was 14pt
+                    // which read small on iPhone next to body copy.
                     Text(renderedLine(line.text))
-                        .font(.system(size: 14, weight: weight(for: line.kind), design: .monospaced))
+                        .font(.system(size: 15, weight: weight(for: line.kind), design: .monospaced))
                         .foregroundStyle(color(for: line.kind))
                         .textSelection(.enabled)
                         .lineLimit(nil)
