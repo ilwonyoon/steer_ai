@@ -392,6 +392,21 @@ app.get("/v1/sync/devices", async (c) => {
 });
 
 /**
+ * DELETE /v1/sync/devices/:deviceId
+ * Drop a single device row. Called by the iOS app from signOut()
+ * so the user's current device stops receiving APNS pushes the
+ * moment they sign out (and stops accumulating on the relay across
+ * sign-in/sign-out cycles). Phase B3 of
+ * docs/SYNC_STABILITY_AND_COST_PLAN.md.
+ */
+app.delete("/v1/sync/devices/:deviceId", async (c) => {
+  const deviceId = c.req.param("deviceId");
+  const store = new Store(c.env);
+  await store.deleteDeviceById(c.get("user").userId, deviceId);
+  return c.json({ ok: true });
+});
+
+/**
  * GET /v1/stream
  * WebSocket entry point. Routed straight to the user's UserHub DO.
  *

@@ -288,6 +288,17 @@ export class Store {
   /// place means every future fanout still spends a JWT slot on it
   /// (and racks up TooManyProviderTokenUpdates 429s when there are
   /// many dead rows).
+  /// Drop a device row by user + deviceId. Called from the iOS
+  /// signOut path (DELETE /v1/sync/devices/:deviceId) so the user
+  /// stops receiving pushes the moment they sign out.
+  async deleteDeviceById(userId: string, deviceId: string): Promise<void> {
+    await this.env.DB.prepare(
+      `DELETE FROM devices WHERE user_id = ? AND device_id = ?`
+    )
+      .bind(userId, deviceId)
+      .run();
+  }
+
   async deleteDeviceByApnsToken(userId: string, apnsToken: string): Promise<void> {
     await this.env.DB.prepare(
       `DELETE FROM devices WHERE user_id = ? AND apns_token = ?`
