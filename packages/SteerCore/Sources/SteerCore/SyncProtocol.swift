@@ -99,7 +99,7 @@ public struct InstructionRecord: Codable, Hashable, Sendable {
 
 /// Mac/iOS device presence published to the relay so the other
 /// device can show a connection chip + queue-vs-deliver decisions.
-public struct DeviceSnapshot: Codable, Sendable {
+public struct DeviceSnapshot: Codable, Sendable, Equatable {
     public let deviceId: String
     public let platform: String          // "mac" | "ios"
     public let displayName: String?
@@ -142,7 +142,7 @@ public struct DeviceListResponse: Codable, Sendable {
 /// Live session metadata published by Mac so iPhone can render a
 /// "1 running" badge alongside the connection chip. Mirrors the
 /// relay's `SessionSnapshot` TS interface (see packages/relay/src/types.ts).
-public struct SessionSnapshot: Codable, Sendable {
+public struct SessionSnapshot: Codable, Sendable, Equatable {
     public let sessionId: String
     public let provider: String
     public let projectName: String?
@@ -173,6 +173,18 @@ public struct SessionSnapshot: Codable, Sendable {
 public struct SessionListResponse: Codable, Sendable {
     public let sessions: [SessionSnapshot]
     public init(sessions: [SessionSnapshot]) { self.sessions = sessions }
+}
+
+/// GET /v1/sync/presence — combined devices + sessions so iOS
+/// DevicePresenceObserver makes one request per poll instead of
+/// two. Phase A1 of docs/SYNC_STABILITY_AND_COST_PLAN.md.
+public struct PresenceResponse: Codable, Sendable {
+    public let devices: [DeviceSnapshot]
+    public let sessions: [SessionSnapshot]
+    public init(devices: [DeviceSnapshot], sessions: [SessionSnapshot]) {
+        self.devices = devices
+        self.sessions = sessions
+    }
 }
 
 public struct AuthAppleRequest: Codable, Sendable {

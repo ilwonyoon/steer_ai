@@ -345,6 +345,23 @@ app.get("/v1/sync/sessions", async (c) => {
 });
 
 /**
+ * GET /v1/sync/presence
+ * Combined { devices, sessions } so iOS DevicePresenceObserver
+ * doesn't have to make two requests every poll. Phase A1 of
+ * docs/SYNC_STABILITY_AND_COST_PLAN.md. Keeps the legacy single
+ * endpoints around so older iOS builds still work.
+ */
+app.get("/v1/sync/presence", async (c) => {
+  const store = new Store(c.env);
+  const userId = c.get("user").userId;
+  const [devices, sessions] = await Promise.all([
+    store.listDevices(userId),
+    store.listLiveSessions(userId),
+  ]);
+  return c.json({ devices, sessions });
+});
+
+/**
  * POST /v1/sync/devices
  * Device heartbeat. Mac calls every ~60s while iPhone Sync is on,
  * iPhone calls on launch + foreground. Body is a DeviceSnapshot.

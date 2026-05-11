@@ -53,12 +53,16 @@ final class DevicePresenceObserver: ObservableObject {
     func start() {
         Task { await refresh() }
         pollTimer?.invalidate()
-        // 5s poll lets the chip flip Connected ↔ Stale within ~10s
-        // of the Mac going offline. Previously this was 30s and the
-        // user noticed the lag. The endpoint is cheap (single D1 row
-        // read) and we already share a URLSession, so 12 req/min is
-        // well under any rate limit.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        // 15s poll. Was 5s, which made the chip flip Connected ↔
+        // Stale within ~10s of the Mac going offline but burned 12
+        // req/min × 2 endpoints per user — the dominant chunk of
+        // Cloudflare quota in practice. 15s × 1 consolidated
+        // endpoint = 4 req/min, an ~83% drop. With the Mac heartbeat
+        // bumped to 15s alongside (see SteerAppDelegate), the chip
+        // still flips Stale within ~30s of a real Mac quit — slower
+        // than before, but not noticeably so. Phase A1 of
+        // docs/SYNC_STABILITY_AND_COST_PLAN.md.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refresh() }
         }
     }
@@ -73,26 +77,35 @@ final class DevicePresenceObserver: ObservableObject {
     func refresh() async {
         guard let inbox else { return }
         if inbox.isDemoMode {
-            state = .demo
+            if state != .demo { state = .demo }
             return
         }
         guard inbox.isSignedIn else {
-            state = .neverConnected
+            if state != .neverConnected { state = .neverConnected }
             return
         }
-        let fetched = await fetchDevices()
-        devices = fetched
-        state = derive(from: fetched)
-        liveSessions = await fetchLiveSessions()
+        // Single combined request — was two (devices + sessions).
+        // Phase A1.
+        let (fetchedDevices, fetchedSessions) = await fetchPresence()
+        if devices != fetchedDevices {
+            devices = fetchedDevices
+        }
+        let nextState = derive(from: fetchedDevices)
+        if state != nextState {
+            state = nextState
+        }
+        if liveSessions != fetchedSessions {
+            liveSessions = fetchedSessions
+        }
     }
 
-    private func fetchLiveSessions() async -> [SessionSnapshot] {
-        guard let inbox else { return [] }
+    private func fetchPresence() async -> ([DeviceSnapshot], [SessionSnapshot]) {
+        guard let inbox else { return ([], []) }
         do {
-            let resp: SessionListResponse = try await inbox.getJSONRaw("/v1/sync/sessions")
-            return resp.sessions
+            let resp: PresenceResponse = try await inbox.getJSONRaw("/v1/sync/presence")
+            return (resp.devices, resp.sessions)
         } catch {
-            return []
+            return ([], [])
         }
     }
 
@@ -112,13 +125,4 @@ final class DevicePresenceObserver: ObservableObject {
         return .offline(label: label)
     }
 
-    private func fetchDevices() async -> [DeviceSnapshot] {
-        guard let inbox else { return [] }
-        do {
-            let resp: DeviceListResponse = try await inbox.getJSONRaw("/v1/sync/devices")
-            return resp.devices
-        } catch {
-            return []
-        }
-    }
 }
