@@ -177,8 +177,6 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // chain so they never satisfy this predicate.
         let mainWindows = NSApplication.shared.windows.filter { window in
             guard window.canBecomeKey else { return false }
-            // Settings/About windows have a distinct title; SteerRootView
-            // is just "Steer" or "Steer · …".
             let title = window.title
             return title == "Steer" || title.hasPrefix("Steer · ")
         }
@@ -189,20 +187,19 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        // No main window alive (user closed it or SwiftUI dismantled
-        // the scene). Materialize a fresh one via newDocument: which
-        // SwiftUI WindowGroup registers for. We post the notification
-        // *and* fire newDocument: in the same tick — the first one
-        // that lands wins, the other no-ops.
+        // No main window alive. The SwiftUI WindowGroup listens for
+        // the `steerOpenMainWindow` notification via
+        // OpenMainWindowReceiver and re-opens itself via
+        // `openWindow(id: "main")`. We deliberately don't call
+        // `newDocument:` — under macOS 26's LSUIElement apps it
+        // surfaces a "No document could be created" alert instead of
+        // wiring back to the SwiftUI WindowGroup.
         NotificationCenter.default.post(name: .steerOpenMainWindow, object: nil)
-        DispatchQueue.main.async {
-            NSApp.sendAction(
-                #selector(NSDocumentController.newDocument(_:)),
-                to: nil,
-                from: nil
-            )
-            // Belt-and-suspenders for older macOS where newDocument:
-            // is sometimes ignored without a delegate confirmation.
+        // applicationShouldHandleReopen is the AppKit hook AppKit
+        // itself calls on Dock click — invoking it manually nudges
+        // macOS to recreate the scene when the receiver above was
+        // already torn down.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
                 NSApplication.shared,
                 hasVisibleWindows: false

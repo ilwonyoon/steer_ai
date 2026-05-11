@@ -37,6 +37,12 @@ struct SteerMacApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 375, height: 600)
+        // macOS 26 + LSUIElement combo otherwise launches with zero
+        // windows: AppKit considers a status-bar app to have nothing
+        // to present, so the SwiftUI WindowGroup never instantiates
+        // on launch. defaultLaunchBehavior(.presented) overrides
+        // that.
+        .defaultLaunchBehavior(.presented)
 
         Settings {
             SteerSettingsView()
