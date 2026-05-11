@@ -364,7 +364,14 @@ public final class SyncInbox: ObservableObject {
         guard isSignedIn else { return }
         do {
             let resp: CardListResponse = try await getJSON("/v1/sync/cards")
-            cards = resp.cards.sorted { $0.updatedAt < $1.updatedAt }
+            // Filter out cards we're optimistically replying to so
+            // the GET-driven reload doesn't undo the user's send.
+            // pendingReplies clears when the relay broadcasts the
+            // matching card.resolved (see handleWSText).
+            let pendingCardIds = Set(pendingReplies.map(\.cardId))
+            cards = resp.cards
+                .filter { !pendingCardIds.contains($0.cardId) }
+                .sorted { $0.updatedAt < $1.updatedAt }
             lastError = nil
         } catch {
             lastError = "Failed to load cards: \(error.localizedDescription)"
@@ -586,6 +593,18 @@ public final class SyncInbox: ObservableObject {
         }
         switch message {
         case .cardUpsert(let card):
+            // Drop upserts for any card the user already replied to.
+            // Mac re-publishes every active card on each reload tick
+            // (~2s), which races our optimistic removal: the user
+            // taps Send → we remove the card → 1s later Mac's tick
+            // re-publishes the same row → WS broadcast → card pops
+            // back in. The reconcile loop on Mac then resolves it
+            // ~1s after that ("disappear, reappear, disappear"). We
+            // gate WS upserts on the pendingReplies set so the
+            // optimistic state wins.
+            if pendingReplies.contains(where: { $0.cardId == card.cardId }) {
+                return
+            }
             // Keep ordering by updatedAt asc; replace existing or append.
             if let idx = cards.firstIndex(where: { $0.cardId == card.cardId }) {
                 cards[idx] = card
@@ -595,6 +614,9 @@ public final class SyncInbox: ObservableObject {
             cards.sort { $0.updatedAt < $1.updatedAt }
         case .cardResolved(let id):
             cards.removeAll { $0.cardId == id }
+            // A resolve from the server is the authoritative signal
+            // that our pending reply made it through; clear the row.
+            pendingReplies.removeAll { $0.cardId == id }
         case .ping:
             sendPong()
         default:
