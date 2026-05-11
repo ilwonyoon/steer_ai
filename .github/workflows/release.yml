@@ -180,10 +180,14 @@ jobs:
           STEER_NOTARY_PROFILE: steer-notary
           APP_VERSION: ${{ steps.tag.outputs.version }}
           PROVISIONING_PROFILE: ${{ steps.profile.outputs.path }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_FEED_URL: ${{ secrets.SPARKLE_FEED_URL }}
         run: bash scripts/release-mac.sh
 
-      - name: Compute checksum
+      - name: Compute checksum and sign for Sparkle
         id: artifact
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
           DMG_PATH="$(find .build/release -maxdepth 1 -name 'Steer-*.dmg' -print -quit)"
           if [ -z "$DMG_PATH" ]; then
@@ -192,6 +196,18 @@ jobs:
           fi
           shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"
           echo "dmg=$DMG_PATH" >> "$GITHUB_OUTPUT"
+
+          # Sign the DMG for Sparkle appcast (skip if key not set)
+          if [ -n "${SPARKLE_PRIVATE_ED_KEY:-}" ]; then
+            SIGN_TOOL="$(find apps/mac/.build -name 'sign_update' -not -path '*/old_dsa*' | head -1)"
+            if [ -n "$SIGN_TOOL" ]; then
+              ED_SIG=$("$SIGN_TOOL" "$DMG_PATH" "$SPARKLE_PRIVATE_ED_KEY" 2>/dev/null | grep -oE 'sparkle:edSignature="[^"]+"' | head -1 || true)
+              FILE_SIZE=$(stat -f%z "$DMG_PATH" 2>/dev/null || stat -c%s "$DMG_PATH")
+              echo "ed_signature=$ED_SIG" >> "$GITHUB_OUTPUT"
+              echo "file_size=$FILE_SIZE" >> "$GITHUB_OUTPUT"
+              echo "Sparkle signature: $ED_SIG"
+            fi
+          fi
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
