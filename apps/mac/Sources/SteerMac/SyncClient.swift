@@ -301,6 +301,21 @@ public final class SyncClient: ObservableObject {
         return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
     }
 
+    /// Publish a single live-session snapshot. Mirrors the Mac
+    /// status-bar chip's "1 running · 2 waiting" badge to iPhone via
+    /// /v1/sync/sessions. Fire-and-forget: failure is silent because
+    /// the next reload tick will retry.
+    public func publishSession(_ session: SessionSnapshot) async {
+        guard isSignedIn else { return }
+        do {
+            try await postJSONIgnoringResponse("/v1/sync/sessions", body: session)
+        } catch {
+            if !isTransientError(error) {
+                SignInDebugLog.write("[publishSession] failed: \(error)")
+            }
+        }
+    }
+
     /// Pull every card the relay still considers active for this
     /// user. The Mac reconciles against this list each reload tick so
     /// cards that no longer exist on disk get resolved server-side

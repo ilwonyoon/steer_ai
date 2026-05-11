@@ -33,6 +33,15 @@ final class DevicePresenceObserver: ObservableObject {
 
     @Published private(set) var state: State = .neverConnected
     @Published private(set) var devices: [DeviceSnapshot] = []
+    /// Live sessions the Mac last reported (running / waiting /
+    /// blocked, last 5 minutes). The chip composes its label from
+    /// `runningCount` so the user sees "1 running" or "2 running ·
+    /// 1 waiting" in the connection capsule.
+    @Published private(set) var liveSessions: [SessionSnapshot] = []
+
+    var runningCount: Int {
+        liveSessions.filter { $0.runState == "running" }.count
+    }
 
     private weak var inbox: SyncInbox?
     private var pollTimer: Timer?
@@ -74,6 +83,17 @@ final class DevicePresenceObserver: ObservableObject {
         let fetched = await fetchDevices()
         devices = fetched
         state = derive(from: fetched)
+        liveSessions = await fetchLiveSessions()
+    }
+
+    private func fetchLiveSessions() async -> [SessionSnapshot] {
+        guard let inbox else { return [] }
+        do {
+            let resp: SessionListResponse = try await inbox.getJSONRaw("/v1/sync/sessions")
+            return resp.sessions
+        } catch {
+            return []
+        }
     }
 
     private func derive(from devices: [DeviceSnapshot]) -> State {

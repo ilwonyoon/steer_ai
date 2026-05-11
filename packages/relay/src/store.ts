@@ -297,4 +297,33 @@ export class Store {
       )
       .run();
   }
+
+  /// Live (running/waiting/blocked) sessions the Mac last reported.
+  /// iPhone reads this to render the "N running" badge next to the
+  /// Mac connection chip. Stale sessions older than 5 minutes are
+  /// excluded because the Mac stops heartbeating them when the
+  /// process exits or Steer.app is quit.
+  async listLiveSessions(userId: string): Promise<SessionSnapshot[]> {
+    const minLastActivity = Date.now() - 5 * 60 * 1000;
+    const rs = await this.env.DB.prepare(
+      `SELECT session_id, provider, project_name, branch_label,
+              run_state, last_activity_at
+       FROM sessions
+       WHERE user_id = ?
+         AND last_activity_at > ?
+         AND run_state IN ('running', 'waiting', 'blocked')
+       ORDER BY last_activity_at DESC
+       LIMIT 50`
+    )
+      .bind(userId, minLastActivity)
+      .all();
+    return rs.results.map((row) => ({
+      sessionId: row.session_id as string,
+      provider: row.provider as string,
+      projectName: (row.project_name as string) || undefined,
+      branchLabel: (row.branch_label as string) || undefined,
+      runState: row.run_state as string,
+      lastActivityAt: row.last_activity_at as number,
+    }));
+  }
 }

@@ -298,6 +298,7 @@ struct SteerRootView: View {
         if signedIn {
             if toggleOn {
                 await syncToiPhone(cards: loadedCards)
+                await syncLiveSessionsToiPhone(chips: loadedChips)
             }
             await drainQueuedInstructions()
         }
@@ -316,6 +317,24 @@ struct SteerRootView: View {
         }
         lastHeartbeatAt = now
         await SyncClient.shared.sendDeviceHeartbeat(syncEnabled: syncEnabled)
+    }
+
+    /// Push the running-session chip list to the relay so the iPhone
+    /// can render the "1 running" badge inside its connection chip.
+    /// LiveSessionChip is what RunningBadge already consumes locally;
+    /// we lift the same shape to the wire as SessionSnapshot.
+    private func syncLiveSessionsToiPhone(chips: [LiveSessionChip]) async {
+        for chip in chips {
+            let snapshot = SessionSnapshot(
+                sessionId: chip.sessionId,
+                provider: chip.provider.rawValue,
+                projectName: chip.project,
+                branchLabel: nil,
+                runState: chip.runState,
+                lastActivityAt: Int64(chip.lastActivityAt.timeIntervalSince1970 * 1000)
+            )
+            await SyncClient.shared.publishSession(snapshot)
+        }
     }
 
     private func syncToiPhone(cards: [ActionCard]) async {

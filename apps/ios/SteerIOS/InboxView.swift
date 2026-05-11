@@ -215,6 +215,7 @@ struct InboxView: View {
                 isDemo: inbox.isDemoMode,
                 onExitDemo: { inbox.exitDemoMode() },
                 connectionState: devicePresence.state,
+                runningCount: devicePresence.runningCount,
                 waitingCount: cards.count,
                 onTapChip: { showsMacSyncStatus = true },
                 onTapSettings: { showsSettings = true }
@@ -358,10 +359,28 @@ struct InboxView: View {
     }
 }
 
+/// Applies the real iOS 26 Liquid Glass effect (`.glassEffect`) to
+/// the receiving view, falling back to a translucent material on
+/// iOS 17–25 so the capsule still reads against the dark card
+/// stack. `interactive()` gives the iOS 26 highlight on press.
+extension View {
+    @ViewBuilder
+    func steerGlass<S: Shape>(shape: S) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            self
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(SteerColors.softSeparator, lineWidth: 0.5))
+        }
+    }
+}
+
 private struct HeaderBar: View {
     var isDemo: Bool = false
     var onExitDemo: (() -> Void)? = nil
     var connectionState: DevicePresenceObserver.State = .neverConnected
+    var runningCount: Int = 0
     var waitingCount: Int = 0
     var onTapChip: (() -> Void)? = nil
     var onTapSettings: (() -> Void)? = nil
@@ -378,16 +397,7 @@ private struct HeaderBar: View {
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(SteerColors.ink)
                         .frame(width: 44, height: 44)
-                        .background(
-                            Group {
-                                if #available(iOS 26.0, *) {
-                                    Circle().fill(.regularMaterial)
-                                } else {
-                                    Circle().fill(.ultraThinMaterial)
-                                }
-                            }
-                        )
-                        .overlay(Circle().stroke(SteerColors.softSeparator, lineWidth: 0.5))
+                        .steerGlass(shape: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings-button")
@@ -402,19 +412,11 @@ private struct HeaderBar: View {
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 14)
                     .frame(height: 44)
-                    .background(
-                        Group {
-                            if #available(iOS 26.0, *) {
-                                Capsule().fill(.regularMaterial)
-                            } else {
-                                Capsule().fill(.ultraThinMaterial)
-                            }
-                        }
-                    )
-                    .overlay(Capsule().stroke(SteerColors.softSeparator, lineWidth: 0.5))
+                    .steerGlass(shape: Capsule())
             } else if let onTapChip {
                 MacConnectionChip(
                     state: connectionState,
+                    runningCount: runningCount,
                     waitingCount: waitingCount,
                     onTap: onTapChip
                 )

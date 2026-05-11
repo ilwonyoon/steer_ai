@@ -7,11 +7,11 @@ import SteerCore
 /// Indicator". Tapping opens MacSyncStatusView.
 struct MacConnectionChip: View {
     let state: DevicePresenceObserver.State
-    /// Number of cards waiting on the user (the iOS analog of Mac's
-    /// "1 running" chip — except here it's "1 waiting" because cards
-    /// only exist once a session has stopped for input). Bundled into
-    /// the connection chip so the user has a single status capsule
-    /// instead of two competing dots.
+    /// Sessions the Mac is actively executing (no card yet — waiting
+    /// for stop). Mirrors the Mac status-bar "1 running" badge.
+    var runningCount: Int = 0
+    /// Cards already on the iPhone waiting for a reply. The user's
+    /// attention surface.
     var waitingCount: Int = 0
     let onTap: () -> Void
 
@@ -29,27 +29,22 @@ struct MacConnectionChip: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 44)
-            .background(
-                Group {
-                    if #available(iOS 26.0, *) {
-                        Capsule().fill(.regularMaterial)
-                    } else {
-                        Capsule().fill(.ultraThinMaterial)
-                    }
-                }
-            )
-            .overlay(Capsule().stroke(SteerColors.softSeparator, lineWidth: 0.5))
+            .steerGlass(shape: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Mac connection: \(state.label). \(waitingCount) waiting.")
     }
 
-    /// Combined label. When the Mac is connected AND there are
-    /// waiting cards, we emphasize the count so the user sees what
-    /// needs attention; otherwise we show the connection-state label.
+    /// Combined label. When the Mac is connected we substitute the
+    /// generic "Mac" with the live workload — "1 waiting" gets
+    /// priority since cards need user attention, otherwise we show
+    /// the number of running sessions ("1 running"). With no live
+    /// workload we fall back to the connection-state label so the
+    /// user knows the device is reachable.
     private var label: String {
-        if waitingCount > 0, case .connected = state {
-            return "\(waitingCount) waiting"
+        if case .connected = state {
+            if waitingCount > 0 { return "\(waitingCount) waiting" }
+            if runningCount > 0 { return "\(runningCount) running" }
         }
         return state.label
     }

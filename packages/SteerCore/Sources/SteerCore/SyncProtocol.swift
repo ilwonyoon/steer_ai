@@ -139,6 +139,42 @@ public struct DeviceListResponse: Codable, Sendable {
     public init(devices: [DeviceSnapshot]) { self.devices = devices }
 }
 
+/// Live session metadata published by Mac so iPhone can render a
+/// "1 running" badge alongside the connection chip. Mirrors the
+/// relay's `SessionSnapshot` TS interface (see packages/relay/src/types.ts).
+public struct SessionSnapshot: Codable, Sendable {
+    public let sessionId: String
+    public let provider: String
+    public let projectName: String?
+    public let branchLabel: String?
+    public let runState: String        // "running" | "waiting" | "blocked"
+    public let lastActivityAt: Int64   // ms epoch
+
+    public init(
+        sessionId: String,
+        provider: String,
+        projectName: String?,
+        branchLabel: String?,
+        runState: String,
+        lastActivityAt: Int64
+    ) {
+        self.sessionId = sessionId
+        self.provider = provider
+        self.projectName = projectName
+        self.branchLabel = branchLabel
+        self.runState = runState
+        self.lastActivityAt = lastActivityAt
+    }
+}
+
+/// GET /v1/sync/sessions — the live running/waiting/blocked
+/// sessions the user's Mac last reported. iPhone reads this to
+/// surface a "1 running" count inside the Mac connection chip.
+public struct SessionListResponse: Codable, Sendable {
+    public let sessions: [SessionSnapshot]
+    public init(sessions: [SessionSnapshot]) { self.sessions = sessions }
+}
+
 public struct AuthAppleRequest: Codable, Sendable {
     public let identityToken: String
     public let displayName: String?

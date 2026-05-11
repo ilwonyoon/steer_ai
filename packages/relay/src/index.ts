@@ -290,6 +290,18 @@ app.post("/v1/sync/sessions", async (c) => {
 });
 
 /**
+ * GET /v1/sync/sessions
+ * iPhone reads this to render the live-session badge (e.g. "1
+ * running") next to the Mac chip. Only running / waiting / blocked
+ * sessions from the last 5 minutes are returned.
+ */
+app.get("/v1/sync/sessions", async (c) => {
+  const store = new Store(c.env);
+  const sessions = await store.listLiveSessions(c.get("user").userId);
+  return c.json({ sessions });
+});
+
+/**
  * POST /v1/sync/devices
  * Device heartbeat. Mac calls every ~60s while iPhone Sync is on,
  * iPhone calls on launch + foreground. Body is a DeviceSnapshot.
