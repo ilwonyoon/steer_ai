@@ -35,7 +35,10 @@ on:
 jobs:
   release:
     name: Build, sign, notarize, publish
-    runs-on: macos-15
+    # macos-26 is required for the Liquid Glass APIs (glassEffect, etc.) that
+    # GlassSurface.swift uses. macos-15 ships Xcode 16.4 + macOS 15 SDK and
+    # fails to compile the Mac app.
+    runs-on: macos-26
     timeout-minutes: 30
 
     permissions:
