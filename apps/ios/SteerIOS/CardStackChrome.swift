@@ -65,11 +65,11 @@ struct RunningBadge: View {
                 .fill(dominantColor)
                 .frame(width: 6, height: 6)
             Text(label)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(SteerColors.cardBackground, in: Capsule(style: .continuous))
         .overlay {
@@ -91,7 +91,7 @@ struct LiveSessionChipPill: View {
                 .fill(stateColor)
                 .frame(width: 6, height: 6)
             Text(chip.project)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -165,17 +165,17 @@ struct CompactActionCardView: View {
         return AttributedString(raw)
     }
 
-    // Sizing mirrors Mac CompactActionCardView 1:1 so the two
-    // clients feel like the same product: 14pt provider mark, 10pt
-    // monospaced project label, 10.5pt body, 3-line summary
-    // reservesSpace so all cards land at the same height regardless
-    // of summary length.
+    // Compact carousel ride-along for the secondary cards. Mac uses a
+    // narrower 132pt window; iOS gets a touch more breathing room for
+    // touch targets but keeps the same proportions. Typography is SF
+    // (was monospaced) so the project label reads like a label, not
+    // a debug field.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 ProviderMark(provider: card.provider, size: 14)
                 Text(card.project)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(SteerColors.ink)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -187,7 +187,7 @@ struct CompactActionCardView: View {
             .background(headerTint)
 
             Text(summaryLine)
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(.system(size: 12))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .lineLimit(3, reservesSpace: true)
                 .multilineTextAlignment(.leading)

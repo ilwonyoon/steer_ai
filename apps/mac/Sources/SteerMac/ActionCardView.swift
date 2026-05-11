@@ -55,8 +55,12 @@ struct SessionHeader: View {
                 ProviderMark(provider: card.provider)
 
                 VStack(alignment: .leading, spacing: 2) {
+                    // macOS HIG body weight: 13–14pt SF Text. The
+                    // previous monospaced 12.5pt read like a debug
+                    // panel; Claude/ChatGPT desktop use SF body for
+                    // identity rows like this.
                     Text(card.project)
-                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(SteerColors.ink)
                         .lineLimit(1)
                     HStack(spacing: 5) {
@@ -64,7 +68,7 @@ struct SessionHeader: View {
                             .fill(card.state.color)
                             .frame(width: 6, height: 6)
                         Text(card.branchLabel ?? card.provider.displayName)
-                            .font(.system(size: 10.5, design: .monospaced))
+                            .font(.system(size: 12))
                             .foregroundStyle(SteerColors.secondaryInk)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -75,7 +79,7 @@ struct SessionHeader: View {
             Spacer()
 
             Text(card.age)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.system(size: 11))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
