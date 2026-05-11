@@ -136,26 +136,46 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// waitingCount > 0 appends a small numeric badge.
     private func refreshStatusItem(waitingCount: Int) {
         guard let button = statusItem?.button else { return }
-        // SwiftPM packages executableTarget resources under Bundle.module.
-        // NSImage(named:) only looks at the main bundle, which is why we
-        // load directly from .module here.
-        let image: NSImage?
-        if let url = Bundle.module.url(forResource: "MenuBarIcon", withExtension: "png"),
-           let loaded = NSImage(contentsOf: url) {
-            image = loaded
-        } else {
-            // Fallback so the bar item is never blank in a broken build.
-            image = NSImage(systemSymbolName: "rectangle.stack.fill",
-                            accessibilityDescription: "Steer")
-        }
-        image?.isTemplate = true   // macOS auto-tints template images
-        // Default menu-bar item size is 22pt; the @2x/@3x renditions
-        // packaged alongside MenuBarIcon.png handle retina densities.
-        image?.size = NSSize(width: 18, height: 18)
-        button.image = image
+        button.image = Self.menuBarImage
         button.imagePosition = waitingCount > 0 ? .imageLeading : .imageOnly
         button.title = waitingCount > 0 ? " \(waitingCount)" : ""
     }
+
+    /// Builds the multi-representation menu-bar image once and
+    /// caches it. Without explicit per-scale reps, AppKit only sees
+    /// the 1x asset and scales it on retina, producing the soft/blurry
+    /// rendering the user reported.
+    private static let menuBarImage: NSImage = {
+        // 22pt is the canonical menu-bar height; we draw at 22 so the
+        // mark uses the full vertical slot. The packaged renditions
+        // are 24/48/72px so each retina scale gets a crisp source.
+        let pointSize = NSSize(width: 22, height: 22)
+        let composite = NSImage(size: pointSize)
+        var added = false
+        for (suffix, scale) in [("", 1.0), ("@2x", 2.0), ("@3x", 3.0)] {
+            guard let url = Bundle.module.url(
+                forResource: "MenuBarIcon\(suffix)",
+                withExtension: "png"
+            ),
+            let rep = NSImageRep(contentsOf: url) else { continue }
+            // Force the rep to advertise a logical point size, not pixel
+            // size, so AppKit picks the right rep at each backing scale.
+            rep.size = pointSize
+            _ = scale  // scale derived from rep pixel size automatically
+            composite.addRepresentation(rep)
+            added = true
+        }
+        if !added {
+            // Fallback: SF Symbol so the menu bar is never empty.
+            return NSImage(
+                systemSymbolName: "rectangle.stack.fill",
+                accessibilityDescription: "Steer"
+            ) ?? NSImage()
+        }
+        composite.isTemplate = true  // auto-tints to menu-bar appearance
+        composite.size = pointSize
+        return composite
+    }()
 
     @objc private func openSteer() {
         NSApplication.shared.activate(ignoringOtherApps: true)
