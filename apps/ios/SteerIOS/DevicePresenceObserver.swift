@@ -1,6 +1,7 @@
 import Foundation
 import SteerCore
 import Combine
+import UIKit
 
 /// Polls /v1/sync/devices and exposes the user's most-recent Mac
 /// presence + a derived MacConnectionState. Drives the top-right
@@ -45,12 +46,42 @@ final class DevicePresenceObserver: ObservableObject {
 
     private weak var inbox: SyncInbox?
     private var pollTimer: Timer?
+    /// Tracks whether the app is currently visible. We only run the
+    /// poll timer when the user can actually see the chip — the WS
+    /// stays open separately for instruction delivery and APNS still
+    /// wakes the phone for new cards, so backgrounded polling is
+    /// pure waste. Phase A2 of docs/SYNC_STABILITY_AND_COST_PLAN.md.
+    private var isInForeground: Bool = true
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     init(inbox: SyncInbox) {
         self.inbox = inbox
     }
 
+    // Lifecycle observers stay registered for the lifetime of the
+    // SyncInbox singleton's child observer. Removing them in deinit
+    // would require crossing actor isolation on a non-Sendable
+    // array of NSObjectProtocols; Swift 6 won't allow that. The
+    // process death cleans the observers up alongside everything
+    // else, so explicit removal is unnecessary.
+
     func start() {
+        installLifecycleObserversIfNeeded()
+        isInForeground = (UIApplication.shared.applicationState != .background)
+        if isInForeground {
+            beginPolling()
+        }
+    }
+
+    func stop() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
+    /// Tear up + restart the 15s timer + kick a single immediate
+    /// refresh. Idempotent — safe to call from start() and from
+    /// the foreground-resume notification.
+    private func beginPolling() {
         Task { await refresh() }
         pollTimer?.invalidate()
         // 15s poll. Was 5s, which made the chip flip Connected ↔
@@ -67,9 +98,32 @@ final class DevicePresenceObserver: ObservableObject {
         }
     }
 
-    func stop() {
-        pollTimer?.invalidate()
-        pollTimer = nil
+    private func installLifecycleObserversIfNeeded() {
+        guard lifecycleObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        let bg = center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.isInForeground = false
+            self.pollTimer?.invalidate()
+            self.pollTimer = nil
+        }
+        let fg = center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.isInForeground = true
+            // Fire one refresh right away so the chip catches up
+            // immediately; the timer starts the regular 15s cadence
+            // from inside beginPolling().
+            self.beginPolling()
+        }
+        lifecycleObservers = [bg, fg]
     }
 
     /// Recompute state from local data. Called by the timer and on
