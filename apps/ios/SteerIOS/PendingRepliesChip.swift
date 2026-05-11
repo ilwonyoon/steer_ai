@@ -40,13 +40,13 @@ struct PendingRepliesChip: View {
                     .fill(failedCount > 0 ? SteerColors.blocked : SteerColors.running)
                     .frame(width: 6, height: 6)
                 Text(label)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(SteerColors.secondaryInk)
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(SteerColors.tertiaryInk)
             }
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(SteerColors.cardBackground, in: Capsule())
             .overlay(Capsule().stroke(SteerColors.softSeparator, lineWidth: 1))
@@ -75,15 +75,16 @@ private struct PendingReplyRow: View {
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 2) {
                 Text(reply.cardTitle)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
+                // Reply body is user-typed text — keep SF for prose.
                 Text(reply.text)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 14))
                     .foregroundStyle(SteerColors.secondaryInk)
                     .lineLimit(2)
                 if case .failed(let reason) = reply.status {
                     Text(reason)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(SteerColors.blocked)
                         .lineLimit(2)
                 }
@@ -91,7 +92,7 @@ private struct PendingReplyRow: View {
             Spacer()
             if case .failed = reply.status {
                 Button("Retry") { onRetry(reply.id) }
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
                 Button {

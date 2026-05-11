@@ -304,6 +304,7 @@ public struct AnyCodable: Codable, Hashable, Sendable {
     public init(_ array: [String]) { self.value = .stringArray(array) }
     public init(_ int: Int64) { self.value = .integer(int) }
     public init(_ bool: Bool) { self.value = .bool(bool) }
+    public init(_ double: Double) { self.value = .double(double) }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()

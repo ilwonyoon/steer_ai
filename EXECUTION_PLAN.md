@@ -510,6 +510,20 @@ Mac deployment target raised macOS 15 → 26 because GlassSurface.swift relies o
 
 End-to-end pipeline validated on the local release machine: `scripts/release-mac.sh` with the Developer ID cert + `steer-notary` keychain profile + `Steer_Mac_Developer_ID.provisionprofile` produced a notarized stapled `.build/release/Steer-0.1.1.dmg`. App and DMG both Accepted by Apple notary service, stapled successfully. CI release workflow (run 25655009842) for tag v0.1.1 passed swift build / npm tests / cert import, then failed at "Register notarytool credentials" with HTTP 401 — one of NOTARY_APPLE_ID / NOTARY_TEAM_ID / NOTARY_APP_SPECIFIC_PASSWORD secrets is wrong (user task #273). Provisioning profile entitlements audit: neither the Developer ID nor the Development profile carries `com.apple.developer.applesignin`, so a locally built v0.1.1 DMG would launch and run but would fail Sign-in-with-Apple at `iPhone Sync → Sign in`. To unblock the full iPhone Sync flow, user must enable "Sign In with Apple" on the ai.steer.mac App ID in Apple Developer Portal and regenerate both profiles.
 
+### 2026-05-11: UI Polish — Typography, Dark Palette, Project-Identity Color, iOS Icon
+
+Four cross-platform polish fixes bundled into one PR (`feat/ui-polish-typography-darkmode`):
+
+1. **iOS push-notification icon** — `AppIcon-1024.png` had alpha at the corners (RGBA, rounded-rect mask baked in). Apple rejects icons with transparency for notifications, which is why iPhone lock-screen banners showed no app icon. Flattened against the icon's own orange gradient (top `#FF641F` → bottom `#F97852`) and exported as RGB. iOS auto-rounds the corners at render time.
+
+2. **Card-header color = project identity** — `hueForCwd()` in `LocalSteerStore.swift` now resolves a real project identity (FNV-1a hash of the normalized git origin URL, e.g. `github.com/ilwonyoon/steer_ai`) instead of hashing the raw cwd path. Two worktrees of the same repo (or `Documents/Steer_ai/` vs. `Developer/Steer_ai/`) share a hue; truly different repos still bucket distinctly via golden-angle rotation. Origin extraction walks `.git/config` → `[remote "origin"] url`, with worktree support via `commondir`. Falls back to cwd-path hashing when no remote is configured. Mac forwards `accentHue` on the `CardPayload` wire (new `AnyCodable(Double)` initializer in `SteerCore`), iOS `CardPayloadMapping` prefers the relay-provided hue and falls back to the legacy category-based palette only for payloads predating this change.
+
+3. **Dark-mode brighter + warm orange undertone** — Lifted dark surfaces (`appBackground`, `cardBackground`, `cardBackplate`) and gave R a tiny edge over G/B so neutrals carry a subtle warm cast that echoes the orange brand mark without tinting. Header `hueTint` brightness 0.22 → 0.30 + 0.05·intensity, saturation 0.32 → 0.34. Status colors (waiting / blocked / running / disconnected) also lifted in dark to read against the brighter surface. Mac and iOS mirrors of `SteerColors.swift` updated in lockstep.
+
+4. **Typography reset to platform standards** — Dropped `.monospaced` from non-terminal UI (it was reading as "developer console"). Mac uses SF 13–14pt body (matches Claude Desktop / ChatGPT desktop): project name 14pt semibold, branch label 12pt regular, age pill 11pt, reply placeholder 13pt. iOS uses SF 17pt body per HIG (matches Messages / Mail): project name 17pt semibold, branch label 14pt, age 13pt, reply placeholder 17pt at min-height 48. Terminal excerpt stays SF Mono: Mac 11.5 → 12pt, iOS 14 → 15pt. Empty-state command snippets stay mono since they're literal shell text the user copies.
+
+Verification: `swift build --package-path apps/mac` clean; `xcodebuild -scheme Steer build` clean; `npm test` 70/70 pass; on-screen check in macOS 26 with the new `.build/SteerMac.app` confirmed the new palette, project-identity color (Steer_ai vs aido visible as distinct hues; Steer_ai's two carousel entries share a hue), and SF typography.
+
 ## Open Questions
 
 - Should the prototype agent be TypeScript/Node for speed or Swift/Rust for production shape?

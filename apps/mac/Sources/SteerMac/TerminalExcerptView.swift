@@ -7,8 +7,11 @@ struct TerminalExcerptView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 5) {
                 ForEach(lines) { line in
+                    // macOS terminal-style body: 12pt SF Mono. The
+                    // previous 11.5pt was below the ~12pt baseline
+                    // that Xcode console and iTerm default to.
                     Text(renderedLine(line.text))
-                        .font(.system(size: 11.5, weight: weight(for: line.kind), design: .monospaced))
+                        .font(.system(size: 12, weight: weight(for: line.kind), design: .monospaced))
                         .foregroundStyle(color(for: line.kind))
                         .textSelection(.enabled)
                         .lineLimit(nil)

@@ -377,15 +377,147 @@ private func readBranchLabel(gitDir: URL, worktreeURL: URL) -> String? {
 }
 
 private func hueForCwd(_ cwd: String?) -> Double {
-    guard let cwd, !cwd.isEmpty else { return 0 }
+    // The hue is a *project identity* signal, not a path signal. Two
+    // sessions on the same GitHub repo + same default branch ("main")
+    // should share a color even when they're checked out into
+    // different worktree paths. Two sessions on truly different repos
+    // (or with no remote at all) get distinct colors.
+    //
+    // Identity preference:
+    //   1) origin URL + branch  (when both repos point at the same
+    //      remote main, the identity is identical)
+    //   2) origin URL alone     (different feature branches but same
+    //      remote still feel like the same project)
+    //   3) cwd path             (no git → fall back to path hash)
+    let identity = projectIdentity(for: cwd) ?? cwd ?? ""
+    guard !identity.isEmpty else { return 0 }
+    return hueFromIdentity(identity)
+}
+
+private func hueFromIdentity(_ identity: String) -> Double {
     var hash: UInt64 = 14_695_981_039_346_656_037
-    for byte in cwd.utf8 {
+    for byte in identity.utf8 {
         hash ^= UInt64(byte)
         hash = hash &* 1_099_511_628_211
     }
     let goldenStep = 137.508
     let bucket = Double(hash % 1024)
     return (bucket * goldenStep).truncatingRemainder(dividingBy: 360)
+}
+
+private func projectIdentity(for cwd: String?) -> String? {
+    guard let cwd, !cwd.isEmpty else { return nil }
+    let fm = FileManager.default
+    var current = URL(fileURLWithPath: cwd).standardizedFileURL
+
+    for _ in 0..<32 {
+        let dotGit = current.appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: dotGit.path, isDirectory: &isDir) {
+            let gitDir: URL
+            if isDir.boolValue {
+                gitDir = dotGit
+            } else {
+                guard let contents = try? String(contentsOf: dotGit, encoding: .utf8) else { return nil }
+                let prefix = "gitdir:"
+                let trimmed = contents.split(separator: "\n").first?.trimmingCharacters(in: .whitespaces) ?? ""
+                guard trimmed.hasPrefix(prefix) else { return nil }
+                let path = trimmed.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                gitDir = URL(fileURLWithPath: path)
+            }
+
+            // For a worktree, the actual `config` (with `[remote "origin"]`)
+            // lives in the *common* git dir, not the per-worktree gitdir
+            // under .git/worktrees/<name>. `commondir` is the one-line
+            // pointer git writes for that case.
+            let commonGitDir = resolveCommonGitDir(from: gitDir) ?? gitDir
+
+            guard let origin = readOriginURL(from: commonGitDir) else { return nil }
+            let normalized = normalizeGitRemote(origin)
+            // We deliberately do NOT include the branch in the identity.
+            // The user's intent (verified in the spec) is "same repo +
+            // same main → same color". Branches that live on the same
+            // remote are still the same project, just different
+            // checkouts of it. Including the branch would shatter the
+            // palette every time someone opens a feature branch.
+            return normalized
+        }
+
+        let parent = current.deletingLastPathComponent()
+        if parent.path == current.path { return nil }
+        current = parent
+    }
+    return nil
+}
+
+private func resolveCommonGitDir(from gitDir: URL) -> URL? {
+    let commonFile = gitDir.appendingPathComponent("commondir")
+    guard let raw = try? String(contentsOf: commonFile, encoding: .utf8) else {
+        return nil
+    }
+    let line = raw.split(separator: "\n").first?.trimmingCharacters(in: .whitespaces) ?? ""
+    guard !line.isEmpty else { return nil }
+    if line.hasPrefix("/") {
+        return URL(fileURLWithPath: line)
+    }
+    return gitDir.appendingPathComponent(line).standardizedFileURL
+}
+
+private func readOriginURL(from gitDir: URL) -> String? {
+    let configURL = gitDir.appendingPathComponent("config")
+    guard let raw = try? String(contentsOf: configURL, encoding: .utf8) else {
+        return nil
+    }
+    var inOrigin = false
+    for rawLine in raw.split(separator: "\n") {
+        let line = rawLine.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("[") {
+            inOrigin = (line == "[remote \"origin\"]")
+            continue
+        }
+        guard inOrigin else { continue }
+        if line.hasPrefix("url") {
+            // `url = git@github.com:foo/bar.git` or `url=https://...`
+            if let eq = line.firstIndex(of: "=") {
+                let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+                return value.isEmpty ? nil : value
+            }
+        }
+    }
+    return nil
+}
+
+private func normalizeGitRemote(_ url: String) -> String {
+    // Bring SSH/HTTPS variants of the same repo to a single key:
+    //   git@github.com:foo/bar.git
+    //   https://github.com/foo/bar.git
+    //   https://github.com/foo/bar
+    // → "github.com/foo/bar"
+    var trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if trimmed.hasSuffix(".git") {
+        trimmed = String(trimmed.dropLast(4))
+    }
+    if trimmed.hasPrefix("git@") {
+        // git@github.com:foo/bar → github.com/foo/bar
+        if let colon = trimmed.firstIndex(of: ":") {
+            let host = trimmed[trimmed.index(trimmed.startIndex, offsetBy: 4)..<colon]
+            let path = trimmed[trimmed.index(after: colon)...]
+            return "\(host)/\(path)"
+        }
+    }
+    for scheme in ["https://", "http://", "ssh://", "git://"] {
+        if trimmed.hasPrefix(scheme) {
+            trimmed = String(trimmed.dropFirst(scheme.count))
+            break
+        }
+    }
+    if trimmed.contains("@") {
+        // user@host/path → host/path
+        if let at = trimmed.firstIndex(of: "@") {
+            trimmed = String(trimmed[trimmed.index(after: at)...])
+        }
+    }
+    return trimmed
 }
 
 private func projectName(from cwd: String?) -> String {
