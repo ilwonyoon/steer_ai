@@ -140,15 +140,16 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
   }
   const userId = c.get("user").userId;
   const store = new Store(c.env);
-  await store.upsertCard(userId, body);
+  const { inserted } = await store.upsertCard(userId, body);
   await broadcast(c.env, userId, { type: "card.upsert", card: body });
 
-  // Fan out APNS push to every iOS device this user has registered.
-  // Best-effort — failures are logged but don't surface to the Mac
-  // caller, since the WS broadcast above is the primary delivery
-  // path. Only push for actionable categories so we don't spam the
-  // user with completion / progress notifications.
+  // Fan out APNS push only on FIRST insert of a given cardId. Mac
+  // re-publishes every active card every reload tick (~2s); without
+  // this guard each tick would re-pump a notification and the user's
+  // lock screen fills up in seconds. WebSocket broadcast above is
+  // separately the live-state path and stays per-tick.
   if (
+    inserted &&
     body.state === "active" &&
     ["blocker", "decision", "question", "waiting"].includes(body.category)
   ) {

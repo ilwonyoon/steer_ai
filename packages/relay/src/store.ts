@@ -49,7 +49,19 @@ export class Store {
     await this.env.DB.prepare(`DELETE FROM users WHERE user_id = ?`).bind(userId).run();
   }
 
-  async upsertCard(userId: string, card: CardPayload): Promise<void> {
+  /// Upsert a card. Returns `true` when this is a brand-new card_id
+  /// for the user, `false` when the row already existed and was
+  /// updated in place. The caller uses this to decide whether to
+  /// fan out an APNS push — re-publishing the same card on every
+  /// reload tick would otherwise pump notifications every 2s.
+  async upsertCard(userId: string, card: CardPayload): Promise<{ inserted: boolean }> {
+    const existing = await this.env.DB.prepare(
+      `SELECT 1 FROM cards WHERE card_id = ? AND user_id = ? LIMIT 1`
+    )
+      .bind(card.cardId, userId)
+      .first();
+    const inserted = existing == null;
+
     await this.env.DB.prepare(
       `INSERT INTO cards (
          card_id, user_id, session_id, category, priority, title, summary,
@@ -81,6 +93,7 @@ export class Store {
         card.updatedAt
       )
       .run();
+    return { inserted };
   }
 
   async listActiveCards(userId: string, sinceUpdatedAt = 0): Promise<CardPayload[]> {
