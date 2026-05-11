@@ -282,6 +282,34 @@ export class Store {
       .run();
   }
 
+  /// Drop a device row by user + apnsToken. Called when APNS returns
+  /// 410 Unregistered — Apple's signal that the token is dead (app
+  /// uninstalled, restored from backup, etc). Leaving the row in
+  /// place means every future fanout still spends a JWT slot on it
+  /// (and racks up TooManyProviderTokenUpdates 429s when there are
+  /// many dead rows).
+  async deleteDeviceByApnsToken(userId: string, apnsToken: string): Promise<void> {
+    await this.env.DB.prepare(
+      `DELETE FROM devices WHERE user_id = ? AND apns_token = ?`
+    )
+      .bind(userId, apnsToken)
+      .run();
+  }
+
+  /// Drop device rows where the row hasn't been heartbeated in N ms.
+  /// Used during fanout to garbage-collect tokens the app stopped
+  /// publishing (uninstalled, signed out, app killed for days).
+  /// Returns the number of rows removed.
+  async pruneStaleDevices(userId: string, maxAgeMs: number): Promise<number> {
+    const cutoff = Date.now() - maxAgeMs;
+    const r = await this.env.DB.prepare(
+      `DELETE FROM devices WHERE user_id = ? AND last_seen_at < ?`
+    )
+      .bind(userId, cutoff)
+      .run();
+    return r.meta.changes ?? 0;
+  }
+
   async listDevices(userId: string): Promise<DeviceSnapshot[]> {
     const rs = await this.env.DB.prepare(
       `SELECT device_id, platform, display_name, device_class,

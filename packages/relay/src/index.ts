@@ -180,6 +180,15 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
 async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<void> {
   try {
     const store = new Store(env);
+    // Devices that haven't heartbeated in 24h get garbage-collected
+    // before we read the list. Uninstalled apps stop heartbeating
+    // immediately, so this catches dead rows long before APNS
+    // returns 410 for them — and stops them from contributing to
+    // TooManyProviderTokenUpdates 429s on every fanout.
+    const pruned = await store.pruneStaleDevices(userId, 24 * 60 * 60 * 1000);
+    if (pruned > 0) {
+      console.log(`[apns] pruned ${pruned} stale device rows for user=${userId}`);
+    }
     const devices = await store.listDevices(userId);
     const targets = devices.filter(
       (d) => d.platform === "ios" && d.apnsToken && d.syncEnabled
@@ -216,6 +225,16 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
           console.log(
             `[apns] sent device=${d.deviceId.slice(0, 8)} ok=${r.ok} status=${r.status}${r.reason ? ` reason=${r.reason}` : ""}`
           );
+          // 410 Unregistered: Apple confirms the token is dead.
+          // Drop the row so future fanouts don't waste a JWT slot on
+          // it. We match by apnsToken (not deviceId) because the
+          // same physical device can have multiple device_id rows
+          // if it was reinstalled with a new device_id but the same
+          // token survived (or vice versa).
+          if (r.status === 410) {
+            await store.deleteDeviceByApnsToken(userId, d.apnsToken!);
+            console.log(`[apns] dropped dead token device=${d.deviceId.slice(0, 8)}`);
+          }
           return r;
         } catch (e) {
           console.warn(`[apns] push failed for ${d.deviceId}: ${e}`);
