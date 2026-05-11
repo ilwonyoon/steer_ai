@@ -90,13 +90,9 @@ struct ReplyDock: View {
     }
 
     private var textInput: some View {
-        // SF body weight at macOS standard 13pt. Was monospaced — but
-        // this is a chat-style reply field, not a terminal, so the
-        // monospaced design read as "developer console". Match Claude
-        // desktop / ChatGPT desktop, both of which use SF body here.
-        TextField("Reply to this session", text: $reply, axis: .vertical)
+        TextField("reply to this session", text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.system(size: 13))
+            .font(.system(size: 13, design: .monospaced))
             .foregroundStyle(SteerColors.ink)
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")

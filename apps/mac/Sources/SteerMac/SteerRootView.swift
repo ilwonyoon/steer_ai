@@ -39,7 +39,7 @@ struct SteerRootView: View {
                 .ignoresSafeArea()
 
             Text("Steer")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .frame(height: 28)
@@ -449,7 +449,7 @@ private struct ErrorBanner: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(SteerColors.blocked)
             Text(message)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
                 .foregroundStyle(SteerColors.ink)
                 .lineLimit(2)
 
@@ -540,11 +540,11 @@ private struct RunningBadge: View {
                 .fill(dominantColor)
                 .frame(width: 6, height: 6)
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(SteerColors.cardBackground, in: Capsule(style: .continuous))
         .overlay {
@@ -566,7 +566,7 @@ private struct LiveSessionChipPill: View {
                 .fill(stateColor)
                 .frame(width: 6, height: 6)
             Text(chip.project)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -650,7 +650,7 @@ private struct CompactActionCardView: View {
             HStack(spacing: 6) {
                 ProviderMark(provider: card.provider, size: 14)
                 Text(card.project)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(SteerColors.ink)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -662,7 +662,7 @@ private struct CompactActionCardView: View {
             .background(headerTint)
 
             Text(summaryLine)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .lineLimit(3, reservesSpace: true)
                 .multilineTextAlignment(.leading)
@@ -693,12 +693,10 @@ private struct EmptyStateView: View {
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(SteerColors.tertiaryInk)
             Text(message)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
-            // Onboarding command line stays monospaced — it's literal
-            // shell text the user will copy. Display copy is SF.
             Text(detail)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: 11.5, design: .monospaced))
                 .foregroundStyle(SteerColors.tertiaryInk)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)

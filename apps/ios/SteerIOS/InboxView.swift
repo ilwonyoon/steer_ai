@@ -521,14 +521,11 @@ private struct EmptyStateView: View {
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(SteerColors.tertiaryInk)
             Text(message)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .multilineTextAlignment(.center)
-            // Shell snippet stays monospaced — it's literal commands
-            // the user copies. Headline above is SF body weight per
-            // iOS HIG.
             Text(detail)
-                .font(.system(size: 14, design: .monospaced))
+                .font(.system(size: 11.5, design: .monospaced))
                 .foregroundStyle(SteerColors.tertiaryInk)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

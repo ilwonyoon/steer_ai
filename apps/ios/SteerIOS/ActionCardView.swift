@@ -63,12 +63,8 @@ struct SessionHeader: View {
                 ProviderMark(provider: card.provider)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    // iOS HIG body: 17pt SF Text. Project name is the
-                    // primary identifier on the card so it gets full
-                    // body weight; previous 14pt monospaced read like
-                    // metadata. Matches Messages / Mail header rows.
                     Text(card.project)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
                         .foregroundStyle(SteerColors.ink)
                         .lineLimit(1)
                     HStack(spacing: 5) {
@@ -76,7 +72,7 @@ struct SessionHeader: View {
                             .fill(card.state.color)
                             .frame(width: 6, height: 6)
                         Text(card.branchLabel ?? card.provider.displayName)
-                            .font(.system(size: 14))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(SteerColors.secondaryInk)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -87,7 +83,7 @@ struct SessionHeader: View {
             Spacer()
 
             Text(card.age)
-                .font(.system(size: 13))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)

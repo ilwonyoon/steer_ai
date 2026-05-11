@@ -50,18 +50,16 @@ struct ReplyDock: View {
 
     @ViewBuilder
     private var textInput: some View {
-        // iOS body weight: 17pt SF Text. Reply input is a chat field
-        // — keep it SF (was monospaced and read like a terminal).
-        let base = TextField("Reply to this session", text: $reply, axis: .vertical)
+        let base = TextField("reply to this session", text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.system(size: 17))
+            .font(.system(size: 15, design: .monospaced))
             .foregroundStyle(SteerColors.ink)
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
             .padding(.leading, 14)
             .padding(.trailing, 46)
             .padding(.vertical, 12)
-            .frame(minHeight: 48)
+            .frame(minHeight: 42)
 
         // Dismiss paths: tap outside the card, send-and-clear, or
         // the system swipe-down gesture inside the terminal scroll.
