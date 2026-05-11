@@ -1,139 +1,153 @@
 # Steer
 
-Steer is a macOS-first action queue for CLI coding agents.
+**Approve your Mac AI from your phone.**
 
-The goal is to keep multiple AI coding sessions moving: capture reports from Claude Code, Codex, and other CLI agents; surface stuck or waiting sessions as a fast card stack; and inject user replies or proactive instructions back into the correct session.
+Steer is an action queue for CLI coding agents. When Claude Code, Codex, or any wrapped terminal agent pauses for input — a question, a decision, a blocker — it turns into a card on your Mac and your iPhone. You answer from whichever device you're on, and the reply goes straight back into the terminal session.
 
-## Install (macOS)
+It's built for the way vibe-coders actually work: you kick off three sessions in three folders, walk away from your desk, and the AI pings you when it needs you. No window juggling, no terminal hunting, no shoulder-surfing your own scrollback.
 
-The signed and notarized `.dmg` is published on the [GitHub Releases page](https://github.com/ilwonyoon/steer_ai/releases/latest).
+---
 
-1. Download `Steer-<version>.dmg` from the latest release.
-2. (Optional) Verify the checksum against the published `.sha256` file:
+## Quick Start
 
-   ```sh
-   shasum -a 256 -c Steer-<version>.dmg.sha256
-   ```
+You need two pieces:
 
-3. Open the DMG and drag `SteerMac.app` into `/Applications`.
-4. Launch Steer. macOS Gatekeeper will trust the notarized build without a right-click bypass.
+1. **Steer for Mac** — runs in the menu bar, watches your wrapped terminal sessions, and pushes cards to iPhone.
+2. **The `steer` CLI** — a tiny wrapper around the AI you already use (`steer claude`, `steer codex`, `steer wrap -- <anything>`).
 
-Requires macOS 15 (Sequoia) or later. The CLI side (`steer`, `SteerAgent`) is installed separately from the Node workspace below.
+### 1. Install the Mac app
 
-## Current Status
+The signed and notarized `.dmg` is on the [Releases page](https://github.com/ilwonyoon/steer_ai/releases/latest).
 
-This repository is in the planning and early execution stage. It contains product, technical, design, and contributor guidance documents plus an initial SwiftUI Mac app shell and static UX prototype.
+- Download `Steer-<version>.dmg`.
+- Open it and drag `Steer.app` into `/Applications`.
+- Launch it from Spotlight. Gatekeeper trusts the notarized build directly — no right-click bypass.
 
-## Core Documents
+**Requires macOS 26 (Tahoe) or later.** Steer's chrome uses the system Liquid Glass material, which only exists from macOS 26 onward. Older versions of macOS are not supported in the current release.
 
-- `EXECUTION_PLAN.md`: master execution plan, task board, decision log, and progress notes.
-- `DESIGN.md`: product design system and interaction direction.
-- `AGENTS.md`: contributor and agent workflow guide.
-- `docs/PRD.md`: product requirements export.
-- `docs/TECH_SPEC.md`: technical specification export.
-- `docs/IOS_LAUNCH_PLAN.md`: iPhone launch, CloudKit sync, and App Store strategy.
-- `docs/legal/`: Privacy Policy, Terms, App Store privacy labels, and App Review notes for iPhone launch.
-- `docs/HAPPY_WRAPPER_RESEARCH.md`: notes from studying Happy's current provider-control architecture.
+### 2. Install the `steer` CLI
 
-## Product Direction
-
-Steer is not a full chat mirror. It is an AI action queue:
-
-- Waiting, blocked, decision, completion, and idle states appear as prioritized cards.
-- Each card shows where the CLI session came from, such as Claude Code, Codex CLI, or Gemini CLI.
-- Opening a card shows full Claude/Codex-style session context and transcript.
-- Users answer through an input field with suggested chips directly above it.
-- The system tracks session states such as `running`, `waiting`, `blocked`, `idle`, and `done`.
-- The design uses a Tinder-style stack for one-at-a-time triage, iOS-native Liquid Glass reply surfaces, Claude/Codex-style detail for context, Instagram DM-like reply lightness, and Linear-style technical status clarity.
-
-## Technical Direction
-
-The v1 core loop requires bidirectional control:
-
-```text
-steer CLI wrapper -> SteerAgent -> Steer.app
-       ^                 |
-       |                 v
-  instruction injection <- user reply / instruction
-```
-
-Hook-only mode is not sufficient because it cannot deliver user instructions. v1 requires a Steer-owned bidirectional control channel. Use provider-native control where stable, such as Claude Agent SDK or Codex app-server, and keep raw pty as a fallback.
-
-## Development
-
-The first clickable UX preview is a static prototype:
-
-```text
-apps/prototype/index.html
-```
-
-The first native Mac shell is a Swift Package:
+The CLI is a Node workspace. You need Node 22.5 or later (it uses the native `node:sqlite` module).
 
 ```sh
-cd apps/mac
-swift build
-swift run SteerMac
+git clone https://github.com/ilwonyoon/steer_ai.git
+cd steer_ai
+npm install
 ```
 
-For notification testing, run the bundled app build instead of the raw SwiftPM executable:
+That gives you a `steer` binary inside `packages/cli/src/index.js`. Symlink it into your path or run it via `npm run steer --`. From Steer for Mac's Settings → Folder access you can also have the app generate the symlink for you.
+
+### 3. Wrap your first session
+
+In any terminal, in any project folder:
 
 ```sh
-./scripts/build-mac-app.sh
+steer claude          # Claude Code
+steer codex           # Codex CLI
+steer wrap -- node    # Anything else
+```
+
+Use the AI as you normally would. When it stops talking — finishes a turn, asks a clarifying question, hits a blocker — Steer notices and a card appears.
+
+### 4. (Optional) Pair iPhone
+
+Open Steer for Mac → Settings → iPhone Sync → **Sign in with Apple**. Then download Steer from the App Store, sign in with the same Apple ID, and allow notifications when prompted.
+
+Your iPhone now mirrors every actionable card. Tap a card, type a reply, and the terminal on your Mac receives it.
+
+---
+
+## What appears as a card
+
+Steer only surfaces sessions you can actually do something with:
+
+| Category   | When it fires |
+| ---------- | --- |
+| Waiting    | The agent finished a turn and is idle, waiting for your next instruction. |
+| Question   | The agent asked a clarifying question. |
+| Decision   | The agent wants you to pick between options (yes / no, A / B). |
+| Blocker    | The agent hit something it can't proceed past (failing test, missing credential, permission prompt). |
+
+Quiet states — completion, progress reports, idle ping-pong — never push a card. They stay in the terminal where they belong.
+
+---
+
+## Privacy and what syncs
+
+What goes through the Steer relay (Cloudflare Workers + D1, encrypted in transit):
+
+- Card titles, summaries, and the last few lines of terminal output the agent printed.
+- Replies you type on iPhone.
+- Live session metadata (project name, branch, run state) so the iPhone connection chip stays accurate.
+
+What stays on your Mac:
+
+- The full raw transcript.
+- Files, environment variables, secrets — anything the agent wrote but didn't print into the card.
+- Local SQLite at `~/.steer/steer.sqlite`.
+
+Delete-account in Settings revokes your Sign in with Apple grant, wipes your relay data, and clears the local Keychain session token. App Store guideline 5.1.1(v) compliant.
+
+---
+
+## Troubleshooting
+
+**"Steer is not signed by an identified developer."** You're on macOS < 26, or you downloaded an old build. Grab the latest `.dmg` from Releases. If Gatekeeper still complains on macOS 26, right-click → Open and confirm — only needed once per build.
+
+**iPhone shows "Mac offline."** The Mac app heartbeats every 15 seconds. If the chip is stale for more than a minute, check:
+- Mac Steer.app is running (look for the gear-shift icon in the menu bar).
+- iPhone Sync toggle in Mac Settings is on.
+- You're signed in to the same Apple ID on both devices.
+
+**Cards stop appearing.** If your terminal session is under `~/Documents`, `~/Desktop`, or `~/Downloads`, macOS may need Full Disk Access. Mac Settings → Folder Access → Open Full Disk Access, then add Steer.
+
+**`steer claude --headless` fails.** The CLI auto-spawns `SteerAgent` when needed. If it gets stuck, delete the stale socket (`rm ~/.steer/steer.sock`) and rerun.
+
+---
+
+## For contributors
+
+If you want to hack on Steer, the codebase layout, contributor workflow, and architectural decisions live in [`AGENTS.md`](AGENTS.md) and [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md). The project is structured as:
+
+```text
+apps/mac/             # SwiftUI macOS shell (SwiftPM, macOS 26+)
+apps/ios/             # SwiftUI iOS shell (xcodegen, iOS 17+)
+apps/prototype/       # Static HTML UX prototype
+packages/agent/       # Node SteerAgent: Unix socket server, SQLite store, classifier
+packages/cli/         # Node `steer` CLI: wrapper, provider adapters, send/sessions
+packages/relay/       # Cloudflare Workers relay (D1 + Durable Objects)
+packages/SteerCore/   # Cross-platform Swift package (shared types, backoff helper)
+docs/                 # PRD, TECH_SPEC, CLASSIFIER_CONTRACT, REGRESSION_CONTRACT, etc.
+scripts/              # build-mac-app.sh, release-mac.sh, verify-steer-regression.sh
+```
+
+Run the test suites:
+
+```sh
+npm test                                    # Node side: agent + cli
+swift test --package-path packages/SteerCore # Cross-platform helpers
+swift test --package-path apps/mac           # Mac unit tests (if you wire them in)
+xcodebuild test -project apps/ios/Steer.xcodeproj \
+  -scheme Steer \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:SteerUITests/CardFlowUITests   # iOS smoke
+```
+
+Build a local Mac bundle:
+
+```sh
+scripts/build-mac-app.sh   # Ad-hoc-signed dogfood build
 open .build/SteerMac.app
 ```
 
-The Mac app reads stopped/actionable cards from `~/.steer/steer.sqlite` and sends replies through `steer send`. It is not a live terminal mirror: running sessions stay quiet until the AI stops and reports a blocker, question, decision, or waiting/completion message that needs the user's next instruction.
-
-Current structure:
-
-```text
-apps/mac/
-apps/prototype/
-packages/agent/
-packages/cli/
-docs/
-```
-
-The first wrapper/control-loop spike is Node-based:
+Cut a signed + notarized release (Developer ID cert + notarytool keychain profile required):
 
 ```sh
-steer wrap -- node -i
-steer sessions
-steer send <sessionId> "console.log('steer injection ok')"
+scripts/release-mac.sh
 ```
 
-The CLI auto-starts `SteerAgent` in the background when needed. Use `steer agent` only when you want to run the agent manually for debugging.
+---
 
-The agent writes local state to `~/.steer/steer.sqlite` and transcript logs to `~/.steer/sessions/`. Set `STEER_HOME` for isolated local tests.
+## Status
 
-Claude Code can run in the normal interactive terminal wrapper:
-
-```sh
-steer claude
-steer send <sessionId> "your instruction"
-```
-
-The Claude headless stream-json adapter remains available for controlled smoke tests:
-
-```sh
-steer claude --headless --max-budget-usd 0.02
-steer send <sessionId> "Reply exactly STEER_CLAUDE_OK and nothing else."
-```
-
-Codex can also run in the normal interactive terminal wrapper:
-
-```sh
-steer codex
-steer send <sessionId> "your instruction"
-```
-
-The Codex provider-native app-server adapter remains available in headless mode:
-
-```sh
-steer codex --headless
-steer send <sessionId> "Reply exactly STEER_CODEX_OK and nothing else."
-```
-
-See `docs/WRAPPER_SPIKE.md` for scope and limitations.
-
-See `EXECUTION_PLAN.md` for the current backlog and implementation phases.
+Steer is in active early execution. macOS + iOS clients are dogfooding daily and end-to-end APNS push works. The Cloudflare relay is live; see [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) for the current backlog.
