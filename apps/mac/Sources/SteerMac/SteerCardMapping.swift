@@ -46,3 +46,33 @@ enum SteerCardMapping {
         return Int64(date.timeIntervalSince1970 * 1000.0)
     }
 }
+
+extension CardPayload {
+    /// Hash that excludes `createdAt` / `updatedAt`. The Mac reload
+    /// loop stamps both on every tick (~2s) without any real state
+    /// change, so a hash that included them would invalidate on
+    /// every cycle and trigger spurious relay PUTs. This fingerprint
+    /// is what SteerRootView.diffCardsForPublish compares against to
+    /// decide whether to send the next PUT.
+    var publishFingerprint: Int {
+        var hasher = Hasher()
+        hasher.combine(cardId)
+        hasher.combine(sessionId)
+        hasher.combine(category)
+        hasher.combine(priority)
+        hasher.combine(title)
+        hasher.combine(summary)
+        hasher.combine(actionPrompt)
+        hasher.combine(state)
+        // payload is [String: AnyCodable]; AnyCodable is Hashable.
+        // Canonicalize key order so dictionary iteration order
+        // doesn't change the hash across re-encodes.
+        if let payload {
+            for key in payload.keys.sorted() {
+                hasher.combine(key)
+                hasher.combine(payload[key])
+            }
+        }
+        return hasher.finalize()
+    }
+}
