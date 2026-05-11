@@ -11,6 +11,11 @@
 #   NOTARY_APPLE_ID              — Apple ID used for notarization
 #   NOTARY_TEAM_ID               — Apple Team ID (LG7667PAS6)
 #   NOTARY_APP_SPECIFIC_PASSWORD — app-specific password for the Apple ID
+#   PROVISIONING_PROFILE_BASE64  — base64-encoded .provisionprofile that grants
+#                                  com.apple.developer.applesignin to ai.steer.mac.
+#                                  Required because Steer.entitlements requests
+#                                  Sign in with Apple, which build-mac-app.sh
+#                                  refuses to bundle without an embedded profile.
 #
 # Required permissions:
 #   contents: write   — create GitHub Releases
@@ -49,15 +54,23 @@ jobs:
 
       - name: Resolve release tag
         id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-          else
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
-            echo "tag=$tag" >> "$GITHUB_OUTPUT"
-            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "error: workflow_dispatch was triggered without inputs.tag and the ref is not a tag" >&2
+            exit 1
           fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
+            echo "error: tag '$tag' must match vMAJOR.MINOR.PATCH (e.g. v0.1.0)" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Install Node 22.5+
         uses: actions/setup-node@v4
@@ -121,10 +134,32 @@ jobs:
           fi
           bash scripts/generate-app-icon.sh
 
+      - name: Decode provisioning profile
+        id: profile
+        env:
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -e
+          if [ -z "$PROVISIONING_PROFILE_BASE64" ]; then
+            echo "error: PROVISIONING_PROFILE_BASE64 secret is not set" >&2
+            echo "  Steer.entitlements requires com.apple.developer.applesignin," >&2
+            echo "  which can only be embedded via a provisioning profile." >&2
+            echo "  Export the .provisionprofile, base64 it, and register the secret." >&2
+            exit 1
+          fi
+          PROFILE_PATH="${{ github.workspace }}/../steer.provisionprofile"
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+          if [ ! -s "$PROFILE_PATH" ]; then
+            echo "error: decoded provisioning profile is empty" >&2
+            exit 1
+          fi
+          echo "path=$PROFILE_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Run release-mac.sh
         env:
           STEER_NOTARY_PROFILE: steer-notary
           APP_VERSION: ${{ steps.tag.outputs.version }}
+          PROVISIONING_PROFILE: ${{ steps.profile.outputs.path }}
         run: bash scripts/release-mac.sh
 
       - name: Compute checksum
@@ -143,9 +178,14 @@ jobs:
             ${{ steps.artifact.outputs.dmg }}
             ${{ steps.artifact.outputs.dmg }}.sha256
 
-      - name: Tear down temporary keychain
+      - name: Tear down temporary keychain and profile
         if: always()
+        env:
+          PROFILE_PATH: ${{ steps.profile.outputs.path }}
         run: |
           if [ -f "$KEYCHAIN_PATH" ]; then
             security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+          if [ -n "$PROFILE_PATH" ] && [ -f "$PROFILE_PATH" ]; then
+            rm -f "$PROFILE_PATH" || true
           fi

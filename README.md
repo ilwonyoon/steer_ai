@@ -4,6 +4,22 @@ Steer is a macOS-first action queue for CLI coding agents.
 
 The goal is to keep multiple AI coding sessions moving: capture reports from Claude Code, Codex, and other CLI agents; surface stuck or waiting sessions as a fast card stack; and inject user replies or proactive instructions back into the correct session.
 
+## Install (macOS)
+
+The signed and notarized `.dmg` is published on the [GitHub Releases page](https://github.com/ilwonyoon/steer_ai/releases/latest).
+
+1. Download `Steer-<version>.dmg` from the latest release.
+2. (Optional) Verify the checksum against the published `.sha256` file:
+
+   ```sh
+   shasum -a 256 -c Steer-<version>.dmg.sha256
+   ```
+
+3. Open the DMG and drag `SteerMac.app` into `/Applications`.
+4. Launch Steer. macOS Gatekeeper will trust the notarized build without a right-click bypass.
+
+Requires macOS 15 (Sequoia) or later. The CLI side (`steer`, `SteerAgent`) is installed separately from the Node workspace below.
+
 ## Current Status
 
 This repository is in the planning and early execution stage. It contains product, technical, design, and contributor guidance documents plus an initial SwiftUI Mac app shell and static UX prototype.

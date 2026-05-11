@@ -4,6 +4,13 @@ Direct-distribution release pipeline for the macOS app: signed with a Developer 
 
 For the user-facing Mac-first setup order that should appear on GitHub Releases and the website, see `docs/CROSS_DEVICE_ONBOARDING_PLAN.md`.
 
+There are two ways to cut a release:
+
+1. **GitHub Actions (preferred)** — push a `v*` tag and `.github/workflows/release.yml` builds, signs, notarizes, and publishes a GitHub Release with the DMG attached. Six secrets must be registered once; `scripts/setup-release-secrets.sh` walks through it.
+2. **Local release machine** — run `scripts/release-mac.sh` on a Mac that has the Developer ID cert in the keychain and a notarytool profile registered. Used for one-off dogfood builds or when CI is unavailable.
+
+The remaining sections cover both paths. Sections labelled "**Local only**" are skippable when releasing via CI.
+
 ## One-time setup on the release machine
 
 The release machine is whichever Mac actually runs `scripts/release-mac.sh`. Today that is a personal workstation; a CI runner is fine later.
@@ -36,7 +43,28 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
 
 Today this returns two valid certificates under `Developer ID Application: ILWON YOON (LG7667PAS6)`. Either works; the release script auto-picks the first non-revoked match. To pin a specific cert, export `STEER_SIGN_IDENTITY` to its full name string before running the release script.
 
-### 3. App-specific password for notarytool
+### 3a. CI: register the six GitHub Actions secrets
+
+Run from a Mac that has the `.p12` export and the `.provisionprofile` on disk:
+
+```sh
+bash scripts/setup-release-secrets.sh
+```
+
+The helper prompts for each value and pipes it straight into `gh secret set`, so nothing lands on disk in plain text. After it finishes, `gh secret list` should show exactly:
+
+```
+DEVELOPER_ID_CERT_P12
+DEVELOPER_ID_CERT_PASSWORD
+PROVISIONING_PROFILE_BASE64
+NOTARY_APPLE_ID
+NOTARY_TEAM_ID
+NOTARY_APP_SPECIFIC_PASSWORD
+```
+
+`PROVISIONING_PROFILE_BASE64` must contain a profile that grants `com.apple.developer.applesignin` to `ai.steer.mac`. Without it the CI build fails fast — `scripts/build-mac-app.sh` refuses to bundle that restricted entitlement without an embedded profile, because macOS 26 will reject the bundle at launch (`RBSRequestErrorDomain Code=5`).
+
+### 3b. Local only: App-specific password for notarytool
 
 `notarytool` needs an Apple ID + app-specific password (or an App Store Connect API key — equivalent for our purposes). The password approach is simpler:
 
@@ -52,7 +80,7 @@ Today this returns two valid certificates under `Developer ID Application: ILWON
 
    The profile name `steer-notary` is what the release script consumes via `STEER_NOTARY_PROFILE`.
 
-### 4. Optional: `create-dmg`
+### 4. Local only: Optional: `create-dmg`
 
 The release script falls back to `hdiutil` if `create-dmg` is missing, but `create-dmg` produces a much nicer installer window:
 
@@ -60,7 +88,41 @@ The release script falls back to `hdiutil` if `create-dmg` is missing, but `crea
 brew install create-dmg
 ```
 
-## Cutting a release
+## Cutting a release (CI path, preferred)
+
+1. Make sure `main` is green on CI and you've committed everything you want in the release.
+2. Tag and push:
+
+   ```sh
+   git checkout main
+   git pull
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+   Tags must match `vMAJOR.MINOR.PATCH` (the workflow rejects anything else).
+
+3. Watch the workflow:
+
+   ```sh
+   gh run watch
+   ```
+
+   Or open the **Actions** tab on GitHub.
+
+4. After it finishes, a new entry appears under <https://github.com/ilwonyoon/steer_ai/releases> with `Steer-<version>.dmg` and `Steer-<version>.dmg.sha256` attached.
+
+### Re-running CI for an existing tag
+
+If the workflow failed mid-way for a tag that already exists, re-trigger it without re-pushing:
+
+```sh
+gh workflow run release.yml -f tag=v0.1.0
+```
+
+## Cutting a release (local path)
+
+Use this when CI is unavailable or for one-off dogfood builds.
 
 ```sh
 # 1. Make sure the working tree is clean.
@@ -75,9 +137,10 @@ git push origin v0.1.0
 #    uses STEER_NOTARY_PROFILE if set, falling back to "steer-notary".
 bash scripts/release-mac.sh
 
-# To pin a specific cert / notary profile:
+# To pin a specific cert / notary profile / provisioning profile:
 # export STEER_SIGN_IDENTITY="Developer ID Application: ILWON YOON (LG7667PAS6)"
 # export STEER_NOTARY_PROFILE="steer-notary"
+# export PROVISIONING_PROFILE=/path/to/steer.provisionprofile
 ```
 
 Output lands in `.build/release/`:

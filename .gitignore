@@ -14,3 +14,10 @@ apps/mac/Resources/AppIcon.icns
 packages/relay/node_modules/
 packages/relay/.wrangler/
 packages/relay/.dev.vars
+
+# one-shot secret-loading helpers (created locally, not for the repo)
+/add-team-id.sh
+/setup-apns-secrets.sh
+*.p12
+*.provisionprofile
+*.p8
