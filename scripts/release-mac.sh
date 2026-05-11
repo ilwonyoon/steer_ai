@@ -14,7 +14,7 @@
 #   DMG_VOLNAME            DMG volume name. Defaults to "Steer".
 #
 # Output:
-#   .build/SteerMac.app          stapled signed bundle
+#   .build/Steer.app             stapled signed bundle
 #   .build/release/Steer-<v>.dmg signed + stapled installer
 set -euo pipefail
 
@@ -129,7 +129,7 @@ if command -v create-dmg >/dev/null 2>&1; then
     --volname "$DMG_VOLNAME" \
     --window-size 540 360 \
     --icon-size 96 \
-    --icon "SteerMac.app" 140 180 \
+    --icon "Steer.app" 140 180 \
     --app-drop-link 400 180 \
     --no-internet-enable \
     "$DMG_PATH" \
