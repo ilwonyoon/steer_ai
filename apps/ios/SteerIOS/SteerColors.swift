@@ -4,12 +4,15 @@ import UIKit
 /// Direct port of the Mac SteerColors — same palette, same names, dark
 /// vs light dynamic resolution swapped to UIKit's UITraitCollection.
 enum SteerColors {
-    // Light palette is dialed in by the user and untouched. Dark
-    // values are neutral greys lifted from v1 — no warm undertone,
-    // no per-channel skew. Mirrors apps/mac/.../SteerColors.swift.
-    static let appBackground = dynamic(light: rgb(0.955, 0.955, 0.965), dark: rgb(0.105, 0.105, 0.115))
-    static let cardBackground = dynamic(light: rgb(0.985, 0.985, 0.975), dark: rgb(0.155, 0.155, 0.165))
-    static let cardBackplate = dynamic(light: rgb(0.985, 0.985, 0.975, 0.94), dark: rgb(0.205, 0.205, 0.215, 0.78))
+    // Light palette is dialed in by the user — do not touch.
+    // Dark palette carries a very faint warm undertone so the orange
+    // app icon doesn't read as foreign next to the chrome. The push
+    // is small (R a touch above G, B another notch lower) — much
+    // less than the PR #4 overreach that was rolled back. Mirrors
+    // apps/mac/.../SteerColors.swift.
+    static let appBackground = dynamic(light: rgb(0.955, 0.955, 0.965), dark: rgb(0.113, 0.105, 0.100))
+    static let cardBackground = dynamic(light: rgb(0.985, 0.985, 0.975), dark: rgb(0.163, 0.155, 0.150))
+    static let cardBackplate = dynamic(light: rgb(0.985, 0.985, 0.975, 0.94), dark: rgb(0.213, 0.205, 0.200, 0.78))
 
     static let ink = dynamic(light: rgb(0.12, 0.12, 0.13), dark: rgb(0.935, 0.935, 0.945))
     static let secondaryInk = dynamic(light: rgb(0.44, 0.44, 0.48), dark: rgb(0.74, 0.74, 0.76))
@@ -43,14 +46,18 @@ enum SteerColors {
     static let disconnected = dynamic(light: rgb(0.72, 0.35, 0.00), dark: rgb(1.0, 0.66, 0.32))
 
     static func hueTint(hue: Double, intensity: Double = 1.0) -> Color {
+        // Mirror of the Mac path. Same hue in both modes, only
+        // brightness flips. Saturation trimmed a touch in dark so the
+        // same chroma reads as a faint tint of paper, not a slab of
+        // saturated color against black.
         let normalized = CGFloat(hue / 360.0)
         return Color(uiColor: UIColor { trait in
             if trait.userInterfaceStyle == .dark {
-                let saturation: CGFloat = 0.28 * CGFloat(intensity)
-                let brightness: CGFloat = 0.28 + 0.05 * CGFloat(intensity)
+                let saturation: CGFloat = 0.16 * CGFloat(intensity)
+                let brightness: CGFloat = 0.16 + 0.03 * CGFloat(intensity)
                 return UIColor(hue: normalized, saturation: saturation, brightness: brightness, alpha: 1)
             }
-            let saturation: CGFloat = 0.20 * CGFloat(intensity)
+            let saturation: CGFloat = 0.18 * CGFloat(intensity)
             let brightness: CGFloat = 0.99
             return UIColor(hue: normalized, saturation: saturation, brightness: brightness, alpha: 1)
         })

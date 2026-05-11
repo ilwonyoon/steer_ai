@@ -2,14 +2,16 @@ import SwiftUI
 import AppKit
 
 enum SteerColors {
-    // Light palette is dialed in by the user and untouched. Dark
-    // values are pure neutral greys lifted one notch from the
-    // original v1 dim charcoal — no warm undertone, no per-channel
-    // skew. The brand color expresses itself through the orange
-    // status pip / accent, not through the chrome.
-    static let appBackground = dynamic(light: rgb(0.955, 0.955, 0.965), dark: rgb(0.105, 0.105, 0.115))
-    static let cardBackground = dynamic(light: rgb(0.985, 0.985, 0.975), dark: rgb(0.155, 0.155, 0.165))
-    static let cardBackplate = dynamic(light: rgb(0.985, 0.985, 0.975, 0.94), dark: rgb(0.205, 0.205, 0.215, 0.78))
+    // Light palette is dialed in by the user — do not touch.
+    // Dark palette carries a very faint warm undertone so the orange
+    // app icon doesn't read as foreign next to the chrome. The push
+    // is small (R ~0.008 above G, B another notch lower) — much less
+    // than the PR #4 overreach that was rolled back. Reads as plain
+    // dark grey at a glance; the warmth only registers as "does not
+    // feel like a generic IDE."
+    static let appBackground = dynamic(light: rgb(0.955, 0.955, 0.965), dark: rgb(0.113, 0.105, 0.100))
+    static let cardBackground = dynamic(light: rgb(0.985, 0.985, 0.975), dark: rgb(0.163, 0.155, 0.150))
+    static let cardBackplate = dynamic(light: rgb(0.985, 0.985, 0.975, 0.94), dark: rgb(0.213, 0.205, 0.200, 0.78))
 
     static let ink = dynamic(light: rgb(0.12, 0.12, 0.13), dark: rgb(0.935, 0.935, 0.945))
     static let secondaryInk = dynamic(light: rgb(0.44, 0.44, 0.48), dark: rgb(0.74, 0.74, 0.76))
@@ -43,17 +45,23 @@ enum SteerColors {
     static let disconnected = dynamic(light: rgb(0.72, 0.35, 0.00), dark: rgb(1.0, 0.66, 0.32))
 
     static func hueTint(hue: Double, intensity: Double = 1.0) -> Color {
+        // Per-project header tint. The user-visible rule is "dark mode
+        // should feel like the same color from light mode, just placed
+        // on a dark surface" — not a completely different palette.
+        // So both modes share the same hue and the same low saturation
+        // (0.18 light, 0.16 dark — dark trims a touch because the same
+        // chroma reads more saturated against black). Only brightness
+        // flips: 0.99 in light gives a near-paper pastel; 0.16 in dark
+        // gives a faint inked-paper tint of the same hue. Result:
+        // Documents/Steer_ai stays the same blue family in both modes.
         let normalized = hue / 360
         return Color(nsColor: NSColor(name: nil) { appearance in
             if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-                // Lifted brightness only — saturation matches the
-                // light path's restrained 0.20 so dark headers read
-                // as tints, not candy.
-                let saturation = 0.28 * intensity
-                let brightness = 0.28 + 0.05 * intensity
+                let saturation = 0.16 * intensity
+                let brightness = 0.16 + 0.03 * intensity
                 return NSColor(hue: normalized, saturation: saturation, brightness: brightness, alpha: 1)
             }
-            let saturation = 0.20 * intensity
+            let saturation = 0.18 * intensity
             let brightness = 0.99
             return NSColor(hue: normalized, saturation: saturation, brightness: brightness, alpha: 1)
         })
