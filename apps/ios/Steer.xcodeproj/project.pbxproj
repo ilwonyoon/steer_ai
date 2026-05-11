@@ -11,6 +11,7 @@
 		0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0001A236298D657692E8531D /* DetailView.swift */; };
 		05285BD23BDD04888929B775 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18199CFE823CF880E1C94476 /* InboxView.swift */; };
 		1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */; };
+		3CEF2917FE715ADC7EC23C2E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EAEF116995AC4FE59BB6135E /* Assets.xcassets */; };
 		4B186F5237BFAC367284F909 /* SyncInboxOptimisticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */; };
 		4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */; };
 		543EFCA3684DA845C2A274D9 /* DevicePresenceObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */; };
@@ -85,6 +86,7 @@
 		CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPayloadMapping.swift; sourceTree = "<group>"; };
 		CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxOptimisticTests.swift; sourceTree = "<group>"; };
 		D5C900DB8295384C9D855881 /* Steer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Steer.entitlements; sourceTree = "<group>"; };
+		EAEF116995AC4FE59BB6135E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -111,6 +113,7 @@
 			isa = PBXGroup;
 			children = (
 				968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */,
+				EAEF116995AC4FE59BB6135E /* Assets.xcassets */,
 				CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */,
 				A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */,
 				0001A236298D657692E8531D /* DetailView.swift */,
@@ -210,6 +213,7 @@
 			buildConfigurationList = CD6D1DE511FCCBC234FBB595 /* Build configuration list for PBXNativeTarget "Steer" */;
 			buildPhases = (
 				B7E7C16FDCA12BD5D360E8FC /* Sources */,
+				6887D091B15A1C4FB0896BA0 /* Resources */,
 				0DBAD1AAB3E3CE0F0B46DC48 /* Frameworks */,
 			);
 			buildRules = (
@@ -291,6 +295,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6887D091B15A1C4FB0896BA0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3CEF2917FE715ADC7EC23C2E /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		9FCB7A3A321FF528E83521F6 /* Sources */ = {
