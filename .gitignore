@@ -4,6 +4,11 @@
 DerivedData/
 *.xcuserstate
 *.xcuserdata/
+# Xcode build output dumped at apps/<platform>/build (when xcodebuild
+# is invoked with -derivedDataPath pointing here). Don't let it slip
+# into commits — used to ship 2.8k stale intermediate files before
+# this rule existed.
+apps/*/build/
 node_modules/
 package-lock.json
 .claude/settings.local.json
