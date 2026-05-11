@@ -2,21 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Sign in with Apple is a restricted capability. It works when:
-           1. The bundle is signed with a Developer ID identity
-              (Apple Development also works for local installs).
-           2. The matching provisioning profile is embedded so AKAuthentication
-              can resolve the application-identifier claim above to a real
-              App ID in our Apple Developer account.
-         scripts/build-mac-app.sh handles (2) via PROVISIONING_PROFILE. -->
-    <key>com.apple.developer.applesignin</key>
-    <array>
-        <string>Default</string>
-    </array>
-    <key>com.apple.developer.team-identifier</key>
-    <string>LG7667PAS6</string>
-    <key>com.apple.application-identifier</key>
-    <string>LG7667PAS6.ai.steer.mac</string>
+    <!-- Direct-distribution build for Mac.
+         Sign in with Apple, application-identifier, and team-identifier
+         are intentionally NOT requested here because they are restricted
+         entitlements that only Apple Distribution / Development
+         provisioning profiles can grant. With them in place on a
+         Developer ID bundle, macOS 26 launchd refuses to spawn the app
+         (RBSRequestErrorDomain Code=5 / errno 163). Re-add them only when
+         the iPhone Sync companion ships through the Mac App Store. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
