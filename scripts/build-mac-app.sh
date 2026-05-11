@@ -88,7 +88,12 @@ fi
 
 if [ -f "$MAC_DIR/Resources/AppIcon.icns" ]; then
   cp "$MAC_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
-  ICON_KEY_BLOCK=$'\n  <key>CFBundleIconFile</key>\n  <string>AppIcon</string>'
+  # CFBundleIconFile is the classic key the Finder/Dock honor; CFBundleIconName
+  # is what macOS 11+ system surfaces (notification center, share sheet, etc.)
+  # read first. SwiftPM doesn't compile .xcassets so we can't ship an Asset.car
+  # AppIcon group — declaring the icns under both keys keeps both code paths
+  # happy and stops UserNotifications from falling back to the generic mask.
+  ICON_KEY_BLOCK=$'\n  <key>CFBundleIconFile</key>\n  <string>AppIcon</string>\n  <key>CFBundleIconName</key>\n  <string>AppIcon</string>'
 else
   ICON_KEY_BLOCK=""
 fi
