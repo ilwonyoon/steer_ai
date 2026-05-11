@@ -95,7 +95,8 @@ jobs:
           node-version: '22'
 
       - name: Install workspace dependencies
-        run: npm ci
+        # package-lock.json is gitignored; use install rather than ci.
+        run: npm install
 
       - name: Run node tests
         run: npm test
