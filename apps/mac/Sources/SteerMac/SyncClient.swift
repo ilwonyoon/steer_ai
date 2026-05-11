@@ -301,6 +301,24 @@ public final class SyncClient: ObservableObject {
         return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
     }
 
+    /// Pull every card the relay still considers active for this
+    /// user. The Mac reconciles against this list each reload tick so
+    /// cards that no longer exist on disk get resolved server-side
+    /// (otherwise the iPhone keeps showing them forever).
+    public func fetchActiveCards() async -> [CardPayload] {
+        guard isSignedIn else { return [] }
+        struct ListResponse: Decodable { let cards: [CardPayload] }
+        do {
+            let resp: ListResponse = try await getJSON("/v1/sync/cards")
+            return resp.cards
+        } catch {
+            if !isTransientError(error) {
+                SignInDebugLog.write("[fetchActiveCards] failed: \(error)")
+            }
+            return []
+        }
+    }
+
     public func publishCard(_ card: CardPayload) async {
         guard isSignedIn else {
             SignInDebugLog.write("[publish] skipped (not signed in) card=\(card.cardId)")

@@ -313,9 +313,21 @@ struct SteerRootView: View {
 
     private func syncToiPhone(cards: [ActionCard]) async {
         SignInDebugLog.write("[syncToiPhone] publishing \(cards.count) cards")
+        let localIds = Set(cards.map(\.id))
         for card in cards {
             let payload = SteerCardMapping.payload(from: card)
             await SyncClient.shared.publishCard(payload)
+        }
+        // Reconcile: any card the relay still considers active that
+        // is no longer in our local DB has been resolved on the Mac
+        // side (session ended, user dismissed, etc.) and must be
+        // removed from the relay so the iPhone stops showing it.
+        // Without this, every previous session piles up — user saw
+        // 5 cards on iPhone while Mac only had 1 live session.
+        let remoteActive = await SyncClient.shared.fetchActiveCards()
+        for remote in remoteActive where !localIds.contains(remote.cardId) {
+            SignInDebugLog.write("[reconcile] resolving stale \(remote.cardId)")
+            await SyncClient.shared.resolveCard(cardId: remote.cardId)
         }
     }
 
