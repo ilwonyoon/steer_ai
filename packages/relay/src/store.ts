@@ -333,11 +333,16 @@ export class Store {
 
   /// Live (running/waiting/blocked) sessions the Mac last reported.
   /// iPhone reads this to render the "N running" badge next to the
-  /// Mac connection chip. Stale sessions older than 5 minutes are
-  /// excluded because the Mac stops heartbeating them when the
-  /// process exits or Steer.app is quit.
+  /// Mac connection chip. Stale sessions older than 90 seconds are
+  /// excluded because the Mac dedupes publishes when nothing has
+  /// changed (so an actively running session still re-publishes on
+  /// every state change, but a Steer.app quit / process kill /
+  /// network drop stops bumping last_activity_at). 90s = 3 missed
+  /// 30-second heartbeat windows; matches Mac's reload tick cadence.
+  /// Previously 5 minutes, but that left stale "1 running" chips
+  /// visible for far too long after a session quietly died.
   async listLiveSessions(userId: string): Promise<SessionSnapshot[]> {
-    const minLastActivity = Date.now() - 5 * 60 * 1000;
+    const minLastActivity = Date.now() - 90 * 1000;
     const rs = await this.env.DB.prepare(
       `SELECT session_id, provider, project_name, branch_label,
               run_state, last_activity_at

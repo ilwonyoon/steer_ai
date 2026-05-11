@@ -22,7 +22,13 @@ struct SteerRootView: View {
     /// made the iPhone carousel jitter every two seconds.
     @State private var lastPublishedCardIds = Set<String>()
     @State private var lastPublishedCardHashes: [String: Int] = [:]
-    @State private var lastPublishedChipFingerprints: [String: String] = [:]
+    /// Per-chip snapshot of (fingerprint, lastPublishedAt). We dedupe
+    /// on the fingerprint to avoid spam, but we ALSO force a publish
+    /// every ~30s so the relay's last_activity_at stays fresh — its
+    /// listLiveSessions cutoff drops sessions whose row hasn't been
+    /// touched in 90s, and dedupe alone would let a steadily running
+    /// session fall off that cliff and stop showing on iPhone.
+    @State private var lastPublishedChipFingerprints: [String: (fp: String, at: Date)] = [:]
     @State private var liveChipsExpanded = false
     @State private var replyDrafts: [String: String] = [:]
     @State private var attachmentDrafts: [String: [ReplyAttachment]] = [:]
@@ -411,22 +417,34 @@ struct SteerRootView: View {
         return (cardsToPublish, idsToResolve)
     }
 
-    /// Diff helper for live-session chips. Each chip carries a hash
-    /// of (sessionId, runState, projectName, provider). Reload tick
-    /// emits hundreds of chip publishes otherwise.
+    /// Diff helper for live-session chips. Two reasons we may
+    /// publish a chip on a given reload tick:
+    ///
+    /// 1. Its content fingerprint changed since last publish
+    ///    (runState / project / provider). Standard dedupe path.
+    /// 2. Its content is unchanged but more than 30s elapsed since
+    ///    the last publish. This is the heartbeat path: the relay's
+    ///    listLiveSessions cutoff drops sessions whose row hasn't
+    ///    been touched in 90s, so without a periodic re-publish a
+    ///    healthy long-running session would fall off the iPhone
+    ///    chip's "N running" count after ~90s of no activity.
     private func diffChipsForPublish(
         loadedChips: [LiveSessionChip]
     ) -> [LiveSessionChip] {
         var next: [LiveSessionChip] = []
+        let now = Date()
+        let heartbeatInterval: TimeInterval = 30
         for chip in loadedChips {
             let fp = "\(chip.runState)|\(chip.project)|\(chip.provider.rawValue)"
-            if lastPublishedChipFingerprints[chip.sessionId] != fp {
+            let prev = lastPublishedChipFingerprints[chip.sessionId]
+            let staleHeartbeat = prev.map { now.timeIntervalSince($0.at) > heartbeatInterval } ?? true
+            if prev?.fp != fp || staleHeartbeat {
                 next.append(chip)
-                lastPublishedChipFingerprints[chip.sessionId] = fp
+                lastPublishedChipFingerprints[chip.sessionId] = (fp, now)
             }
         }
-        // Prune fingerprints for chips that no longer exist locally
-        // so the dictionary doesn't grow unbounded across long-running
+        // Prune snapshots for chips that no longer exist locally so
+        // the dictionary doesn't grow unbounded across long-running
         // sessions.
         let liveIds = Set(loadedChips.map(\.sessionId))
         for key in lastPublishedChipFingerprints.keys where !liveIds.contains(key) {
