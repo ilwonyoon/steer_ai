@@ -55,6 +55,7 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency U
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        NSLog("[APNS] registered, token len=\(hex.count)")
         Task { @MainActor in
             await SyncInbox.shared.updateAPNSToken(hex)
         }
@@ -64,8 +65,12 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency U
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        // No-op: SyncInbox keeps the previous token if any. A later
-        // registerForRemote call recovers from transient failures.
+        // Surface the failure to Settings so the user can see why
+        // notifications aren't reaching the lock screen.
+        NSLog("[APNS] registration FAILED: \(error.localizedDescription)")
+        Task { @MainActor in
+            SyncInbox.shared.recordAPNSRegistrationError(error.localizedDescription)
+        }
     }
 
     // MARK: - UNUserNotificationCenterDelegate

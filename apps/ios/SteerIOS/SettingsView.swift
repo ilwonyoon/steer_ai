@@ -192,18 +192,36 @@ private struct NotificationsRow: View {
             }
             .buttonStyle(.plain)
         } else {
-            HStack {
-                Label {
-                    Text("Notifications")
-                        .foregroundStyle(.primary)
-                } icon: {
-                    Image(systemName: "bell")
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Label {
+                        Text("Notifications")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "bell")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(statusText)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Text(statusText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                // Diagnostics: surfaces a token-registration error or
+                // an absent token. Both keep push from reaching the
+                // lock screen even when the OS permission is "On".
+                if let err = inbox.apnsRegistrationError {
+                    Text("APNS error: \(err)")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                } else if inbox.notificationPermission == .granted && inbox.apnsToken == nil {
+                    Text("Waiting for Apple to issue a push token…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if let token = inbox.apnsToken {
+                    Text("Token registered (…\(token.suffix(8)))")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
             }
         }
     }

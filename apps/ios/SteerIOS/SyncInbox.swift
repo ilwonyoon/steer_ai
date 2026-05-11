@@ -216,6 +216,14 @@ public final class SyncInbox: ObservableObject {
             // dialog. We don't ask before sign-in — that would prompt
             // people who haven't committed yet.
             await requestNotificationPermissionIfNeeded()
+            // If APNS already handed us a device token before we
+            // finished signing in, send a heartbeat now so the relay
+            // learns the token immediately. Without this the token
+            // sits in memory until the next reload tick, and a fanout
+            // attempt in the meantime finds no APNS target.
+            if apnsToken != nil {
+                await sendDeviceHeartbeat()
+            }
         } catch {
             lastError = "Auth POST failed: \(error.localizedDescription)"
         }
@@ -340,6 +348,12 @@ public final class SyncInbox: ObservableObject {
             status = .signedIn(me.user)
             connectWebSocket()
             await reload()
+            // Same heartbeat race fix as handleAppleCredential: if
+            // APNS already issued a token while we were re-validating
+            // the session, push it now so the relay can fan out.
+            if apnsToken != nil {
+                await sendDeviceHeartbeat()
+            }
         } catch {
             tokenStore.clear()
             status = .signedOut
@@ -366,8 +380,18 @@ public final class SyncInbox: ObservableObject {
     public func updateAPNSToken(_ hex: String) async {
         guard apnsToken != hex else { return }
         apnsToken = hex
+        apnsRegistrationError = nil
         guard isSignedIn else { return }  // first beat happens after sign-in
         await sendDeviceHeartbeat()
+    }
+
+    /// Surfaced from `application(_:didFailToRegisterForRemoteNotificationsWithError:)`.
+    /// We render this in Settings ▸ Sync ▸ Notifications so the user
+    /// can see WHY a push registration is silently failing.
+    @Published public private(set) var apnsRegistrationError: String? = nil
+
+    public func recordAPNSRegistrationError(_ message: String) {
+        apnsRegistrationError = message
     }
 
     /// One-shot heartbeat publisher (the iOS analog of Mac's
