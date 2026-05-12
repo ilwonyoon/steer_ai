@@ -3,10 +3,16 @@ import path from "node:path";
 import os from "node:os";
 
 // Default to ~/.codex/sessions; overridable for tests (and the
-// occasional debug-against-fixture session) via env.
-const CODEX_SESSIONS_DIR =
-  process.env.STEER_CODEX_SESSIONS_DIR ??
-  path.join(os.homedir(), ".codex", "sessions");
+// occasional debug-against-fixture session) via env. Read per
+// call so tests can flip the env between test cases without
+// re-importing the module (which has fragile semantics across
+// Node versions).
+function codexSessionsDir() {
+  return (
+    process.env.STEER_CODEX_SESSIONS_DIR ??
+    path.join(os.homedir(), ".codex", "sessions")
+  );
+}
 const POLL_INTERVAL_MS = 250;
 const DISCOVERY_TIMEOUT_MS = 15_000;
 const DEBUG_LOG = process.env.STEER_READER_DEBUG_LOG;
@@ -154,7 +160,8 @@ export function extractFinalAgentMessage(event) {
 const SPAWN_WINDOW_MS = 30_000;
 
 async function findNewestSessionFile(spawnedAt) {
-  if (!fs.existsSync(CODEX_SESSIONS_DIR)) return null;
+  const sessionsDir = codexSessionsDir();
+  if (!fs.existsSync(sessionsDir)) return null;
 
   const spawnedMs = spawnedAt.getTime();
   let bestFile = null;
@@ -190,7 +197,7 @@ async function findNewestSessionFile(spawnedAt) {
     }
   };
 
-  await visit(CODEX_SESSIONS_DIR);
+  await visit(sessionsDir);
   return bestFile;
 }
 
