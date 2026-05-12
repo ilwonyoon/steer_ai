@@ -22,6 +22,15 @@ struct SteerRootView: View {
     /// made the iPhone carousel jitter every two seconds.
     @State private var lastPublishedCardIds = Set<String>()
     @State private var lastPublishedCardHashes: [String: Int] = [:]
+    /// `lastPublishedCardIds` is empty on every cold-start. Without
+    /// seeding it from the relay's current active list, any card the
+    /// previous Mac process published would never receive a DELETE —
+    /// iPhone would keep showing it forever (the "stale active card"
+    /// bug we hit in dogfood). On the first successful reload after
+    /// sign-in we call `fetchActiveCards` once and treat the result
+    /// as our published baseline; the next reconcile pass DELETEs
+    /// anything the local store no longer reports active.
+    @State private var didSeedFromRelay = false
     /// Per-chip snapshot of (fingerprint, lastPublishedAt). We dedupe
     /// on the fingerprint to avoid spam, but we ALSO force a publish
     /// every ~30s so the relay's last_activity_at stays fresh — its
@@ -379,6 +388,10 @@ struct SteerRootView: View {
                 lastPublishedCardHashes.removeAll()
                 lastPublishedChipFingerprints.removeAll()
             }
+            // Re-seed from relay on the next sign-in / toggle-on
+            // cycle (the orphan-cleanup path runs once per
+            // sign-in, not just once per process lifetime).
+            didSeedFromRelay = false
         }
         // Outbound mirroring respects the toggle — that's a privacy
         // promise the iPhone Sync section makes. Inbound instructions
@@ -388,6 +401,23 @@ struct SteerRootView: View {
         // "delivered" state. Sign out is the real off switch.
         if signedIn {
             if toggleOn {
+                // First reload after sign-in: seed
+                // lastPublishedCardIds from the relay. Without
+                // this, any card the previous Mac process
+                // published would never receive a DELETE on this
+                // process's reconcile pass (its
+                // lastPublishedCardIds starts empty), so the
+                // iPhone keeps showing yesterday's already-
+                // resolved cards. See CardReconciler in SteerCore
+                // for the diff logic.
+                if !didSeedFromRelay {
+                    let remoteCards = await SyncClient.shared.fetchActiveCards()
+                    lastPublishedCardIds = Set(remoteCards.map(\.cardId))
+                    didSeedFromRelay = true
+                    SignInDebugLog.write(
+                        "[reconcile] cold-start seed: relay had \(remoteCards.count) active card(s)"
+                    )
+                }
                 // Diff-based publish. Only PUT the cards/chips that
                 // actually changed since our last successful publish,
                 // and only DELETE rows the iPhone still believes are
@@ -471,33 +501,51 @@ struct SteerRootView: View {
         }
     }
 
-    /// Diff helper. Splits the freshly loaded card set against the
-    /// last-published snapshot into (cards that changed → PUT now)
-    /// and (card ids that disappeared locally → DELETE on the relay).
-    /// Updates the snapshots as a side effect so the next tick sees
-    /// the new baseline.
+    /// Splits the freshly loaded card set against the last-published
+    /// snapshot into (cards that changed → PUT now) and (card ids
+    /// that disappeared → DELETE on the relay).
+    ///
+    /// Computes the changed-content set locally (fingerprint diff),
+    /// then delegates the (publish, resolve, next-baseline) decision
+    /// to `CardReconciler.reconcile` so it can be unit-tested in
+    /// SteerCore without standing up the SwiftUI app.
     private func diffCardsForPublish(
         loadedCards: [ActionCard]
     ) -> (publish: [ActionCard], resolve: [String]) {
         let currentIds = Set(loadedCards.map(\.id))
-        let cardsToPublish = loadedCards.filter { card in
-            let hash = SteerCardMapping.payload(from: card).publishFingerprint
-            let prev = lastPublishedCardHashes[card.id]
-            return prev != hash
-        }
-        let idsToResolve = Array(lastPublishedCardIds.subtracting(currentIds))
-        // Update the snapshots so the next tick doesn't re-publish
-        // these. We update OPTIMISTICALLY here; if a PUT/DELETE fails
-        // the request layer retries on its own and the next tick
-        // will catch any drift (the hashes still match if nothing
-        // actually changed server-side).
+        let changedIds = Set(
+            loadedCards
+                .filter { card in
+                    let hash = SteerCardMapping.payload(from: card).publishFingerprint
+                    return lastPublishedCardHashes[card.id] != hash
+                }
+                .map(\.id)
+        )
+
+        let decision = CardReconciler.reconcile(
+            currentLocalIds: currentIds,
+            lastPublishedIds: lastPublishedCardIds,
+            changedIdsSinceLastPublish: changedIds
+        )
+
+        // Map publishIds back to full ActionCard payloads. The
+        // reconciler intentionally only deals in ids; the caller
+        // owns the payload lookup.
+        let cardsToPublish = loadedCards.filter { decision.publishIds.contains($0.id) }
+        let idsToResolve = Array(decision.resolveIds)
+
+        // Update the fingerprint snapshot OPTIMISTICALLY. If a
+        // PUT/DELETE fails the request layer retries on its own and
+        // the next tick will catch any drift (the hashes still
+        // match if nothing actually changed server-side).
         for card in cardsToPublish {
             lastPublishedCardHashes[card.id] = SteerCardMapping.payload(from: card).publishFingerprint
         }
-        for id in idsToResolve {
+        for id in decision.resolveIds {
             lastPublishedCardHashes.removeValue(forKey: id)
         }
-        lastPublishedCardIds = currentIds
+        lastPublishedCardIds = decision.nextPublishedIds
+
         return (cardsToPublish, idsToResolve)
     }
 
