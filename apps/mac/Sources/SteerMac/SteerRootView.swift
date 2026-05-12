@@ -30,6 +30,17 @@ struct SteerRootView: View {
     /// session fall off that cliff and stop showing on iPhone.
     @State private var lastPublishedChipFingerprints: [String: (fp: String, at: Date)] = [:]
     @State private var liveChipsExpanded = false
+    /// Set of sessionIds where the user (typically from iPhone) issued
+    /// an instruction we already injected; the badge counts how many
+    /// of these are currently `run_state == "running"` and displays
+    /// "N running". A sessionId is *added* the moment we drain a
+    /// queued instruction targeting it, and *removed* the moment the
+    /// session falls out of `running` (stopped, hit a card, completed
+    /// — any non-running state). Effect: the chip only ever surfaces
+    /// "work the user kicked off", not idle sessions, not other
+    /// people's sessions, not running sessions that never received
+    /// an instruction from us.
+    @State private var instructedSessionIds: Set<String> = []
     @State private var replyDrafts: [String: String] = [:]
     @State private var attachmentDrafts: [String: [ReplyAttachment]] = [:]
     @Namespace private var sessionTransition
@@ -46,6 +57,18 @@ struct SteerRootView: View {
     private var currentCard: ActionCard? {
         guard cards.indices.contains(currentIndex) else { return nil }
         return cards[currentIndex]
+    }
+
+    /// How many sessions the user kicked off (an instruction was
+    /// successfully injected) AND are currently `run_state == running`
+    /// per the live chip snapshot. Drives the top "N running" pill.
+    /// Membership is gated on BOTH conditions so the pill never shows
+    /// idle sessions or running sessions we didn't trigger.
+    private var instructedRunningCount: Int {
+        let runningInstructed = liveChips.filter {
+            $0.runState == "running" && instructedSessionIds.contains($0.sessionId)
+        }
+        return runningInstructed.count
     }
 
     var body: some View {
@@ -66,9 +89,10 @@ struct SteerRootView: View {
                     ErrorBanner(message: lastError, onDismiss: { self.lastError = nil })
                 }
 
-                if !liveChips.isEmpty {
+                if instructedRunningCount > 0 {
                     LiveSessionChipRow(
                         chips: liveChips,
+                        instructedRunningCount: instructedRunningCount,
                         isExpanded: $liveChipsExpanded
                     )
                     .padding(.leading, 4)
@@ -283,6 +307,18 @@ struct SteerRootView: View {
         let loadedChips = loadedChipsRaw.filter { !activeSessionIds.contains($0.sessionId) }
         cards = loadedCards
         liveChips = loadedChips
+        // Decay instructed-session membership. The pill should only
+        // count sessions the user kicked off AND are still running;
+        // the moment a session leaves the running set (stopped, hit
+        // a card, completed, fell off the live cutoff) it's no
+        // longer something the user is waiting on, so drop it.
+        // Without this the set would grow unbounded across a session.
+        let stillRunning = Set(
+            loadedChips
+                .filter { $0.runState == "running" }
+                .map(\.sessionId)
+        )
+        instructedSessionIds = instructedSessionIds.intersection(stillRunning)
         isLoading = false
         // Keep the user's focus stable across reloads. If the previously
         // focused session is gone (resolved / disconnected), fall back to
@@ -526,6 +562,12 @@ struct SteerRootView: View {
             do {
                 try await store.send(record.text, attachments: [], to: record.targetSessionId)
                 await SyncClient.shared.markInstructionInjected(instructionId: record.instructionId)
+                // Track this session as "user-kicked-off". The next
+                // reload tick will check whether it actually entered
+                // run_state=running and surface it in the top pill.
+                // Membership decays automatically when the session
+                // leaves running (see reload()).
+                instructedSessionIds.insert(record.targetSessionId)
             } catch {
                 await SyncClient.shared.markInstructionFailed(
                     instructionId: record.instructionId,
@@ -627,6 +669,7 @@ private struct ErrorBanner: View {
 
 private struct LiveSessionChipRow: View {
     let chips: [LiveSessionChip]
+    let instructedRunningCount: Int
     @Binding var isExpanded: Bool
 
     var body: some View {
@@ -644,7 +687,7 @@ private struct LiveSessionChipRow: View {
             .allowsHitTesting(isExpanded)
 
             HStack {
-                RunningBadge(chips: chips)
+                RunningBadge(runningCount: instructedRunningCount)
                 Spacer(minLength: 0)
             }
             .opacity(isExpanded ? 0 : 1)
@@ -653,42 +696,23 @@ private struct LiveSessionChipRow: View {
         .frame(height: 28)
         .contentShape(Rectangle())
         .onTapGesture {
+            guard !chips.isEmpty else { return }
             withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
         }
     }
 }
 
 private struct RunningBadge: View {
-    let chips: [LiveSessionChip]
-
-    private var runningCount: Int {
-        chips.filter { $0.runState == "running" }.count
-    }
-    private var waitingCount: Int {
-        chips.filter { $0.runState == "waiting" }.count
-    }
-    private var blockedCount: Int {
-        chips.filter { $0.runState == "blocked" }.count
-    }
-
-    private var dominantColor: Color {
-        if blockedCount > 0 { return SteerColors.blocked }
-        if runningCount > 0 { return SteerColors.running }
-        return SteerColors.waiting
-    }
+    let runningCount: Int
 
     private var label: String {
-        var parts: [String] = []
-        if runningCount > 0 { parts.append("\(runningCount) running") }
-        if waitingCount > 0 { parts.append("\(waitingCount) waiting") }
-        if blockedCount > 0 { parts.append("\(blockedCount) blocked") }
-        return parts.joined(separator: " · ")
+        "\(runningCount) running"
     }
 
     var body: some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(dominantColor)
+                .fill(SteerColors.running)
                 .frame(width: 6, height: 6)
             Text(label)
                 .font(.system(size: 12, weight: .medium))
@@ -703,8 +727,7 @@ private struct RunningBadge: View {
                 .stroke(SteerColors.softSeparator, lineWidth: 1)
         }
         .shadow(color: SteerColors.cardShadow.opacity(0.5), radius: 6, y: 2)
-        .accessibilityLabel("\(chips.count) live session\(chips.count == 1 ? "" : "s"); \(label)")
-        .accessibilityHint("Tap to expand")
+        .accessibilityLabel(label)
     }
 }
 
