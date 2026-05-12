@@ -59,16 +59,14 @@ struct SteerRootView: View {
         return cards[currentIndex]
     }
 
-    /// How many sessions the user kicked off (an instruction was
-    /// successfully injected) AND are currently `run_state == running`
-    /// per the live chip snapshot. Drives the top "N running" pill.
-    /// Membership is gated on BOTH conditions so the pill never shows
-    /// idle sessions or running sessions we didn't trigger.
+    /// Count of sessions the user kicked off (an instruction was
+    /// successfully injected) that are still live and have not yet
+    /// produced a card. Drives the top "N running" pill. The decay
+    /// logic in reload() guarantees this only contains sessions
+    /// in the active instruction-processing window — see that
+    /// comment for the full membership rules.
     private var instructedRunningCount: Int {
-        let runningInstructed = liveChips.filter {
-            $0.runState == "running" && instructedSessionIds.contains($0.sessionId)
-        }
-        return runningInstructed.count
+        instructedSessionIds.count
     }
 
     var body: some View {
@@ -263,6 +261,12 @@ struct SteerRootView: View {
     private func send(_ text: String, attachments: [ReplyAttachment] = [], to sessionId: String) async {
         do {
             try await store.send(text, attachments: attachments.map(\.url), to: sessionId)
+            // Both local card replies (this path) and iPhone replies
+            // (drainQueuedInstructions) need to mark the target session
+            // as "user-kicked-off" so the top pill counts it. Without
+            // this hook the pill only ever surfaced iPhone drains and
+            // missed every Mac-side card reply.
+            instructedSessionIds.insert(sessionId)
             await reload()
         } catch {
             lastError = "send failed"
@@ -307,18 +311,28 @@ struct SteerRootView: View {
         let loadedChips = loadedChipsRaw.filter { !activeSessionIds.contains($0.sessionId) }
         cards = loadedCards
         liveChips = loadedChips
-        // Decay instructed-session membership. The pill should only
-        // count sessions the user kicked off AND are still running;
-        // the moment a session leaves the running set (stopped, hit
-        // a card, completed, fell off the live cutoff) it's no
-        // longer something the user is waiting on, so drop it.
-        // Without this the set would grow unbounded across a session.
-        let stillRunning = Set(
-            loadedChips
-                .filter { $0.runState == "running" }
-                .map(\.sessionId)
-        )
-        instructedSessionIds = instructedSessionIds.intersection(stillRunning)
+        // Decay instructed-session membership. A session stays in the
+        // set from the moment we inject an instruction until ONE of:
+        //
+        //   1. The session disappears from the live snapshot — it
+        //      ended, disconnected, or fell off the 90s live cutoff.
+        //   2. A card appeared for that session — the user has a
+        //      direct surface (the card) to handle it, so the pill
+        //      no longer needs to advertise the in-progress work.
+        //
+        // We deliberately do NOT decay just because the wrapper
+        // flipped run_state back to "waiting". Short replies finish
+        // before the next reload tick and would make the pill
+        // flicker into existence for a single frame, so the user
+        // never sees it. Holding membership through the whole
+        // instruction-processing window matches the user's mental
+        // model: "if I sent something and it isn't visibly resolved
+        // yet, the pill should still show it".
+        let liveSessionIds = Set(loadedChips.map(\.sessionId))
+        let cardSessionIds = Set(loadedCards.map(\.sessionId))
+        instructedSessionIds = instructedSessionIds
+            .intersection(liveSessionIds)
+            .subtracting(cardSessionIds)
         isLoading = false
         // Keep the user's focus stable across reloads. If the previously
         // focused session is gone (resolved / disconnected), fall back to

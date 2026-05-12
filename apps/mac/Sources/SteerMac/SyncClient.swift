@@ -136,7 +136,17 @@ public final class SyncClient: ObservableObject {
         } catch {
             self.pendingSignIn = nil
             SignInDebugLog.write("[apple-signin] failed: \(error)")
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            // Same canceled-suppression rationale as
+            // handleAppleSignInResult above — keep silent on user
+            // cancel + macOS 26 transient retry-cancel, surface
+            // everything else.
+            let ns = error as NSError
+            let isCanceled =
+                ns.domain == ASAuthorizationError.errorDomain
+                && ns.code == ASAuthorizationError.canceled.rawValue
+            if !isCanceled {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -157,7 +167,24 @@ public final class SyncClient: ObservableObject {
             }
             await handleAppleCredential(credential)
         case .failure(let error):
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            SignInDebugLog.write("[apple-signin] onCompletion failure: \(error)")
+            // ASAuthorizationError.canceled fires when the user
+            // dismisses the system sheet OR — more often than you'd
+            // expect — when macOS 26's SignInWithAppleButton emits a
+            // transient cancellation before re-presenting the sheet
+            // and succeeding on the next pass. Either way it's not
+            // something the user wants to read in red right above
+            // the button they just clicked.
+            //
+            // Other failure modes (network, missing entitlement)
+            // SHOULD surface, so we only silence the canceled code.
+            let ns = error as NSError
+            let isCanceled =
+                ns.domain == ASAuthorizationError.errorDomain
+                && ns.code == ASAuthorizationError.canceled.rawValue
+            if !isCanceled {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
             status = .signedOut
         }
     }
@@ -300,13 +327,27 @@ public final class SyncClient: ObservableObject {
 
     // MARK: - Cards
 
-    /// "Cancelled" / NSURLErrorCancelled is an in-flight URLSession
-    /// task that lost its race with another tick — not a real failure
-    /// the user should see. We treat it as silent so the Settings
-    /// status row doesn't flap red on every reload.
+    /// Errors we deliberately HIDE from the Settings status row, even
+    /// though they're real failures, because they all resolve on the
+    /// very next tick without user intervention:
+    ///
+    ///   * NSURLErrorCancelled — in-flight URLSession task lost its
+    ///     race with the next reload tick.
+    ///   * HTTP 401 unauthorized — stale or absent JWT. Shows up
+    ///     during the brief window between app launch and the first
+    ///     refreshMe/sign-in completing, or right after the JWT
+    ///     expires. The 2s reload loop tries again immediately, so
+    ///     flashing red here just makes a healthy sign-in look
+    ///     broken. The user already sees the truthful state in the
+    ///     "Status:" row ("Not signed in" vs "Signed in as ...").
+    ///
+    /// Both still get written to relay-client.log via SignInDebugLog
+    /// so we can still diagnose persistent issues.
     private func isTransientError(_ error: Error) -> Bool {
         let ns = error as NSError
-        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+        if ns.domain == "SyncClient" && ns.code == 401 { return true }
+        return false
     }
 
     /// Publish a single live-session snapshot. Mirrors the Mac
@@ -432,6 +473,44 @@ public final class SyncClient: ObservableObject {
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task: task)
+        }
+        // Cloudflare Workers Durable Objects close idle WebSockets
+        // after ~5–10 min. We saw the wrangler tail print
+        //   GET /v1/stream - Canceled @ 11:01:31 PM (last activity 10:55)
+        // every ~6 min in the user's session, dropping the socket
+        // during the exact window an iPhone reply would have been
+        // pushed. The relay only sends a single ping on accept and
+        // never again; clients didn't send any ping either. Drive
+        // a client-side ping every 30s so Cloudflare's idle timer
+        // never trips: any pong (or even the bare ping send) keeps
+        // the socket warm. Sized at 30s so we tolerate one missed
+        // ping cycle before Cloudflare's window expires.
+        pingTask?.cancel()
+        pingTask = Task { [weak self] in
+            await self?.pingLoop(task: task)
+        }
+    }
+
+    private var pingTask: Task<Void, Never>?
+
+    private func pingLoop(task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            // If the receive loop already moved on to a new socket,
+            // stop pinging the old one.
+            guard task === webSocketTask else { return }
+            let ping = WSMessage.ping
+            guard let data = try? JSONEncoder().encode(ping),
+                  let s = String(data: data, encoding: .utf8) else { continue }
+            do {
+                try await task.send(.string(s))
+            } catch {
+                // Send failure means the socket is already dead;
+                // the receive loop will surface the same error and
+                // trigger reconnect. Just exit the ping loop.
+                return
+            }
         }
     }
 

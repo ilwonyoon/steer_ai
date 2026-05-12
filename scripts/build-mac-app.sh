@@ -113,20 +113,38 @@ if [ -n "$PROVISIONING_PROFILE" ]; then
   cp "$PROVISIONING_PROFILE" "$CONTENTS_DIR/embedded.provisionprofile"
 fi
 
-if [ -f "$MAC_DIR/Resources/AppIcon.icns" ]; then
+if [ -d "$MAC_DIR/Assets.xcassets" ] && command -v xcrun >/dev/null 2>&1; then
+  # Compile xcassets through actool. This is the only way to get
+  # macOS 11+ system surfaces (Sign in with Apple confirmation
+  # dialog, notification banners, share sheet) to render our
+  # AppIcon — they look up "AppIcon" inside Assets.car via the
+  # CFBundleIconName key and fall back to a generic grid
+  # placeholder when the .car is absent. `swift build` does not
+  # compile xcassets, so we shell out to actool here. The compiled
+  # .car ships alongside an updated AppIcon.icns that actool
+  # generated from the same source, replacing the hand-rolled
+  # icon under apps/mac/Resources/.
+  ACTOOL_TMP="$(mktemp -d)"
+  xcrun actool "$MAC_DIR/Assets.xcassets" \
+    --compile "$ACTOOL_TMP" \
+    --platform macosx \
+    --minimum-deployment-target 26.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist "$ACTOOL_TMP/partial.plist" \
+    --output-format human-readable-text >/dev/null
+  cp "$ACTOOL_TMP/Assets.car"   "$RESOURCES_DIR/Assets.car"
+  cp "$ACTOOL_TMP/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+  rm -rf "$ACTOOL_TMP"
+  # Both keys: CFBundleIconFile keeps Finder/Dock happy on the
+  # legacy lookup path; CFBundleIconName is what every modern
+  # system surface (Sign in with Apple sheet, notification
+  # banners, share sheet, control center) honors first.
+  ICON_KEY_BLOCK=$'\n  <key>CFBundleIconFile</key>\n  <string>AppIcon</string>\n  <key>CFBundleIconName</key>\n  <string>AppIcon</string>'
+elif [ -f "$MAC_DIR/Resources/AppIcon.icns" ]; then
+  # Fallback path for environments without actool (CI?) — ship the
+  # hand-rolled .icns and skip the modern lookup key so the system
+  # doesn't render a generic placeholder when Assets.car is missing.
   cp "$MAC_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
-  # Use CFBundleIconFile ONLY. CFBundleIconName (macOS 11+) tells the
-  # system to look up "AppIcon" inside Assets.car — and if Assets.car
-  # is absent (which it always is in SwiftPM builds — `swift build`
-  # never compiles xcassets), the system fails the lookup and falls
-  # back to a generic grid placeholder *everywhere it honors the new
-  # key first*. The most visible casualty was the Sign in with Apple
-  # confirmation dialog rendering a grid square instead of our icon,
-  # even though Contents/Resources/AppIcon.icns was valid and Finder/
-  # Dock picked it up via the classic key.
-  #
-  # Re-add CFBundleIconName only after the actool step that emits
-  # Assets.car with an AppIcon image set lands in this script.
   ICON_KEY_BLOCK=$'\n  <key>CFBundleIconFile</key>\n  <string>AppIcon</string>'
 else
   ICON_KEY_BLOCK=""

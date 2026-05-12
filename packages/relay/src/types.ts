@@ -72,3 +72,58 @@ export type WSMessage =
   | { type: "instruction.status"; instructionId: string; status: string; failureReason?: string }
   | { type: "ping" }
   | { type: "pong" };
+
+// ────────────────────────────────────────────────────────────────────────
+// Sync v3 event log
+//
+// See docs/SYNC_ARCHITECTURE_V3.md "Event taxonomy". PR 1 introduces
+// the table + dual-write; clients don't consume these yet. Type
+// vocabulary is enforced here so route handlers can pattern-match.
+// ────────────────────────────────────────────────────────────────────────
+
+export type SyncEventType =
+  | "session.upsert"
+  | "session.remove"
+  | "card.upsert"
+  | "card.resolved"
+  | "instruction.queued"
+  | "instruction.injected"
+  | "device.heartbeat";
+
+/** Stored event row, returned by GET /v1/sync/events. */
+export interface SyncEvent {
+  id: number;
+  type: SyncEventType;
+  payload: Record<string, unknown>;
+  createdAt: number;
+  producerDeviceId: string;
+  clientUuid?: string;
+}
+
+/** Body shape for POST /v1/sync/events. */
+export interface SyncEventInput {
+  type: SyncEventType;
+  payload: Record<string, unknown>;
+  producerDeviceId: string;
+  /**
+   * Idempotency key. If a previous POST with the same
+   * (producerDeviceId, clientUuid) succeeded, this call returns the
+   * original event id and inserts nothing. Optional — events the
+   * relay synthesizes itself can omit it (none today).
+   */
+  clientUuid?: string;
+}
+
+/**
+ * GET /v1/sync/snapshot response. Lets a freshly-launched or
+ * long-backgrounded client rebase its state without replaying from
+ * id=0. `cursor` is `MAX(events.id)` *at the moment the snapshot
+ * was computed*; everything above it the client picks up via
+ * subsequent /v1/sync/events?since=cursor calls.
+ */
+export interface SyncSnapshot {
+  cursor: number;
+  activeCards: CardPayload[];
+  liveSessions: SessionSnapshot[];
+  queuedInstructions: InstructionRecord[];
+}

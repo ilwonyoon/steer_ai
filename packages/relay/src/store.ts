@@ -4,7 +4,36 @@ import type {
   Env,
   InstructionRecord,
   SessionSnapshot,
+  SyncEvent,
+  SyncEventInput,
+  SyncEventType,
+  SyncSnapshot,
 } from "./types.js";
+
+/**
+ * Caller hint for the dual-write event-log path (v3 PR 1).
+ *
+ * Existing routes (`PUT /v1/sync/cards/:id`, `POST /v1/sync/sessions`,
+ * etc) keep writing their legacy table rows, AND additionally insert
+ * a matching event-log row via `appendEvent`. Both writes go through
+ * D1's batch API so they're atomic — either both land or neither
+ * does. Once PR 4 deletes the legacy routes, only the event write
+ * survives.
+ *
+ * `producerDeviceId` is the X-Steer-Device-Id header value the route
+ * handler captured from the request; mandatory because event audits
+ * need to know who emitted what.
+ *
+ * `clientUuid` is the producer-supplied idempotency key. For legacy
+ * routes that don't yet send one (every current client), the route
+ * handler synthesizes one from the natural unique key
+ * (e.g. cardId, instructionId) so retries of the same logical write
+ * dedupe correctly.
+ */
+export interface EventAuditFields {
+  producerDeviceId: string;
+  clientUuid?: string;
+}
 
 /**
  * D1 wrapper. Keeps SQL out of the route handlers.
@@ -407,5 +436,142 @@ export class Store {
       runState: row.run_state as string,
       lastActivityAt: row.last_activity_at as number,
     }));
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Sync v3 event log (PR 1 — dual-write + read endpoints).
+  //
+  // Append-only, monotonically-indexed. The producer is anyone who
+  // calls `appendEvent` (route handlers during dual-write, the
+  // forthcoming POST /v1/sync/events endpoint, future server-side
+  // emitters). Consumers replay via `eventsSince(cursor)` or
+  // `computeSnapshot()`.
+  //
+  // Idempotency: a unique partial index on
+  // (producer_device_id, client_uuid) — see migration 0006 — means
+  // a duplicate POST with the same key is a no-op and returns the
+  // original id. We detect this by looking up first, before insert,
+  // so we can return the existing row without relying on an INSERT
+  // OR IGNORE that would silently swallow real conflicts.
+  // ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Insert one event. If `clientUuid` is provided and a matching row
+   * already exists for `(producerDeviceId, clientUuid)`, returns the
+   * existing event without inserting a second row.
+   */
+  async appendEvent(userId: string, input: SyncEventInput): Promise<SyncEvent> {
+    if (input.clientUuid) {
+      const existing = await this.env.DB.prepare(
+        `SELECT id, type, payload_json, created_at, producer_device_id, client_uuid
+         FROM events
+         WHERE producer_device_id = ? AND client_uuid = ?
+         LIMIT 1`
+      )
+        .bind(input.producerDeviceId, input.clientUuid)
+        .first<{
+          id: number;
+          type: string;
+          payload_json: string;
+          created_at: number;
+          producer_device_id: string;
+          client_uuid: string;
+        }>();
+      if (existing) {
+        return {
+          id: existing.id,
+          type: existing.type as SyncEventType,
+          payload: existing.payload_json ? JSON.parse(existing.payload_json) : {},
+          createdAt: existing.created_at,
+          producerDeviceId: existing.producer_device_id,
+          clientUuid: existing.client_uuid,
+        };
+      }
+    }
+
+    const now = Date.now();
+    const payloadJson = JSON.stringify(input.payload ?? {});
+    const result = await this.env.DB.prepare(
+      `INSERT INTO events (user_id, type, payload_json, created_at,
+                           producer_device_id, client_uuid)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        userId,
+        input.type,
+        payloadJson,
+        now,
+        input.producerDeviceId,
+        input.clientUuid ?? null
+      )
+      .run();
+    // D1's INSERT result exposes the new rowid via meta.last_row_id.
+    const id = Number(result.meta?.last_row_id);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error("appendEvent: D1 returned no last_row_id");
+    }
+    return {
+      id,
+      type: input.type,
+      payload: input.payload ?? {},
+      createdAt: now,
+      producerDeviceId: input.producerDeviceId,
+      clientUuid: input.clientUuid,
+    };
+  }
+
+  /**
+   * Catch-up query: events for this user with id > cursor, capped at
+   * `limit` (default 500), in ascending id order. Empty array when
+   * the consumer is caught up.
+   */
+  async eventsSince(userId: string, cursor: number, limit = 500): Promise<SyncEvent[]> {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+    const rs = await this.env.DB.prepare(
+      `SELECT id, type, payload_json, created_at, producer_device_id, client_uuid
+       FROM events
+       WHERE user_id = ? AND id > ?
+       ORDER BY id ASC
+       LIMIT ?`
+    )
+      .bind(userId, cursor, safeLimit)
+      .all();
+    return rs.results.map((row) => ({
+      id: row.id as number,
+      type: row.type as SyncEventType,
+      payload: row.payload_json ? JSON.parse(row.payload_json as string) : {},
+      createdAt: row.created_at as number,
+      producerDeviceId: row.producer_device_id as string,
+      clientUuid: (row.client_uuid as string) || undefined,
+    }));
+  }
+
+  /**
+   * Current state snapshot + cursor for the consumer to anchor on.
+   * Returned by GET /v1/sync/snapshot. The cursor is MAX(events.id)
+   * *at query time*; any event written after the snapshot completes
+   * will have id > cursor and is picked up via the next /events
+   * fetch.
+   */
+  async computeSnapshot(userId: string): Promise<SyncSnapshot> {
+    // Read MAX(id) up front. We tolerate the race where another
+    // write lands between this query and the data fetches below —
+    // those events will simply be returned both in the snapshot AND
+    // in the next /events?since=cursor, which is idempotent because
+    // the consumer applies by event id.
+    const cursorRow = await this.env.DB.prepare(
+      `SELECT COALESCE(MAX(id), 0) AS cursor FROM events WHERE user_id = ?`
+    )
+      .bind(userId)
+      .first<{ cursor: number }>();
+    const cursor = cursorRow?.cursor ?? 0;
+
+    const [activeCards, liveSessions, queuedInstructions] = await Promise.all([
+      this.listActiveCards(userId),
+      this.listLiveSessions(userId),
+      this.listQueuedInstructions(userId),
+    ]);
+
+    return { cursor, activeCards, liveSessions, queuedInstructions };
   }
 }
