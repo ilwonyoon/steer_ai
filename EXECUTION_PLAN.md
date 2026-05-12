@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-10 (iPhone App Store review gate added)
+Last updated: 2026-05-11 (Mac top chip — pending reply semantics)
 
 ## Purpose
 
@@ -541,6 +541,10 @@ While dogfooding the UI polish builds, a "Steer wants to use your confidential i
 2. **Sign-in-with-Apple Error 1000 (still blocked).** After clearing the keychain and signing back in to verify the cache, Apple Sign-In failed with `com.apple.AuthenticationServices.AuthorizationError error 1000`. Root cause confirmed: current `.build/SteerMac.app` entitlements (`codesign -d --entitlements -`) only carry `com.apple.security.cs.allow-jit` + `allow-unsigned-executable-memory` — **no `com.apple.developer.applesignin`**. Same blocker noted in the 2026-05-11 v0.1.1 entry: provisioning profile lacks the capability. Workaround for dogfooding: leave iPhone Sync off, run Mac-only mode (no keychain prompts trigger).
 
 Outstanding: enable "Sign In with Apple" on `ai.steer.mac` App ID in Apple Developer Portal, regenerate Developer ID + Development profiles, rebuild with `PROVISIONING_PROFILE=...`. Until then iPhone Sync remains unreachable on locally signed builds.
+
+### 2026-05-11: Mac Top Chip — Pending Reply Semantics
+
+User flagged "3 waiting" badge with only 2 visible cards: the collapsed chip was rolling up `liveChips.runState` (running/waiting/blocked), not the thing the user actually wants surfaced. New semantics: badge displays count of iPhone-sent replies the relay has queued for this Mac but hasn't been injected yet (`fetchQueuedInstructions().count`). `RunningBadge` drops the chips dependency and reads a `pendingInstructionCount: Int` instead; `drainQueuedInstructions` writes the count before/during/after each drain so the chip decays to 0 as each `steer send` completes. Row hidden entirely when count is 0 — live-session pills still reachable via the (already wired) expand tap, but only when a pending reply pulls the badge into view. Tracks the user's clarification quote: "내가 reply 보낸 그래서 instruction queued/in-flight인 건 표시".
 
 ### 2026-05-11: Local Branch / PR State
 

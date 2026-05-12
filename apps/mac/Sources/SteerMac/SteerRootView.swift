@@ -30,6 +30,11 @@ struct SteerRootView: View {
     /// session fall off that cliff and stop showing on iPhone.
     @State private var lastPublishedChipFingerprints: [String: (fp: String, at: Date)] = [:]
     @State private var liveChipsExpanded = false
+    /// Count of iPhone-sent replies the relay has queued for this Mac
+    /// but we haven't injected yet. Drives the collapsed badge — the
+    /// user wants "reply in flight" feedback, not a session-state
+    /// rollup. Updated every drain tick (websocket push + 60s sweep).
+    @State private var pendingInstructionCount: Int = 0
     @State private var replyDrafts: [String: String] = [:]
     @State private var attachmentDrafts: [String: [ReplyAttachment]] = [:]
     @Namespace private var sessionTransition
@@ -66,9 +71,10 @@ struct SteerRootView: View {
                     ErrorBanner(message: lastError, onDismiss: { self.lastError = nil })
                 }
 
-                if !liveChips.isEmpty {
+                if pendingInstructionCount > 0 {
                     LiveSessionChipRow(
                         chips: liveChips,
+                        pendingInstructionCount: pendingInstructionCount,
                         isExpanded: $liveChipsExpanded
                     )
                     .padding(.leading, 4)
@@ -522,6 +528,8 @@ struct SteerRootView: View {
         defer { drainInFlight = false }
 
         let queued = await SyncClient.shared.fetchQueuedInstructions()
+        var remaining = queued.count
+        pendingInstructionCount = remaining
         for record in queued {
             do {
                 try await store.send(record.text, attachments: [], to: record.targetSessionId)
@@ -532,7 +540,10 @@ struct SteerRootView: View {
                     reason: error.localizedDescription
                 )
             }
+            remaining -= 1
+            pendingInstructionCount = remaining
         }
+        pendingInstructionCount = 0
     }
 
     private func notifyForNewCards(_ loadedCards: [ActionCard]) async {
@@ -627,6 +638,7 @@ private struct ErrorBanner: View {
 
 private struct LiveSessionChipRow: View {
     let chips: [LiveSessionChip]
+    let pendingInstructionCount: Int
     @Binding var isExpanded: Bool
 
     var body: some View {
@@ -644,7 +656,7 @@ private struct LiveSessionChipRow: View {
             .allowsHitTesting(isExpanded)
 
             HStack {
-                RunningBadge(chips: chips)
+                RunningBadge(pendingInstructionCount: pendingInstructionCount)
                 Spacer(minLength: 0)
             }
             .opacity(isExpanded ? 0 : 1)
@@ -653,42 +665,25 @@ private struct LiveSessionChipRow: View {
         .frame(height: 28)
         .contentShape(Rectangle())
         .onTapGesture {
+            guard !chips.isEmpty else { return }
             withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
         }
     }
 }
 
 private struct RunningBadge: View {
-    let chips: [LiveSessionChip]
-
-    private var runningCount: Int {
-        chips.filter { $0.runState == "running" }.count
-    }
-    private var waitingCount: Int {
-        chips.filter { $0.runState == "waiting" }.count
-    }
-    private var blockedCount: Int {
-        chips.filter { $0.runState == "blocked" }.count
-    }
-
-    private var dominantColor: Color {
-        if blockedCount > 0 { return SteerColors.blocked }
-        if runningCount > 0 { return SteerColors.running }
-        return SteerColors.waiting
-    }
+    let pendingInstructionCount: Int
 
     private var label: String {
-        var parts: [String] = []
-        if runningCount > 0 { parts.append("\(runningCount) running") }
-        if waitingCount > 0 { parts.append("\(waitingCount) waiting") }
-        if blockedCount > 0 { parts.append("\(blockedCount) blocked") }
-        return parts.joined(separator: " · ")
+        pendingInstructionCount == 1
+            ? "1 reply in flight"
+            : "\(pendingInstructionCount) replies in flight"
     }
 
     var body: some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(dominantColor)
+                .fill(SteerColors.waiting)
                 .frame(width: 6, height: 6)
             Text(label)
                 .font(.system(size: 12, weight: .medium))
@@ -703,8 +698,7 @@ private struct RunningBadge: View {
                 .stroke(SteerColors.softSeparator, lineWidth: 1)
         }
         .shadow(color: SteerColors.cardShadow.opacity(0.5), radius: 6, y: 2)
-        .accessibilityLabel("\(chips.count) live session\(chips.count == 1 ? "" : "s"); \(label)")
-        .accessibilityHint("Tap to expand")
+        .accessibilityLabel(label)
     }
 }
 
