@@ -68,7 +68,7 @@ test("filename parser accepts 4-digit prefix + description", () => {
 test("fresh DB: applies 0001_initial, records version=1", () => {
   const { db } = freshDb();
   const after = applyMigrations(db, { migrationsDir: REAL_MIGRATIONS_DIR });
-  assert.equal(after, 3);
+  assert.equal(after, 4);
   // Baseline tables present. `messages` was dropped in 0003; we
   // assert it's gone in a separate check below.
   for (const t of [
@@ -94,7 +94,7 @@ test("fresh DB: applies 0001_initial, records version=1", () => {
     .all();
   assert.deepEqual(
     versions.map((r) => r.version),
-    [1, 2, 3]
+    [1, 2, 3, 4]
   );
 });
 
@@ -113,7 +113,7 @@ test("pre-S0 DB: baseline tables exist, no schema_version → backstamps without
   ).run("default", "Default", new Date().toISOString(), new Date().toISOString());
 
   const after = applyMigrations(db, { migrationsDir: REAL_MIGRATIONS_DIR });
-  assert.equal(after, 3);
+  assert.equal(after, 4);
   // Our row survived.
   const row = db.prepare("SELECT id FROM rooms WHERE id = 'default'").get();
   assert.equal(row?.id, "default");
@@ -133,11 +133,11 @@ test("already-current DB: runner is a no-op", () => {
     "INSERT INTO rooms (id, name, is_default, created_at, updated_at) VALUES (?, ?, 1, ?, ?)"
   ).run("default", "Default", "2026-01-01", "2026-01-01");
   const v2 = applyMigrations(db, { migrationsDir: REAL_MIGRATIONS_DIR });
-  assert.equal(v1, 3);
-  assert.equal(v2, 3);
+  assert.equal(v1, 4);
+  assert.equal(v2, 4);
   // schema_version has exactly the migrations we ran (no duplicates).
   const rows = db.prepare("SELECT version FROM schema_version").all();
-  assert.equal(rows.length, 3);
+  assert.equal(rows.length, 4);
 });
 
 test("DB schema_version higher than max-on-disk: throws with actionable message", () => {
@@ -198,7 +198,7 @@ test("createStore wires the runner — store.js path covered end to end", async 
   // Re-open the path to verify schema_version was recorded.
   const db = new DatabaseSync(dbPath);
   const v = db.prepare("SELECT MAX(version) AS v FROM schema_version").get().v;
-  assert.equal(v, 3);
+  assert.equal(v, 4);
 });
 
 test("missing migrations dir → throws", () => {
