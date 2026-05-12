@@ -162,12 +162,33 @@ public enum SessionEntryStore {
         return next
     }
 
-    /// WebSocket pushed `card.resolved`. Drop the matching entry.
+    /// WebSocket pushed `card.resolved` for `cardId`. Three cases:
+    ///
+    ///   - matching entry is `.awaitingUser` or `.failed`: drop it.
+    ///     The card the user was looking at (or had failed to reply
+    ///     to) is gone server-side; nothing to keep.
+    ///
+    ///   - matching entry is `.awaitingResponse`: KEEP it. This is
+    ///     the load-bearing case. After the user sends a reply, Mac
+    ///     resolves the original card on its end — that resolve
+    ///     event races the next cardUpsert that carries the
+    ///     terminal's response. If we drop the entry here, the
+    ///     chip clears before the new card arrives, and the user
+    ///     sees "chip → 0, card → ?, card lands seconds later."
+    ///     Holding the entry until the next cardUpsert (which
+    ///     replaces the card atomically) keeps the chip lit through
+    ///     the gap.
     public static func onCardResolved(
         previous: [SessionEntry],
         cardId: String
     ) -> [SessionEntry] {
-        previous.filter { $0.card.cardId != cardId }
+        previous.compactMap { entry in
+            guard entry.card.cardId == cardId else { return entry }
+            switch entry.stage {
+            case .awaitingResponse: return entry  // hold for upsert
+            case .awaitingUser, .failed: return nil
+            }
+        }
     }
 
     // MARK: - User-driven transitions

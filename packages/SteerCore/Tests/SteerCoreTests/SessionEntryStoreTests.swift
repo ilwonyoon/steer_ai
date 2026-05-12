@@ -155,11 +155,61 @@ final class SessionEntryStoreTests: XCTestCase {
 
     // MARK: - cardResolved drops entry
 
-    func test_cardResolved_removesEntry() {
+    func test_cardResolved_dropsAwaitingUser() {
         let entry = SessionEntry(
             sessionId: "S1",
             card: makeCard(sessionId: "S1", cardId: "A"),
             stage: .awaitingUser
+        )
+        let next = SessionEntryStore.onCardResolved(
+            previous: [entry], cardId: "A"
+        )
+        XCTAssertEqual(next, [])
+    }
+
+    func test_cardResolved_holdsAwaitingResponseUntilUpsert() {
+        // The bug we kept hitting: after user replies, Mac
+        // resolves the original card before publishing the
+        // response's new card. If we drop the entry on resolve,
+        // the chip clears too early. Hold it until the
+        // cardUpsert with the new cardId arrives.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            stage: .awaitingResponse,
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        // resolve fires first.
+        let afterResolve = SessionEntryStore.onCardResolved(
+            previous: [entry], cardId: "A"
+        )
+        XCTAssertEqual(afterResolve.count, 1)
+        XCTAssertEqual(afterResolve[0].stage, .awaitingResponse)
+        // Chip count must still be 1.
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: afterResolve).count,
+            1
+        )
+        // Then the new cardUpsert lands.
+        let cardB = makeCard(sessionId: "S1", cardId: "B", updatedAtMs: 2000)
+        let afterUpsert = SessionEntryStore.onCardUpsert(
+            previous: afterResolve, card: cardB
+        )
+        XCTAssertEqual(afterUpsert.count, 1)
+        XCTAssertEqual(afterUpsert[0].card.cardId, "B")
+        XCTAssertEqual(afterUpsert[0].stage, .awaitingUser)
+    }
+
+    func test_cardResolved_dropsFailedEntry() {
+        // Failed reply has the card resolved — the user can't
+        // retry against a non-existent card anyway, so drop it.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .failed("x"),
+            lastReplyText: "go",
+            lastInstructionId: "i1"
         )
         let next = SessionEntryStore.onCardResolved(
             previous: [entry], cardId: "A"
