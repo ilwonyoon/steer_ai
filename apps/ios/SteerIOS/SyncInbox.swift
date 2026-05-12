@@ -457,6 +457,17 @@ public final class SyncInbox: ObservableObject {
     /// "Stale".
     public func sendDeviceHeartbeat() async {
         guard isSignedIn else { return }
+        // aps-environment matches the entitlement baked into the
+        // bundle. Debug builds get 'development' and the relay
+        // routes them through api.sandbox.push.apple.com; release
+        // builds get 'production' and use api.push.apple.com. Phase
+        // B2 of docs/SYNC_STABILITY_AND_COST_PLAN.md.
+        let apsEnvironment: String
+        #if DEBUG
+        apsEnvironment = "development"
+        #else
+        apsEnvironment = "production"
+        #endif
         let snapshot = DeviceSnapshot(
             deviceId: Self.deviceId,
             platform: "ios",
@@ -465,7 +476,8 @@ public final class SyncInbox: ObservableObject {
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
             syncEnabled: true,
             lastSeenAt: Int64(Date().timeIntervalSince1970 * 1000),
-            apnsToken: apnsToken
+            apnsToken: apnsToken,
+            apsEnvironment: apsEnvironment
         )
         do {
             try await postJSONIgnoringResponse("/v1/sync/devices", body: snapshot)

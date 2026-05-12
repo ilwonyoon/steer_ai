@@ -21,9 +21,10 @@ import migration0001 from "../migrations/0001_initial.sql?raw";
 import migration0002 from "../migrations/0002_apple_auth_code.sql?raw";
 import migration0003 from "../migrations/0003_devices.sql?raw";
 import migration0004 from "../migrations/0004_apns_token.sql?raw";
+import migration0005 from "../migrations/0005_aps_environment.sql?raw";
 
 async function runMigrations() {
-  const migrations = [migration0001, migration0002, migration0003, migration0004];
+  const migrations = [migration0001, migration0002, migration0003, migration0004, migration0005];
   for (const sql of migrations) {
     const cleaned = sql
       .split("\n")
