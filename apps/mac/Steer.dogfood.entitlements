@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Dogfood entitlements — only used by scripts/refresh-dogfood.sh.
+        Pairs with an Apple Development provisioning profile downloaded
+        from Apple Developer Portal that lists Sign in with Apple and
+        Push Notifications.
+
+        Why this is a SEPARATE file from Steer.entitlements:
+          The direct-distribution / DMG build (Steer.entitlements) ships
+          on a Developer ID cert with NO provisioning profile, so it
+          MUST NOT request applesignin / aps-environment / app-identifier
+          — macOS 26 launchd rejects spawn with errno 163 if those
+          restricted entitlements appear without an accompanying
+          profile (see Steer.entitlements header for the original bug
+          link). Dogfood is the inverse situation: a Development cert
+          with an embedded profile, so we re-add the restricted
+          entitlements here.
+
+        DO NOT use this file for the App Store or DMG build. It only
+        works with the Development profile in ~/Downloads/Steer_Mac_Development*.
+
+        Keys here must be a subset of the profile's Entitlements
+        block — codesign rejects requests for entitlements the profile
+        doesn't grant.
+    -->
+    <key>com.apple.application-identifier</key>
+    <string>LG7667PAS6.ai.steer.mac</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>LG7667PAS6</string>
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+    <key>com.apple.developer.aps-environment</key>
+    <string>development</string>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>LG7667PAS6.*</string>
+    </array>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

@@ -42,6 +42,29 @@ PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-$DEFAULT_PROFILE}"
 APP_VERSION="${APP_VERSION:-$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)-dogfood}"
 APP_VERSION="${APP_VERSION#v}"
 
+# Hard-fail if the dogfood entitlements file is missing. This used
+# to silently fall back to Steer.entitlements (the direct-distribution
+# file that intentionally omits applesignin), so codesign would
+# produce a binary without the Sign in with Apple entitlement even
+# though the embedded provisioning profile granted it. ASAuthorization
+# then rejected with com.apple.AuthenticationServices.AuthorizationError
+# error 1000 every time the user clicked the Sign in with Apple button,
+# and we kept re-debugging the same wrong layer (provisioning, keychain
+# ACL, app-identifier prefix) instead of the actual cause.
+if [ ! -f "$ENTITLEMENTS" ]; then
+  echo "error: dogfood entitlements file is missing: $ENTITLEMENTS" >&2
+  echo "  This file is required for the Apple Development build because" >&2
+  echo "  Steer.entitlements (direct-distribution) intentionally omits" >&2
+  echo "  com.apple.developer.applesignin. Without it, codesign produces" >&2
+  echo "  a binary without applesignin and Sign in with Apple fails with" >&2
+  echo "  AuthenticationServices.AuthorizationError error 1000." >&2
+  echo "" >&2
+  echo "  It should be committed at apps/mac/Steer.dogfood.entitlements." >&2
+  echo "  Restore it from git history, or recreate from the embedded" >&2
+  echo "  Entitlements block in the .provisionprofile." >&2
+  exit 1
+fi
+
 if [ -z "$PROVISIONING_PROFILE" ] || [ ! -f "$PROVISIONING_PROFILE" ]; then
   echo "error: no Development provisioning profile found." >&2
   echo "  Download Steer_Mac_Development.provisionprofile from Apple" >&2

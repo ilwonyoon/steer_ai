@@ -32,6 +32,20 @@ SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 ENTITLEMENTS="${ENTITLEMENTS:-$MAC_DIR/Steer.entitlements}"
 PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
 
+# Fail loudly when the requested entitlements file doesn't exist on
+# disk. Previously codesign was invoked with `--entitlements <path>`
+# even for missing paths — bash's `[ -f "$ENTITLEMENTS" ]` guard at
+# line 56 silently skipped the file, codesign produced an unentitled
+# binary, and Sign in with Apple failed at runtime with error 1000
+# while every layer above looked correct. If the caller picked a
+# specific entitlements file we must honor it or refuse to build.
+if [ -n "$ENTITLEMENTS" ] && [ ! -f "$ENTITLEMENTS" ]; then
+  echo "error: entitlements file not found: $ENTITLEMENTS" >&2
+  echo "  Pass ENTITLEMENTS=/abs/path or unset it to use the default" >&2
+  echo "  (apps/mac/Steer.entitlements, direct-distribution)." >&2
+  exit 1
+fi
+
 has_entitlement() {
   local plist="$1"
   local key="$2"
