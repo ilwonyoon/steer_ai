@@ -55,19 +55,12 @@ export function createStore(filePath = databasePath) {
       INSERT INTO transcript_entries (id, session_id, timestamp, stream, chunk)
       VALUES (?, ?, ?, ?, ?)
     `),
-    insertMessage: db.prepare(`
-      INSERT INTO messages (
-        id, room_id, session_id, timestamp, direction, raw_content,
-        display_content, priority, requires_action, needs_input, source
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
-    `),
     insertInstruction: db.prepare(`
       INSERT INTO instructions (
-        id, room_id, target_session_id, source_message_id, text,
+        id, room_id, target_session_id, text,
         is_quick_reply, status, created_at
       )
-      VALUES (?, ?, ?, NULL, ?, 0, ?, ?)
+      VALUES (?, ?, ?, ?, 0, ?, ?)
     `),
     updateInstructionStatus: db.prepare(`
       UPDATE instructions
@@ -143,10 +136,10 @@ export function createStore(filePath = databasePath) {
     `),
     upsertTerminalExcerpt: db.prepare(`
       INSERT INTO terminal_excerpts (
-        id, session_id, source_message_id, start_offset, end_offset,
+        id, session_id, start_offset, end_offset,
         raw_text, display_lines_json, highlighted_line_indexes_json, created_at
       )
-      VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, ?)
+      VALUES (?, ?, NULL, NULL, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         raw_text = excluded.raw_text,
         display_lines_json = excluded.display_lines_json,
@@ -155,11 +148,11 @@ export function createStore(filePath = databasePath) {
     `),
     upsertActionCard: db.prepare(`
       INSERT INTO action_cards (
-        id, room_id, source_message_id, session_id, terminal_excerpt_id,
+        id, room_id, session_id, terminal_excerpt_id,
         category, priority, title, summary, action_prompt, options_json,
         state, created_at, updated_at, snoozed_until
       )
-      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(id) DO UPDATE SET
         terminal_excerpt_id = excluded.terminal_excerpt_id,
         category = excluded.category,
@@ -264,23 +257,23 @@ export function createStore(filePath = databasePath) {
       flushRefresh(sessionId);
     },
     appendTranscript({ sessionId, stream, chunk }) {
+      // S2 — drop pty chunks whose post-ANSI-strip content is
+      // whitespace-only. The classifier already filters these on
+      // read; persisting them is pure overhead (the bulk of the
+      // 1.8GB users hit). Other streams (stdout / stderr / report /
+      // user / system) always pass through — they're already filtered
+      // or trusted upstream.
+      if (stream === "pty" && isWhitespaceOnlyPty(chunk)) {
+        return;
+      }
+
       const timestamp = new Date().toISOString();
       statements.insertTranscriptEntry.run(randomUUID(), sessionId, timestamp, stream, chunk);
 
-      const message = transcriptMessageForStream(stream, chunk);
-      if (!message) return;
-
-      statements.insertMessage.run(
-        randomUUID(),
-        DEFAULT_ROOM_ID,
-        sessionId,
-        timestamp,
-        message.direction,
-        chunk,
-        chunk,
-        "normal",
-        message.source
-      );
+      // S2 — the `messages` table is dropped (migration 0003). The
+      // classifier, Mac UI, and iPhone all read from
+      // action_cards + transcript_entries + sessions; messages was
+      // never consulted.
       if (stream === "report" || stream === "user") {
         flushRefresh(sessionId);
       } else {
@@ -411,11 +404,32 @@ export function createStore(filePath = databasePath) {
   }
 }
 
-function transcriptMessageForStream(stream, chunk) {
-  if (!chunk?.trim()) return null;
-  if (stream === "user") return { direction: "user_to_agent", source: "user" };
-  if (stream === "system") return { direction: "system", source: "wrapper" };
-  return { direction: "agent_to_user", source: "wrapper" };
+/// True if a pty chunk is just terminal repaint / cursor moves /
+/// status-line whitespace once ANSI control sequences are stripped.
+/// Those chunks are 95%+ of all pty traffic by row count and never
+/// affect classifier output, so we drop them at write time.
+///
+/// The strip pattern covers:
+///   - CSI escape sequences (cursor moves, color codes, mode sets)
+///   - OSC sequences (terminal title updates, hyperlinks)
+///   - SS3 single-shift sequences
+///   - C1 control characters
+///
+/// After strip, if the chunk has any non-whitespace character we
+/// keep it; otherwise we drop. Exported for unit-test access.
+export function isWhitespaceOnlyPty(chunk) {
+  if (typeof chunk !== "string" || chunk.length === 0) return true;
+  // eslint-disable-next-line no-control-regex
+  const stripped = chunk
+    // CSI: ESC [ params? intermediate? final
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    // OSC: ESC ] ... (BEL | ESC \)
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
+    // SS3 single-shift
+    .replace(/\x1bO./g, "")
+    // C1 control characters (incl. lone ESC, BEL, etc.)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+  return stripped.trim().length === 0;
 }
 
 function normalizeHookText(value) {
