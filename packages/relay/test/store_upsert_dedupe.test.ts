@@ -11,9 +11,10 @@ import migration0002 from "../migrations/0002_apple_auth_code.sql?raw";
 import migration0003 from "../migrations/0003_devices.sql?raw";
 import migration0004 from "../migrations/0004_apns_token.sql?raw";
 import migration0005 from "../migrations/0005_aps_environment.sql?raw";
+import migration0006 from "../migrations/0006_events.sql?raw";
 
 async function runMigrations() {
-  const migrations = [migration0001, migration0002, migration0003, migration0004, migration0005];
+  const migrations = [migration0001, migration0002, migration0003, migration0004, migration0005, migration0006];
   for (const sql of migrations) {
     const cleaned = sql
       .split("\n")
@@ -44,6 +45,8 @@ async function bootstrapUser(userId: string) {
 
 beforeEach(async () => {
   await runMigrations();
+  // events must come first — FK to users via user_id.
+  await env.DB.prepare("DELETE FROM events").run();
   await env.DB.prepare("DELETE FROM cards").run();
   await env.DB.prepare("DELETE FROM users").run();
   await bootstrapUser("user-1");

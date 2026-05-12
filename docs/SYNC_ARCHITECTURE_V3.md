@@ -725,16 +725,76 @@ Big-bang is too risky. We ship in four sequenced PRs.
 
 ### PR 1 — relay event log + dual-write
 
-- D1 migration: add `events` table.
+**Scope:**
+
+- D1 migration: add `events` table per the schema in "Event taxonomy".
 - Add `POST /v1/sync/events`, `GET /v1/sync/events?since=N`,
   `GET /v1/sync/snapshot`.
-- Existing routes (`PUT /v1/sync/cards/:id` etc) **also** insert
-  an event row alongside the old behavior. Dual-write.
-- Existing WS broadcasts continue to fire as before.
-- Clients unchanged. We're only proving the event log captures
-  every state change observed during normal use.
-- Verification: tail D1 events while exercising the app; confirm
-  every old broadcast has a matching event row.
+- Existing routes (`PUT /v1/sync/cards/:id`, `DELETE /v1/sync/cards/:id`,
+  `POST /v1/sync/sessions`, `POST /v1/sync/instructions`,
+  `POST /v1/sync/instructions/:id/status`) **also** insert an event
+  row alongside the old behavior. Dual-write.
+- Existing WS broadcasts (`card.upsert`, `card.resolved`,
+  `instruction.queued`) continue to fire as before.
+- Clients unchanged. `STEER_SYNC_V3` env var infrastructure
+  introduced on both Mac and iOS, default 0, no behavior gated
+  on it yet.
+- Migration / rollback script: D1 migration applied via
+  `wrangler d1 execute steer-relay --file=migrations/000N_events.sql`;
+  revert by dropping the `events` table.
+
+**Out of scope (explicit "won't do" for PR 1):**
+
+- No client code paths changed.
+- No legacy routes deprecated or removed.
+- No new WS message types (still only legacy `card.upsert` etc).
+- No feature flag wired to actual code paths — only the
+  scaffolding for the flag.
+
+**Exit criteria (all must pass before PR 1 merges to main):**
+
+Automated:
+- [ ] `npm test` passes including new unit tests for:
+  - event-row insert is part of the same D1 transaction as the
+    legacy write (atomic — either both succeed or both fail)
+  - duplicate POST with same idempotency key returns the
+    original event id without inserting a second row
+  - `GET /v1/sync/events?since=N&limit=500` returns events in
+    ascending id order, excludes id ≤ N, caps at 500
+  - `GET /v1/sync/snapshot` returns `MAX(id)` as cursor and a
+    state computed from `events WHERE id <= cursor`
+- [ ] `swift build --package-path apps/mac` passes
+- [ ] `bash scripts/verify-steer-regression.sh` passes
+
+Manual (I run these before sending build to user):
+- [ ] Mac dogfood build sends 5 card replies → wrangler tail
+  shows matching legacy PUT calls AND matching events table rows
+  for each (`sqlite3` query against local D1 replica counts even
+  match)
+- [ ] iPhone reply sends 3 messages → events table contains
+  exactly 3 `instruction.queued` rows + 3 corresponding
+  `instruction.injected` rows from the Mac
+- [ ] Re-issue the same `instruction.queued` POST with same
+  `client_uuid` → returns same event id, events table has only
+  one row
+
+User-facing (golden set runs green, full G1–G11):
+- [ ] G1–G7 (backfilled regressions) — every one of these passes
+  exactly as it did before PR 1. PR 1 is a behavior no-op for
+  the user; if any G1–G7 regresses, the dual-write transaction
+  broke something.
+- [ ] G8–G11 — these are not expected to pass yet (require PR 3+).
+  Marked `n/a until PR 3`.
+
+**Verification artifacts produced:**
+
+- Wrangler tail capture (5 min) showing legacy + event writes
+  side-by-side, attached to the PR description.
+- `wrangler d1 execute` query output dumping the events table
+  after a 5-min dogfood session, showing every row's type and
+  payload shape.
+- `~/.steer/relay-client.log` excerpt showing no new errors
+  vs prior baseline.
 
 ### PR 2 — Mac switches to event POSTs
 

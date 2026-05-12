@@ -15,8 +15,64 @@ import type {
   InstructionRequest,
   SessionSnapshot,
   SessionUser,
+  SyncEventInput,
+  SyncEventType,
   WSMessage,
 } from "./types.js";
+
+/**
+ * X-Steer-Device-Id header. Producer identity for the v3 event log
+ * (dual-write — see docs/SYNC_ARCHITECTURE_V3.md). Mac and iOS
+ * already send this header for WebSocket auth; we just read it again
+ * for HTTP routes that need to stamp events.
+ *
+ * Fallback to "unknown-<userId>" when the header is absent — currently
+ * only happens on legacy clients that haven't been updated to send
+ * the header on REST routes. Captures the user identity at least so
+ * audits aren't blank.
+ */
+function producerDeviceId(c: import("hono").Context<{ Bindings: Env; Variables: Variables }>): string {
+  const raw = c.req.header("X-Steer-Device-Id");
+  if (raw && raw.length > 0) return raw;
+  const userId = c.get("user").userId;
+  return `unknown-${userId}`;
+}
+
+/**
+ * Best-effort dual-write of a v3 event row beside a legacy mutation.
+ *
+ * PR 1 semantics: legacy mutation is the source of truth; event log
+ * is observation-only. If the event write fails (D1 hiccup, schema
+ * out of sync after a partial rollout), we log and continue. The
+ * legacy row + WebSocket broadcast still landed, so user-visible
+ * behavior is unaffected. This deliberately is NOT atomic with the
+ * legacy write for now — PR 2 will tighten this up by routing
+ * through D1's batch API once clients consume events directly.
+ *
+ * `clientUuid` is the producer-side idempotency key. For legacy
+ * routes that don't carry one, we synthesize from the natural unique
+ * key of the mutation (cardId, instructionId, sessionId, deviceId)
+ * so a retried request dedupes correctly.
+ */
+async function appendEventDualWrite(
+  store: Store,
+  userId: string,
+  type: SyncEventType,
+  payload: Record<string, unknown>,
+  producerDeviceId: string,
+  clientUuid: string
+): Promise<void> {
+  try {
+    await store.appendEvent(userId, {
+      type,
+      payload,
+      producerDeviceId,
+      clientUuid,
+    });
+  } catch (e) {
+    console.warn(`[event-dualwrite] failed type=${type} user=${userId}: ${e}`);
+  }
+}
 
 export { UserHub } from "./userHub.js";
 
@@ -142,6 +198,25 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
   const store = new Store(c.env);
   const { inserted, changed } = await store.upsertCard(userId, body);
 
+  // v3 dual-write — emit a card.upsert event for every meaningful
+  // change. PR 1 only writes; no consumer yet. We dedupe on
+  // (producerDeviceId, "card.upsert:<cardId>:<updatedAt>") so a
+  // retried PUT for the SAME logical version is idempotent, while
+  // a PUT for the same cardId with a newer updatedAt is a new
+  // event. Skipping the write when `changed === false` matches the
+  // legacy "no broadcast on no-op publish" rule and keeps the event
+  // log clean.
+  if (changed) {
+    await appendEventDualWrite(
+      store,
+      userId,
+      "card.upsert",
+      body as unknown as Record<string, unknown>,
+      producerDeviceId(c),
+      `card.upsert:${body.cardId}:${body.updatedAt}`
+    );
+  }
+
   // Only fan out the WS broadcast when something actually changed.
   // Mac re-publishes every active card on its 2s reload tick; the
   // store dedupe above turns those no-op publishes into a silent
@@ -255,9 +330,21 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
  */
 app.delete("/v1/sync/cards/:cardId", async (c) => {
   const cardId = c.req.param("cardId");
+  const userId = c.get("user").userId;
   const store = new Store(c.env);
-  await store.resolveCard(c.get("user").userId, cardId);
-  await broadcast(c.env, c.get("user").userId, { type: "card.resolved", cardId });
+  await store.resolveCard(userId, cardId);
+  // v3 dual-write: card.resolved event. Idempotency key is just the
+  // cardId — resolving the same card twice is a no-op, so the event
+  // log only captures the first resolve.
+  await appendEventDualWrite(
+    store,
+    userId,
+    "card.resolved",
+    { cardId },
+    producerDeviceId(c),
+    `card.resolved:${cardId}`
+  );
+  await broadcast(c.env, userId, { type: "card.resolved", cardId });
   return c.json({ ok: true });
 });
 
@@ -285,7 +372,18 @@ app.post("/v1/sync/instructions", async (c) => {
     body.targetSessionId,
     body.text
   );
-  await broadcast(c.env, c.get("user").userId, {
+  // v3 dual-write: instruction.queued event. Idempotency key is
+  // the instructionId itself — POSTing the same instructionId twice
+  // (network retry) returns the same event id and inserts nothing.
+  await appendEventDualWrite(
+    store,
+    userId,
+    "instruction.queued",
+    record as unknown as Record<string, unknown>,
+    producerDeviceId(c),
+    `instruction.queued:${record.instructionId}`
+  );
+  await broadcast(c.env, userId, {
     type: "instruction.queued",
     instruction: record,
   });
@@ -305,14 +403,32 @@ app.get("/v1/sync/instructions/queued", async (c) => {
 app.post("/v1/sync/instructions/:id/status", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{ status: "injected" | "failed"; failureReason?: string }>();
+  const userId = c.get("user").userId;
   const store = new Store(c.env);
   await store.markInstructionStatus(
-    c.get("user").userId,
+    userId,
     id,
     body.status,
     body.failureReason
   );
-  await broadcast(c.env, c.get("user").userId, {
+  // v3 dual-write: instruction.injected event. Payload carries the
+  // final status so consumers don't need a separate "failed" type.
+  // Idempotency key combines instructionId + status so a duplicate
+  // POST of the same status is a no-op, while a transition
+  // (e.g. injected → failed later) does record both events.
+  await appendEventDualWrite(
+    store,
+    userId,
+    "instruction.injected",
+    {
+      instructionId: id,
+      status: body.status,
+      failureReason: body.failureReason,
+    },
+    producerDeviceId(c),
+    `instruction.injected:${id}:${body.status}`
+  );
+  await broadcast(c.env, userId, {
     type: "instruction.status",
     instructionId: id,
     status: body.status,
@@ -328,8 +444,24 @@ app.post("/v1/sync/instructions/:id/status", async (c) => {
  */
 app.post("/v1/sync/sessions", async (c) => {
   const body = await c.req.json<SessionSnapshot>();
+  const userId = c.get("user").userId;
   const store = new Store(c.env);
-  await store.upsertSession(c.get("user").userId, body);
+  await store.upsertSession(userId, body);
+  // v3 dual-write: session.upsert event. Idempotency key is
+  // (sessionId, runState, lastActivityAt) — any of those three
+  // changing produces a new event, repeating the exact same state
+  // is a no-op. Without the lastActivityAt component, the Mac's
+  // periodic chip republish (same sessionId+runState every reload
+  // tick when nothing changed) would still create a new event row
+  // every tick.
+  await appendEventDualWrite(
+    store,
+    userId,
+    "session.upsert",
+    body as unknown as Record<string, unknown>,
+    producerDeviceId(c),
+    `session.upsert:${body.sessionId}:${body.runState}:${body.lastActivityAt}`
+  );
   return c.json({ ok: true });
 });
 
@@ -372,11 +504,31 @@ app.post("/v1/sync/devices", async (c) => {
   if (!body.deviceId || !body.platform) {
     return c.json({ error: "missing deviceId or platform" }, 400);
   }
+  const userId = c.get("user").userId;
   const store = new Store(c.env);
-  await store.upsertDevice(c.get("user").userId, {
+  const lastSeenAt = body.lastSeenAt || Date.now();
+  await store.upsertDevice(userId, {
     ...body,
-    lastSeenAt: body.lastSeenAt || Date.now(),
+    lastSeenAt,
   });
+  // v3 dual-write: device.heartbeat event. iOS uses this in v3 to
+  // derive the Mac connection chip without a separate
+  // GET /v1/sync/presence poll. Idempotency keys off
+  // (deviceId, lastSeenAt) so the every-5-min heartbeat doesn't
+  // dedupe against itself but a retried POST of the same heartbeat
+  // does.
+  await appendEventDualWrite(
+    store,
+    userId,
+    "device.heartbeat",
+    {
+      deviceId: body.deviceId,
+      platform: body.platform,
+      lastSeenAt,
+    },
+    producerDeviceId(c),
+    `device.heartbeat:${body.deviceId}:${lastSeenAt}`
+  );
   return c.json({ ok: true });
 });
 
@@ -405,6 +557,93 @@ app.delete("/v1/sync/devices/:deviceId", async (c) => {
   const store = new Store(c.env);
   await store.deleteDeviceById(c.get("user").userId, deviceId);
   return c.json({ ok: true });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// v3 event log endpoints (PR 1).
+//
+// Read endpoints are wired up but no client consumes them yet — Mac
+// and iOS will switch over in PR 2 and PR 3. The POST endpoint is
+// the producer side: PR 2 lets Mac write events directly instead of
+// the legacy PUT /cards / POST /sessions / etc routes. For now,
+// dual-write (above) emits the same events from the legacy paths.
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /v1/sync/events
+ *
+ * Direct producer entry point for v3. Body is a `SyncEventInput`.
+ * Returns the persisted `SyncEvent` (with server-assigned id +
+ * createdAt). Idempotent on `(producerDeviceId, clientUuid)`.
+ *
+ * For now this is exercised only by tests. PR 2 routes Mac writes
+ * here; PR 3 routes iPhone reply writes here.
+ */
+app.post("/v1/sync/events", async (c) => {
+  const body = await c.req.json<Partial<SyncEventInput>>();
+  if (!body.type) {
+    return c.json({ error: "missing type" }, 400);
+  }
+  const allowedTypes: SyncEventType[] = [
+    "session.upsert",
+    "session.remove",
+    "card.upsert",
+    "card.resolved",
+    "instruction.queued",
+    "instruction.injected",
+    "device.heartbeat",
+  ];
+  if (!allowedTypes.includes(body.type as SyncEventType)) {
+    return c.json({ error: `unknown event type: ${body.type}` }, 400);
+  }
+  const userId = c.get("user").userId;
+  const store = new Store(c.env);
+  const event = await store.appendEvent(userId, {
+    type: body.type as SyncEventType,
+    payload: body.payload ?? {},
+    producerDeviceId: body.producerDeviceId ?? producerDeviceId(c),
+    clientUuid: body.clientUuid,
+  });
+  return c.json({ event });
+});
+
+/**
+ * GET /v1/sync/events?since=<cursor>&limit=<n>
+ *
+ * Catch-up replay. Returns events for the authenticated user with
+ * id > `since`, ascending, capped at `limit` (1..500, default 500).
+ * Empty array means the consumer is caught up.
+ */
+app.get("/v1/sync/events", async (c) => {
+  const since = Number.parseInt(c.req.query("since") ?? "0", 10);
+  const limit = Number.parseInt(c.req.query("limit") ?? "500", 10);
+  if (!Number.isFinite(since) || since < 0) {
+    return c.json({ error: "since must be a non-negative integer" }, 400);
+  }
+  const store = new Store(c.env);
+  const events = await store.eventsSince(c.get("user").userId, since, limit);
+  return c.json({ events });
+});
+
+/**
+ * GET /v1/sync/snapshot
+ *
+ * One-shot starting point for cold launches + post-reconnect rebase.
+ * Returns the current cursor (`MAX(events.id)`) plus the derived
+ * state of cards / live sessions / queued instructions. Consumer
+ * applies the snapshot then resumes from `?since=cursor` on the
+ * events endpoint.
+ *
+ * Snapshot vs cursor race: if an event lands between the cursor
+ * read and the data fetch, that event will appear BOTH in the
+ * snapshot AND in the consumer's next /events fetch. That's fine —
+ * consumers apply by event id and idempotently re-apply the same
+ * id is a no-op.
+ */
+app.get("/v1/sync/snapshot", async (c) => {
+  const store = new Store(c.env);
+  const snapshot = await store.computeSnapshot(c.get("user").userId);
+  return c.json(snapshot);
 });
 
 /**
