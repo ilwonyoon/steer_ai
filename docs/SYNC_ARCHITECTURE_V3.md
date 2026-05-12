@@ -533,6 +533,192 @@ requests, and the free plan doesn't meter them at all.
 
 ---
 
+## Process + validation
+
+A rewrite of this size has burned us once already. The pattern
+was always the same: builds pass, tests pass, I declare the PR
+"done", the user opens the app, and a regression we never wrote a
+test for shows up — chip flicker, late reply, sign-in error flash,
+generic icon. v3 cannot ship that way. The architectural changes
+are real, but the *process* around shipping them is what
+determines whether they actually land cleanly.
+
+### Roles
+
+Stated explicitly because the prior failure mode was assuming the
+user would catch what I missed:
+
+- **User (product owner + QA).** Defines the golden behavior set,
+  delivers it as concrete user-facing scenarios, runs those
+  scenarios against each build I ship, and reports `pass` /
+  `fail` per item. Does *not* need to read code, write tests,
+  or diagnose stack traces.
+- **Me (engineer + QA).** Owns all technical validation before a
+  build reaches the user. Builds pass, tests pass, *new tests
+  exist for every new behavior*, *regression tests exist for
+  every bug ever reported*, the golden set runs green
+  end-to-end. Diagnoses every failure the user reports without
+  asking the user technical questions.
+
+If the user has to ask "why is this broken" or "how do I check
+this", I failed at my half.
+
+### Validation gate per PR
+
+A PR is not "done" by my declaration. It's done when the user
+returns the golden-set checklist with all items green. The gate
+in order:
+
+1. **My pre-build checks.** All of:
+   - `swift build --package-path apps/mac` passes
+   - `npm test` passes
+   - `bash scripts/verify-steer-regression.sh` passes (the full
+     gate from `docs/REGRESSION_CONTRACT.md`)
+   - New tests added for every new behavior in this PR
+   - Regression tests added for any bug the user reported during
+     this PR's cycle
+   - Manual smoke of the golden set: I run each item myself with
+     `STEER_HOME=/tmp/steer-pr-N` to isolate state. Any fail at
+     this stage → I fix before the user sees the build.
+
+2. **Build delivery.** I run `bash scripts/refresh-dogfood.sh`
+   so the Mac side is fresh; iOS gets a `bash scripts/refresh-ios.sh`
+   (or the explicit Xcode flow if device auto-detect fails). I
+   tell the user the build is ready *and* attach the golden-set
+   checklist as a copy-pasteable list of "do X → see Y" items.
+
+3. **User QA.** User runs through the checklist on a real Mac +
+   real iPhone, marks each item. They can mark anything as
+   `unclear` or `couldn't reproduce` — that's a signal the item
+   isn't well-specified and I need to rewrite it, not a sign the
+   user failed at QA.
+
+4. **Failure path.** Any `fail` or `unclear`:
+   - I do not touch code.
+   - I diagnose. Quote the exact line / log / behavior.
+   - I propose a fix. User says yes/no.
+   - On yes, I fix in a *new commit* (never amend) so the diff
+     of "what broke and what I changed to fix it" is preserved.
+   - Back to step 1 for the same PR. The PR doesn't advance
+     until the full checklist is green.
+
+5. **Advance.** When the user returns the full checklist green,
+   I merge the PR, regenerate the golden set if any items were
+   refined during QA, and only then start the next PR.
+
+### What I will NOT do during v3
+
+These all caused regressions in the prior cycle. They are off
+limits:
+
+- "While I'm in here, let me also clean up X." Scope creep is
+  the single biggest source of regressions. v3 is sync layer
+  only. Chip semantics, icon resolution, notification permission,
+  Sparkle, etc. are all separate tickets that wait.
+- Declare a PR done because the build compiles. Compilation
+  proves type-correctness, not behavior. I declare done only
+  after the golden set runs green.
+- Skip the manual smoke because "tests passed." Tests cover
+  what I thought to write. The golden set covers what the user
+  actually does. They are not substitutes.
+- Squeeze multiple structural changes into one commit. One
+  commit, one change. If I'm tempted to write a 5-bullet commit
+  message, that's the warning sign — split it.
+- Treat "user got a build and didn't complain" as a pass. A
+  pass is the user *actively confirming* each golden-set line.
+- Touch the wrapper / agent / classifier layer. Those have
+  their own regression contract (`docs/REGRESSION_CONTRACT.md`)
+  and are explicitly *not* part of v3. If a sync change requires
+  changing the wrapper, that's a flag — re-scope, don't reach.
+
+### Feature flag
+
+`STEER_SYNC_V3` env var, read at process start on both Mac and
+iOS:
+
+| Value | Behavior |
+|---|---|
+| `0` (default through PR 1–3) | Legacy path runs; v3 code paths are gated off. Relay still dual-writes events into D1 (PR 1) but no client consumes them. |
+| `1` | v3 path runs end-to-end. Mac POSTs events; iPhone consumes via nudge + cursor. Legacy paths in clients are dead code in this branch. |
+
+PR 1 introduces the flag, defaults to 0. PR 2 + PR 3 add v3 code
+behind the flag but keep flag off. PR 3.5 (a deliberate dogfood
+checkpoint) flips the flag to 1 on my dev machine + user's
+device for 24–48 h. Only if the golden set stays green through
+that period does PR 4 (legacy deletion) ship.
+
+Rollback during the v3=1 dogfood window: user toggles
+`STEER_SYNC_V3=0` in Steer's Settings → restarts → instantly
+back on legacy. No build needed.
+
+### Metrics I will report per PR
+
+Per PR completion, I report objective numbers in the PR
+description so we're not arguing about subjective "feels fast":
+
+- HTTP requests/hour against the relay (measured from
+  `wrangler tail` over 10 min while exercising the app)
+- iPhone reply → card-arrival latency, p50 and p95 (from a small
+  in-app timer I'll log in `~/.steer/relay-client.log`)
+- WS reconnect frequency over a 1 h dogfood window
+- Test count delta (`npm test` summary before vs after)
+
+If a number moves in the wrong direction, the PR is not green
+regardless of behavior.
+
+### Golden behavior set — seed list
+
+This is the live test ledger. It grows as we surface new
+behaviors and never shrinks. The user provides item descriptions;
+I write the reproducible steps + expected outcome. Each item is
+"do X, see Y, within Z seconds."
+
+Initial seed, derived from regressions we've already fought:
+
+| # | What to verify | Steps | Expected | Source |
+|---|---|---|---|---|
+| G1 | iPhone reply arrives on Mac quickly | iPhone → tap card → type "hi" → send | Mac wrapper receives within 3 s; no error banner on either device | "엄청 늦게 오네" 2026-05-11 |
+| G2 | Mac card replies surface chip on Mac | Mac card → type reply → send | "1 running" pill appears on Mac while session runs; fades when next card arrives | "reply 쳐서는 칩 잘 뜬다" 2026-05-12 |
+| G3 | New card after reply | Either side reply | A new card appears in the carousel on both Mac and iPhone within 5 s of CLI stop | base case |
+| G4 | Sign in with Apple is silent | Mac Settings → Sign in with Apple → complete | No red error banner flashes during or after; status row goes "Not signed in" → "Signed in as …" cleanly | "에러 메세지들이 잠깐씩 나타남" 2026-05-12 |
+| G5 | Sign in with Apple icon | Mac Settings → Sign in with Apple click | Real Steer app icon in the system dialog, not a generic placeholder | "아이콘이 없네" 2026-05-12 (open) |
+| G6 | Reply 4–5 times in a row stays connected | iPhone → reply N=1..5 with 20 s gap between | Every reply arrives; no "session connection dropped" or extended (>10 s) delay on any reply | "한 4-5번 메세지 보냈더니 세션 연결이 끊김" 2026-05-12 |
+| G7 | Chip count = my outstanding sends only | iPhone reply twice in 10 s | Mac chip reads "2 running" while both sessions are still running, drops as each new card arrives | "내가 reply 보낸 그래서 instruction queued/in-flight인 건 표시" 2026-05-12 |
+| G8 | Reply 후 즉시 visible status | Tap send on either side | The reply text becomes visible on the card area immediately with a quiet "queued" indicator; doesn't wait for network | v3 design lifecycle |
+| G9 | Failed reply shows inline retry | Reply while in airplane mode | Status flips to "Tap to retry"; tapping with network restored sends successfully | v3 design lifecycle |
+| G10 | WS reconnect catches up missed events | Disable iPhone wifi for 30 s while Mac produces 2 new cards, then re-enable | All 2 cards appear within 5 s of re-enable; no missing card; no duplicate | v3 design failure modes |
+| G11 | Cost graph dropped | After PR 3.5 dogfood window | `wrangler tail` shows ≤ 20 HTTP req/min during steady state vs current ~60 req/min | v3 cost model |
+
+Items G1–G7 are *backfilled* from past regressions — they
+existed before v3 and must continue to pass through every PR.
+Items G8–G11 are *new* targets v3 unlocks. Anything failing on
+the backfilled set means we regressed; anything failing on the
+new set means v3 isn't done.
+
+The user owns the right to add to this list. Anything they ship
+to me as "X is broken" gets added as a new line and is checked
+on every subsequent PR.
+
+### Work log
+
+Each PR has a daily one-paragraph status update in
+`docs/SYNC_V3_LOG.md` (created in PR 1). Format:
+
+```
+2026-05-NN — PR N status: in-progress | awaiting-user | green
+  - shipped: <commit titles>
+  - my checks: <pass/fail per pre-build check>
+  - user QA: <pending / N green out of M>
+  - blockers: <anything stuck on user input or external dep>
+  - next: <single concrete next action>
+```
+
+Short, easy for the user to skim once per day, no need for them
+to read code. It also forces me to surface blockers immediately
+rather than silently spinning.
+
+---
+
 ## Migration plan
 
 Big-bang is too risky. We ship in four sequenced PRs.
@@ -670,3 +856,5 @@ For sanity:
 | 2026-05-12 | Four sequenced PRs, not big-bang. | Each PR is verifiable in isolation; PR 4 can hold until iOS release-train ready. |
 | 2026-05-12 | Instruction lifecycle is part of the architecture, not the UI. | User insight: latency stops being visible when the send-frame is the event horizon and a status pipeline runs against the local row. The event-log design enables this with minimal code; the UI is only the rendering of a derived status. |
 | 2026-05-12 | UI surfaces TWO states (queued / failed), not five. | User: "Done은 없지 — done하면 카드가 생성되서 돌아오잖아". The new card's arrival is itself the completion signal; rendering a separate "Done" pill alongside a fresh card is redundant. sent / injected / running are all "on its way" from the user's perspective and would only flicker. Internal status field still tracks all stages for timeout + retry logic; the UI just renders two buckets. |
+| 2026-05-12 | Validation is gated on a user-owned golden set, not my declaration. | User isn't a developer — they can't read the diff to verify safety. Process section now defines explicit roles (user = golden set + QA, me = all technical validation including writing new tests + regression tests for every reported bug) and a per-PR validation gate that doesn't advance until the user marks the golden set green. |
+| 2026-05-12 | Feature flag `STEER_SYNC_V3` gates the new path. | One-toggle rollback. v3 code paths sit behind the flag through PR 1–3, get flipped on for a deliberate 24–48 h dogfood checkpoint (PR 3.5), and only after that window stays green does PR 4 delete legacy code. |
