@@ -350,21 +350,6 @@ public final class SyncClient: ObservableObject {
         return false
     }
 
-    /// Publish a single live-session snapshot. Mirrors the Mac
-    /// status-bar chip's "1 running · 2 waiting" badge to iPhone via
-    /// /v1/sync/sessions. Fire-and-forget: failure is silent because
-    /// the next reload tick will retry.
-    public func publishSession(_ session: SessionSnapshot) async {
-        guard isSignedIn else { return }
-        do {
-            try await postJSONIgnoringResponse("/v1/sync/sessions", body: session)
-        } catch {
-            if !isTransientError(error) {
-                SignInDebugLog.write("[publishSession] failed: \(error)")
-            }
-        }
-    }
-
     /// Pull every card the relay still considers active for this
     /// user. The Mac reconciles against this list each reload tick so
     /// cards that no longer exist on disk get resolved server-side
@@ -378,27 +363,6 @@ public final class SyncClient: ObservableObject {
         } catch {
             if !isTransientError(error) {
                 SignInDebugLog.write("[fetchActiveCards] failed: \(error)")
-            }
-            return []
-        }
-    }
-
-    /// Sibling to `fetchActiveCards` for the chip side. The cold-start
-    /// path uses this to seed `ChipReconciler`'s baseline so any
-    /// session the previous Mac process published as "running"
-    /// gets an explicit `runState="ended"` publish on first reload —
-    /// otherwise the relay keeps showing it as live for 90 s while
-    /// `last_activity_at` ages past the cutoff, and the iPhone chip
-    /// stays stuck at "1 running" the whole time.
-    public func fetchLiveSessions() async -> [SessionSnapshot] {
-        guard isSignedIn else { return [] }
-        struct ListResponse: Decodable { let sessions: [SessionSnapshot] }
-        do {
-            let resp: ListResponse = try await getJSON("/v1/sync/sessions")
-            return resp.sessions
-        } catch {
-            if !isTransientError(error) {
-                SignInDebugLog.write("[fetchLiveSessions] failed: \(error)")
             }
             return []
         }
