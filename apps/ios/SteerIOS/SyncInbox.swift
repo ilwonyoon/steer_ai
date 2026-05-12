@@ -299,6 +299,15 @@ public final class SyncInbox: ObservableObject {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         notificationPermission = Self.map(settings.authorizationStatus)
+        // Belt-and-suspenders: if the system still says
+        // notDetermined (because every prior sign-in path skipped
+        // the prompt — keychain cold start, demo onboarding tail,
+        // etc.) and we're inside the signed-in UI now, ask. The
+        // helper bails out cleanly if anyone else already prompted.
+        if settings.authorizationStatus == .notDetermined && isSignedIn {
+            await requestNotificationPermissionIfNeeded()
+            return
+        }
         // If we already have permission, also kick off the APNS
         // registration so the relay learns this device's token.
         if notificationPermission == .granted || notificationPermission == .provisional {
@@ -415,6 +424,16 @@ public final class SyncInbox: ObservableObject {
             status = .signedIn(me.user)
             connectWebSocket()
             await reload()
+            // Keychain-token cold start used to skip the permission
+            // prompt entirely — handleAppleCredential is the only
+            // place that asked. That left users who reinstalled and
+            // signed in via the saved token (or who somehow advanced
+            // status to .signedIn without going through the Apple
+            // sheet, e.g. via the demo onboarding's final card) with
+            // an app that never appears in iOS Settings ▸
+            // Notifications. Ask here too; the helper is a no-op
+            // when the user already answered the dialog.
+            await requestNotificationPermissionIfNeeded()
             // Same heartbeat race fix as handleAppleCredential: if
             // APNS already issued a token while we were re-validating
             // the session, push it now so the relay can fan out.
