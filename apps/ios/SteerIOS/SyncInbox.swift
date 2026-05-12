@@ -77,8 +77,19 @@ public final class SyncInbox: ObservableObject {
             // await returns.
             loadPhase = .bootstrapping
             Task { await refreshMe() }
+        } else if !UserDefaults.standard.bool(forKey: Self.hasSeenOnboardingKey) {
+            // First launch ever (no keychain token + haven't dropped
+            // the onboarding flag yet): load demo cards as an inline
+            // onboarding tour. The last card has a "Sign in with
+            // Apple" chip that exits demo mode. We set the flag on
+            // first enterDemoMode so a relaunch goes straight to the
+            // sign-in prompt instead of looping the tour.
+            enterDemoMode()
         }
     }
+
+    /// UserDefaults key for the first-launch demo gate.
+    private static let hasSeenOnboardingKey = "ai.steer.ios.hasSeenOnboarding"
 
     static var fixtureModeEnabled: Bool {
         if ProcessInfo.processInfo.environment["STEER_FIXTURES"] == "1" {
@@ -133,6 +144,10 @@ public final class SyncInbox: ObservableObject {
             appleEmail: nil,
             displayName: "Sample workspace"
         ))
+        // First time we enter demo, remember it so the next cold
+        // launch goes straight to the sign-in prompt instead of
+        // re-running the onboarding tour.
+        UserDefaults.standard.set(true, forKey: Self.hasSeenOnboardingKey)
     }
 
     public func exitDemoMode() {
@@ -148,6 +163,13 @@ public final class SyncInbox: ObservableObject {
     public func sendDemoReply(text: String, for card: CardPayload) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // The final onboarding card has a single chip labeled
+        // "Sign in with Apple". Tapping it should end demo mode and
+        // present the real sign-in surface, not fake a reply.
+        if card.cardId == "demo-connect-mac" {
+            exitDemoMode()
+            return
+        }
         demoReplyStates[card.cardId] = .queued
         try? await Task.sleep(nanoseconds: 800_000_000)
         if card.cardId == "fixture-failed" {
