@@ -16,7 +16,57 @@ YYYY-MM-DD — PR N status: in-progress | awaiting-user | green
 
 ---
 
-## 2026-05-12 — PR 1 status: deployed, awaiting golden-set sweep
+## 2026-05-12 (afternoon) — Storage track audit deepened
+
+User asked whether the storage layer itself is production-grade.
+Initial diagnosis (transcript bloat) was correct but partial. A
+fuller audit covering seven dimensions — retention, migrations,
+concurrency, recovery, observability, perf budgets, backup —
+found that the wrapper-disconnect chain has two coupled root
+causes (transcript runaway + an agent-spawn race that
+singleton-checks on the wrong primitive), and three more
+dimensions are flat ❌ on top of that.
+
+Plan revised in `docs/STORAGE_PRODUCTION_READINESS.md`:
+
+  - Three-PR plan → seven-PR plan (S0–S7).
+  - S0 lays a migration runner; S1 is the immediate concurrency
+    unbreak; S2 stops the bloat; S3 prunes + recovers the
+    existing 1.8GB; S4 fixes corruption/disk-full; S5 ships
+    health.json + Settings → Storage; S6 sets measured SLOs;
+    S7 adds export.
+  - Two acceptable train-stop points: after S1 (just the unbreak)
+    or after S3 (size cap + recovery). Full S0–S7 is the
+    production-grade target.
+  - New golden set entries G15–G20 added for the audit
+    dimensions.
+
+User QA still pending on whether to take S0–S7 in full or stop
+at S3 for the App Store ship. v3 PR 2 still paused.
+
+## 2026-05-12 — PR 1: merged. v3 PAUSED. Storage track active.
+
+PR 1 merged to main via PR #35 (commit bc90da4). Production worker
+on version `41f2c46e`; events table populating in real time and
+producing correctly-ordered rows for every legacy mutation —
+proven against the user's live dogfood.
+
+User QA surfaced a regression NOT in PR 1's scope: iPhone replies
+land in Codex, Codex answers, but the new card never reaches the
+relay and the iPhone chip stays "1 running". Events log proved
+the v3 sync path was healthy; the breakage was in the Mac agent.
+Root cause: `~/.steer/steer.sqlite` grew to 1.8 GB (1.17 M rows of
+PTY ANSI repaint in `transcript_entries`), agent startup hits
+SQLITE_ERROR: database is locked when a second wrapper races
+the open, the losing agent dies, its wrapper socket closes,
+session flips to `disconnected`, no card publish.
+
+v3 PR 2 pauses. Storage track per `docs/STORAGE_PRODUCTION_READINESS.md`
+takes priority — three sequenced PRs (S1: lock contention fix +
+agent singleton check, S2: PTY filter at write time, S3: prune +
+1.8 GB recovery). v3 PR 2 resumes once S3 ships green.
+
+## 2026-05-12 — PR 1 status (history): deployed, awaiting golden-set sweep
 
 - shipped: `feat(sync v3 PR 1): relay event log + dual-write,
   observation-only` (commit 0f98612 on branch

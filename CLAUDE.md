@@ -2,6 +2,90 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working principles (read first)
+
+Four behavioral principles apply on every task in this repo. The
+global `~/.claude/CLAUDE.md` carries the full text — what follows
+is the Steer-specific concretization.
+
+### 1. Think before coding — concretization
+
+- **Diagnose, then act.** Before writing any fix, capture the
+  exact failure mode (log lines, schema dump, ps output). If the
+  diagnosis is uncertain, say so before committing to a fix.
+- **Surface scope creep early.** If a task tempts you to "fix this
+  while I'm here" outside the asked scope, ask first. Don't bundle.
+- **Push back on premature decisions.** If a 1-line fix would
+  cover today's bug but a 10-line refactor would prevent the next
+  one, present both and let the user choose.
+
+### 2. Simplicity first — concretization
+
+- **Match the layer.** SQLite race? Use `proper-lockfile`. Don't
+  hand-roll a retry loop. Cron-style retention? Use `setInterval`.
+  Don't build a job scheduler.
+- **No premature config knobs.** A timeout or retry budget only
+  becomes user-tunable when a real user has asked for it.
+- **Working code first, dependencies later.** Add a dependency
+  only when the equivalent in-tree code crosses ~150 lines or
+  carries a subtle race.
+
+### 3. Surgical changes — concretization
+
+- **Sync architecture work doesn't touch the wrapper layer.** The
+  wrapper / agent / classifier has its own regression contract
+  (`docs/REGRESSION_CONTRACT.md`); cross-layer fixes need their
+  own ticket.
+- **Storage work doesn't touch product copy.** And vice versa.
+- **When you spot orphaned code your change created, clean it up.
+  When you spot pre-existing dead code, file a follow-up — don't
+  delete it inline.**
+- **Test count delta is a check on this principle.** A surgical
+  PR should not change 30 unrelated tests. If yours does, split.
+
+### 4. Goal-driven execution — concretization
+
+Steer's particular form of this:
+
+- **The user owns the golden set; I own all technical validation.**
+  See `feedback_user_is_not_developer_owns_qa.md` and
+  `feedback_reproduce_then_fix_dont_burden_user.md` in agent
+  memory. Per-PR validation gate:
+  1. **Reproduce first.** When the user reports a regression,
+     write the automated test that reproduces it BEFORE touching
+     any production code. Confirm it fails.
+  2. **Fix.** Make the minimum change that turns the test green.
+  3. **Auto-verify everything.**
+     - `swift build --package-path apps/mac` — clean
+     - `npm test` — green (default skip-set is OK)
+     - `STEER_INTEGRATION=1 npm test` — green for any PR touching
+       agent / wrapper / sync (covers the wrapper-invariant +
+       reconnect + e2e + lockfile races)
+     - `cd packages/relay && npm test` — green for any PR
+       touching the relay
+     - `bash scripts/verify-steer-regression.sh` — green for any
+       PR touching wrappers / classifier / Mac card loading /
+       notifications / terminal rendering (see
+       `docs/REGRESSION_CONTRACT.md`)
+     - New behaviors get new tests; regressed bugs get regression
+       tests.
+  4. **Dogfood smoke.** Build the dogfood app
+     (`bash scripts/refresh-dogfood.sh`) and run the golden set
+     items relevant to the PR myself before sending the build to
+     the user.
+  5. **Hand off.** Deliver the build with a *minimal*
+     user-facing checklist — items the user can verify visually
+     (banners, animations, "did the message arrive"). I never ask
+     the user to debug data-layer behavior.
+- **On a user ❌ report:** stop, diagnose, propose, get explicit
+  OK, fix in a *new commit* (never amend). Re-run the gate
+  before re-delivering.
+- **Plan format:** for any non-trivial change, state the plan as
+  `step → verification` pairs in the response or in the
+  PR description.
+
+If a PR can't pass step (3), it doesn't reach the user.
+
 ## Project Overview
 
 Steer is a macOS-first **AI action queue** for CLI coding agents (Claude Code, Codex CLI, Gemini CLI, etc.). It is **not** a chat mirror or live terminal preview. The core loop:

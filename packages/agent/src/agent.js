@@ -4,10 +4,32 @@ import net from "node:net";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { encodeMessage, createLineDecoder } from "./protocol.js";
-import { sessionsDir, socketPath } from "./paths.js";
+import { sessionsDir, socketPath, lockfilePath } from "./paths.js";
 import { createStore } from "./store.js";
+import { acquireAgentLock, AgentLockHeld } from "./lockfile.js";
 
 const sessions = new Map();
+
+// PR S1: exclusive lockfile BEFORE anything touches the DB. The
+// previous singleton-check was socket-based but `createStore` ran
+// before the socket bound, so two agents both reached the SQLite
+// open path concurrently and the loser crashed with
+// `database is locked`. The flock-style file lock here is the
+// real mutex.
+fs.mkdirSync(path.dirname(lockfilePath), { recursive: true });
+let agentLock;
+try {
+  agentLock = acquireAgentLock(lockfilePath);
+} catch (error) {
+  if (error instanceof AgentLockHeld) {
+    // Another agent is already up. Exit quietly; the wrapper
+    // that spawned us will detect the existing socket and
+    // connect to it.
+    console.error(error.message);
+    process.exit(0);
+  }
+  throw error;
+}
 
 await prepareSocketPath();
 const store = createStore();
@@ -283,10 +305,28 @@ function runStateForHookEvent(message) {
 }
 
 function shutdown() {
+  // PR S1: previous shutdown blocked on `server.close()` callback,
+  // which waits for every open client connection to finish. Wrappers
+  // hold their socket open for the life of the wrapped CLI, so a
+  // SIGTERM with any wrapper attached left the agent process alive
+  // indefinitely — and the lockfile pinned. New shutdown sequence:
+  //   1. Release the lockfile first so the next agent start isn't
+  //      blocked behind a draining shutdown.
+  //   2. Force-close active client sockets (`server.closeAllConnections`,
+  //      Node 18.2+) so server.close resolves promptly.
+  //   3. Best-effort cleanup of streams + DB.
+  //   4. Exit.
+  if (agentLock) {
+    agentLock.release();
+    agentLock = null;
+  }
+  try {
+    fs.unlinkSync(socketPath);
+  } catch {}
+  if (typeof server.closeAllConnections === "function") {
+    server.closeAllConnections();
+  }
   server.close(() => {
-    try {
-      fs.unlinkSync(socketPath);
-    } catch {}
     for (const stream of transcriptStreams.values()) {
       stream.end();
     }
@@ -294,6 +334,10 @@ function shutdown() {
     store.close();
     process.exit(0);
   });
+  // Safety net: even if server.close hangs (sub-millisecond races
+  // around closeAllConnections on older Node builds), force-exit
+  // after 1.5s so callers don't hang waiting for graceful shutdown.
+  setTimeout(() => process.exit(0), 1500).unref?.();
 }
 
 async function prepareSocketPath() {
