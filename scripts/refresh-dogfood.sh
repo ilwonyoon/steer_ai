@@ -129,6 +129,26 @@ if [ -x "$LSREGISTER" ]; then
   "$LSREGISTER" -f "$APP" >/dev/null 2>&1 || true
 fi
 
+# Force IconServices to drop its cached representation for the bundle.
+# Without this, system surfaces that render the bundle's icon (most
+# visibly the Sign in with Apple confirmation dialog and the macOS
+# notification banner) keep showing a generic grid placeholder even
+# though Contents/Resources/AppIcon.icns has been valid all along —
+# iconservicesagent caches the FIRST rep it sees per LaunchServices
+# record and never invalidates on identical-path replacement. The
+# symptom returned in screenshots from 2026-05-11 / 12. Approach:
+#   1. delete the on-disk icon cache for the current user
+#   2. kill the agents so they re-read AppIcon.icns on next render
+echo "==> Resetting IconServices cache for the rebuilt bundle"
+rm -rf "$HOME/Library/Caches/com.apple.iconservices.store" 2>/dev/null || true
+killall -KILL iconservicesagent  2>/dev/null || true
+killall -KILL iconservicesd      2>/dev/null || true
+# Dock + notification center keep their own in-process icon image
+# refs from before the cache wipe; bouncing them is the cheapest way
+# to force a re-render that goes back to iconservicesd.
+killall -KILL Dock               2>/dev/null || true
+killall -KILL NotificationCenter 2>/dev/null || true
+
 echo "==> Launching $APP"
 open "$APP"
 
