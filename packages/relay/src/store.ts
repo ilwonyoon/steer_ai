@@ -256,9 +256,10 @@ export class Store {
     await this.env.DB.prepare(
       `INSERT INTO devices (
          device_id, user_id, platform, display_name, device_class,
-         app_version, sync_enabled, last_seen_at, apns_token
+         app_version, sync_enabled, last_seen_at, apns_token,
+         aps_environment
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_id, device_id) DO UPDATE SET
          platform = excluded.platform,
          display_name = COALESCE(excluded.display_name, display_name),
@@ -266,7 +267,8 @@ export class Store {
          app_version = COALESCE(excluded.app_version, app_version),
          sync_enabled = excluded.sync_enabled,
          last_seen_at = excluded.last_seen_at,
-         apns_token = COALESCE(excluded.apns_token, apns_token)`
+         apns_token = COALESCE(excluded.apns_token, apns_token),
+         aps_environment = COALESCE(excluded.aps_environment, aps_environment)`
     )
       .bind(
         snap.deviceId,
@@ -277,7 +279,8 @@ export class Store {
         snap.appVersion ?? null,
         snap.syncEnabled ? 1 : 0,
         snap.lastSeenAt,
-        snap.apnsToken ?? null
+        snap.apnsToken ?? null,
+        snap.apsEnvironment ?? null
       )
       .run();
   }
@@ -324,7 +327,8 @@ export class Store {
   async listDevices(userId: string): Promise<DeviceSnapshot[]> {
     const rs = await this.env.DB.prepare(
       `SELECT device_id, platform, display_name, device_class,
-              app_version, sync_enabled, last_seen_at, apns_token
+              app_version, sync_enabled, last_seen_at, apns_token,
+              aps_environment
        FROM devices
        WHERE user_id = ?
        ORDER BY last_seen_at DESC
@@ -341,6 +345,7 @@ export class Store {
       syncEnabled: (row.sync_enabled as number) === 1,
       lastSeenAt: row.last_seen_at as number,
       apnsToken: (row.apns_token as string) || undefined,
+      apsEnvironment: (row.aps_environment as string) || undefined,
     }));
   }
 

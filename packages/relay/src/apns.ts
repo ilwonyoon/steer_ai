@@ -71,6 +71,13 @@ interface PushRequest {
   /// the flag is silently ignored, so this change is safe to ship
   /// ahead of the NSE target.
   cardIcon?: string;
+  /// Per-device APNS environment. "development" → sandbox endpoint;
+  /// "production" → production endpoint; undefined → fall back to
+  /// the env-wide APNS_USE_SANDBOX var so older device rows that
+  /// pre-date this column still route to whatever the operator
+  /// configured globally. Phase B2 of
+  /// docs/SYNC_STABILITY_AND_COST_PLAN.md.
+  apsEnvironment?: string;
 }
 
 export interface PushResult {
@@ -90,7 +97,18 @@ export async function sendAPNSPush(env: Env, req: PushRequest): Promise<PushResu
   }
   const bundleId =
     ((env as any).APNS_BUNDLE_ID as string | undefined) || "ai.steer.ios";
-  const useSandbox = (env as any).APNS_USE_SANDBOX === "1";
+  // Per-device routing: if the device row told us its
+  // aps-environment, honor it directly. Otherwise fall back to the
+  // env-wide APNS_USE_SANDBOX flag for backward compatibility with
+  // device rows that pre-date Phase B2.
+  let useSandbox: boolean;
+  if (req.apsEnvironment === "development") {
+    useSandbox = true;
+  } else if (req.apsEnvironment === "production") {
+    useSandbox = false;
+  } else {
+    useSandbox = (env as any).APNS_USE_SANDBOX === "1";
+  }
   const host = useSandbox ? "api.sandbox.push.apple.com" : "api.push.apple.com";
   const url = `https://${host}/3/device/${req.deviceToken}`;
 

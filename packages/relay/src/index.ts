@@ -220,6 +220,7 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
             title,
             body: bodyText,
             cardIcon,
+            apsEnvironment: d.apsEnvironment,
             customPayload: { cardId: card.cardId, sessionId: card.sessionId },
           });
           console.log(

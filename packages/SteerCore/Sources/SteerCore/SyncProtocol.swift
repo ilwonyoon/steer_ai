@@ -112,6 +112,16 @@ public struct DeviceSnapshot: Codable, Sendable, Equatable {
     /// us a token. The relay uses this to fan out push notifications
     /// when a card lands on this user.
     public let apnsToken: String?
+    /// "development" or "production" — mirrors the iOS bundle's
+    /// aps-environment entitlement. Debug-signed iOS builds get
+    /// sandbox tokens that only api.sandbox.push.apple.com accepts;
+    /// TestFlight / App Store builds get production tokens that
+    /// only api.push.apple.com accepts. Relay reads this per-device
+    /// so dev + production clients can coexist on one relay
+    /// without a global APNS_USE_SANDBOX flag. Phase B2 of
+    /// docs/SYNC_STABILITY_AND_COST_PLAN.md. Optional for backward
+    /// compatibility: nil means "fall back to the global var."
+    public let apsEnvironment: String?
 
     public init(
         deviceId: String,
@@ -121,7 +131,8 @@ public struct DeviceSnapshot: Codable, Sendable, Equatable {
         appVersion: String?,
         syncEnabled: Bool,
         lastSeenAt: Int64,
-        apnsToken: String? = nil
+        apnsToken: String? = nil,
+        apsEnvironment: String? = nil
     ) {
         self.deviceId = deviceId
         self.platform = platform
@@ -131,6 +142,7 @@ public struct DeviceSnapshot: Codable, Sendable, Equatable {
         self.syncEnabled = syncEnabled
         self.lastSeenAt = lastSeenAt
         self.apnsToken = apnsToken
+        self.apsEnvironment = apsEnvironment
     }
 }
 
