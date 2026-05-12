@@ -182,8 +182,11 @@ integrationTest(
       spawnAgent(steerHome, logPath),
     ];
 
-    // Give them ~2s to settle.
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait 9s — longer than RETRY_BUDGET_MS (6s) — so every
+    // loser has exited via AgentLockHeld. Production wrappers
+    // see the socket appear in ~1s and don't need to wait that
+    // long; the test waits patiently to assert the steady state.
+    await new Promise((r) => setTimeout(r, 9000));
 
     try {
       const liveCount = children.filter((c) => c.exitCode === null).length;
@@ -232,9 +235,10 @@ integrationTest(
     assert.equal(up, true, "first agent should bind the socket");
 
     // Now start a second one. It must exit cleanly (not crash) and
-    // leave the first agent's socket intact.
+    // leave the first agent's socket intact. The retry budget for
+    // lockfile contention is 6s; allow 8s for the exit.
     const second = spawnAgent(steerHome, logPath);
-    const result = await waitChildExitOrAlive(second, 3000);
+    const result = await waitChildExitOrAlive(second, 8000);
 
     try {
       assert.equal(

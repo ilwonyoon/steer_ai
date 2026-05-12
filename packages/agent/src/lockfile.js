@@ -1,127 +1,141 @@
-// Exclusive lockfile for the SteerAgent process.
+// OS-level exclusive lock for the SteerAgent process.
 //
-// The agent's singleton check used to be a probe of the Unix socket
-// (~/.steer/steer.sock), executed inside agent.js right before
-// `createStore`. The problem: when two agents start within the same
-// few milliseconds (typical when multiple `steer codex` wrappers
-// boot from refresh-dogfood / shell startup / multiple terminals at
-// once), both probe BEFORE either has bound the socket. Both proceed
-// to `createStore`, both race on the SQLite WAL open. The loser dies
-// with `SQLITE_ERROR: database is locked`; its wrapper's session is
-// flipped to `disconnected` and no further card publish fires.
+// Acquired BEFORE `createStore` so two agents can't race the
+// SQLite open path. Holds for the lifetime of the agent and is
+// released automatically by the OS on process death (no PID
+// liveness check required).
 //
-// The fix: a filesystem-level mutex taken BEFORE `createStore` and
-// held until the process exits.
+// Implementation: wraps `proper-lockfile`, the maintained
+// userland-around-syscall lockfile package. Why this and not a
+// custom retry loop:
 //
-// Why an OS-level file lock and not a sentinel PID file:
-//   - OS-level locks are released automatically when the holder
-//     dies, even via SIGKILL. PID files leak.
-//   - `flock(2)` on Darwin/Linux is exactly the primitive we want;
-//     Node exposes it via `O_EXLOCK` (BSD/Darwin) or, portably,
-//     via a non-blocking exclusive open of the lockfile combined
-//     with a flock syscall through `proper-lockfile` style.
-//   - We don't have a lockfile dependency available, but Node's
-//     own `fs.openSync(path, 'wx')` is atomic exclusive-create. A
-//     stale lockfile (process crashed without unlinking) is
-//     detected by reading the recorded PID and confirming the
-//     process is still alive via `process.kill(pid, 0)`.
+//   - `proper-lockfile` couples acquire-and-stale-detection inside
+//     a single atomic attempt. Our previous custom retry loop had
+//     a window where two processes could both pass the "holder is
+//     dead" check, both `unlinkSync`, and both `openSync(..., 'wx')`
+//     because the unlink+create dance isn't atomic from userland.
+//   - It uses `lockfile.lock(target)` which creates a sibling
+//     `.lock` directory atomically (mkdir is atomic on POSIX),
+//     not a regular file open. Directories can't be partially
+//     created so the race window collapses.
+//   - Staleness detection is via the lockfile mtime, refreshed by
+//     a background updater. Threshold default 10s. Dead holders
+//     stop refreshing → next acquirer reclaims.
+//   - On process crash (SIGKILL, ENOMEM, panic), the lockfile
+//     simply stops being refreshed and the next acquirer reclaims
+//     after the staleness threshold. No PID liveness ambiguity
+//     (Darwin's `EPERM` on reaped pids broke our previous impl).
 //
-// Public API: `acquireAgentLock(lockPath) -> { release(): void }`.
-// Throws `AgentLockHeld` if a live agent already holds the lock.
-//
-// `acquireAgentLock` is intentionally synchronous so it can run in
-// the agent's bootstrap top-of-file path (before the rest of the
-// initialization). All it does is one `open()` and one `write()`.
+// We deliberately wrap it so callers see the same surface as
+// before — `acquireAgentLock(path) -> { release() }` and an
+// `AgentLockHeld` error class — and so future swaps of the
+// underlying lock library are a one-file change.
 
 import fs from "node:fs";
+import properLockfile from "proper-lockfile";
 
 export class AgentLockHeld extends Error {
-  constructor(holderPid, lockPath) {
-    super(
-      `another SteerAgent is already running (pid=${holderPid}, lock=${lockPath})`
-    );
+  constructor(lockPath) {
+    super(`another SteerAgent is already running (lock=${lockPath})`);
     this.code = "AGENT_LOCK_HELD";
-    this.holderPid = holderPid;
     this.lockPath = lockPath;
   }
 }
 
-function isProcessAlive(pid) {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM = process exists but we can't signal it (different user).
-    // ESRCH = no such process.
-    return error.code === "EPERM";
-  }
-}
-
-function readLockHolderPid(lockPath) {
-  try {
-    const raw = fs.readFileSync(lockPath, "utf8").trim();
-    const pid = Number.parseInt(raw, 10);
-    return Number.isFinite(pid) ? pid : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Acquire the agent lock. Returns an opaque handle whose `release()`
- * method removes the lockfile.
+ * Acquire the agent lock. Returns a handle whose `release()`
+ * removes the lock.
  *
- * Throws `AgentLockHeld` if another agent process owns the lock.
- * Throws other I/O errors as-is (permission denied, disk full, ...).
+ * Sync interface preserved for callers in agent.js's bootstrap
+ * top-of-file, which needs to run before any async work.
+ * `proper-lockfile` exposes a sync variant (`lockSync`).
+ *
+ * Throws `AgentLockHeld` if another live process owns the lock.
+ * Other I/O errors propagate as-is.
  */
 export function acquireAgentLock(lockPath) {
-  // Loop at most twice: first attempt the exclusive create; if it
-  // fails because the file already exists, inspect the holder. If
-  // the holder is dead (stale file from a crash), unlink and retry
-  // exactly once. Any further failure is the contention we surface
-  // to the caller.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let fd;
-    try {
-      fd = fs.openSync(lockPath, "wx");
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-      const holderPid = readLockHolderPid(lockPath);
-      if (holderPid && isProcessAlive(holderPid)) {
-        throw new AgentLockHeld(holderPid, lockPath);
-      }
-      // Stale lockfile. Remove and retry once.
-      try {
-        fs.unlinkSync(lockPath);
-      } catch {
-        // Race with another claimant who unlinked first — retry.
-      }
-      continue;
-    }
-
-    try {
-      fs.writeSync(fd, String(process.pid));
-    } finally {
-      try {
-        fs.closeSync(fd);
-      } catch {}
-    }
-
-    return {
-      release() {
-        try {
-          // Only unlink if it's still ours (PID match). Defense
-          // against the rare case where our process slept long
-          // enough for another agent to forcibly take over.
-          const ownerPid = readLockHolderPid(lockPath);
-          if (ownerPid === process.pid) {
-            fs.unlinkSync(lockPath);
-          }
-        } catch {}
-      },
-    };
+  // proper-lockfile's stale threshold: how long after the last
+  // mtime touch we consider the lock dead. 10s matches the
+  // package default and is long enough to absorb a slow SQLite
+  // open path on a multi-GB DB; the held lock has a background
+  // touch every (stale / 2) = 5s so a live process's lock never
+  // crosses the threshold.
+  //
+  // retries: total acquisition attempts. We use a short retry
+  // window so concurrent boots converge within ~250 ms — long
+  // enough for the OS to settle but short enough to not stall
+  // wrapper startup. After the budget the call throws ELOCKED;
+  // we translate to AgentLockHeld so callers can decide what to
+  // do.
+  // proper-lockfile's `lockSync` operates against an existing
+  // file or directory — it creates a sibling `.lock` directory
+  // for the actual mutex. Touch the target path so the call
+  // resolves; the file's contents are irrelevant.
+  try {
+    fs.closeSync(fs.openSync(lockPath, "a"));
+  } catch {
+    // If the path itself is unwritable, surface the error from
+    // lockSync below where it's contextualized.
   }
-  // Shouldn't reach here — the loop either returns or throws.
-  throw new Error("acquireAgentLock: exceeded retry budget");
+  // proper-lockfile's sync API rejects the `retries` option, but
+  // we want a short retry window so that:
+  //   - Multiple concurrent boots converge cleanly (the loser
+  //     gets ELOCKED on the first try and we don't want to throw
+  //     AgentLockHeld too eagerly when the OS lock just lost a
+  //     nanosecond race).
+  //   - A SIGKILL'd predecessor's stale lock gets reclaimed
+  //     without forcing us to keep `stale` very high.
+  // We implement the retry manually with `Atomics.wait` on a
+  // shared buffer for synchronous backoff. Each attempt remains
+  // OS-atomic via proper-lockfile.
+  const sharedBuf = new SharedArrayBuffer(4);
+  const sharedView = new Int32Array(sharedBuf);
+  const sleepSync = (ms) => Atomics.wait(sharedView, 0, 0, ms);
+
+  // Two-phase contention budget:
+  //   - STALE_MS: how long after the last lock refresh we treat
+  //     the holder as dead. proper-lockfile refreshes every
+  //     stale/2 ms while alive, so STALE_MS=5s means a live
+  //     holder refreshes ~every 2.5s and is never falsely
+  //     considered stale.
+  //   - RETRY_BUDGET_MS: how long we keep trying before giving
+  //     up and surfacing AgentLockHeld. Must exceed STALE_MS so
+  //     that after a SIGKILL'd predecessor, a new acquirer
+  //     waits long enough for the stale window to open before
+  //     it gives up.
+  // Net effect: a freshly-orphaned lockfile is reclaimed in
+  // ~5-6 s; live-holder contention surfaces AgentLockHeld at ~6s.
+  const STALE_MS = 5_000;
+  const RETRY_BUDGET_MS = 6_000;
+  const BACKOFF_MS = 150;
+  const deadline = Date.now() + RETRY_BUDGET_MS;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      const release = properLockfile.lockSync(lockPath, {
+        realpath: false,
+        stale: STALE_MS,
+      });
+      return {
+        release() {
+          try { release(); } catch { /* already released */ }
+        },
+      };
+    } catch (error) {
+      lastError = error;
+      // ELOCKED: a live holder owns the lock right now. Wait a
+      // beat and retry — the holder may be a transient sibling
+      // that's about to exit on its own (mid-race) or a real
+      // long-running agent (which we'll surface as AgentLockHeld
+      // when the budget runs out).
+      //
+      // Any other code (EPERM, ENOENT-on-the-target after
+      // someone unlinked it during our touch, etc.) is a real
+      // I/O failure and we propagate up.
+      if (!error || error.code !== "ELOCKED") throw error;
+      sleepSync(BACKOFF_MS);
+    }
+  }
+  // Budget exhausted, holder is still alive.
+  throw new AgentLockHeld(lockPath);
 }
