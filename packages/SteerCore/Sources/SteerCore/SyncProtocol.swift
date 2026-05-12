@@ -29,6 +29,14 @@ public struct CardPayload: Codable, Hashable, Sendable {
     public let state: String   // "active" | "done"
     public let createdAt: Int64  // ms since epoch
     public let updatedAt: Int64
+    /// Monotonic counter Mac bumps every time the terminal produces
+    /// a fresh response on this session (the `instructedSessions`
+    /// decay fires). iPhone uses it to atomically swap from
+    /// `.awaitingResponse` to `.awaitingUser` when the user's reply
+    /// has produced a new response. Cards from servers that don't
+    /// yet emit it decode as 0; the iPhone treats any `>` strictly
+    /// as "new response."
+    public let responseRevision: Int?
 
     public init(
         cardId: String,
@@ -41,7 +49,8 @@ public struct CardPayload: Codable, Hashable, Sendable {
         payload: [String: AnyCodable]? = nil,
         state: String,
         createdAt: Int64,
-        updatedAt: Int64
+        updatedAt: Int64,
+        responseRevision: Int? = nil
     ) {
         self.cardId = cardId
         self.sessionId = sessionId
@@ -54,6 +63,7 @@ public struct CardPayload: Codable, Hashable, Sendable {
         self.state = state
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.responseRevision = responseRevision
     }
 }
 

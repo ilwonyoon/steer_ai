@@ -37,19 +37,29 @@ public struct SessionEntry: Identifiable, Equatable {
     /// scope deduplicate against the existing record. nil until
     /// sendReply runs.
     public var lastInstructionId: String?
+    /// The card's `responseRevision` at the moment the user replied.
+    /// Mac increments `responseRevision` on a session whenever it
+    /// finishes producing a fresh response (i.e. the
+    /// `instructedSessions` decay fires). Comparing the card's
+    /// incoming revision against this stamp is the unambiguous
+    /// "terminal answered" signal — no timestamp drift, no content
+    /// hashing, no cardId churn. nil while in `.awaitingUser`.
+    public var instructedRevision: Int?
 
     public init(
         sessionId: String,
         card: CardPayload,
         stage: SessionStage,
         lastReplyText: String? = nil,
-        lastInstructionId: String? = nil
+        lastInstructionId: String? = nil,
+        instructedRevision: Int? = nil
     ) {
         self.sessionId = sessionId
         self.card = card
         self.stage = stage
         self.lastReplyText = lastReplyText
         self.lastInstructionId = lastInstructionId
+        self.instructedRevision = instructedRevision
     }
 }
 
@@ -113,20 +123,24 @@ public enum SessionEntryStore {
         return next.sorted { $0.card.updatedAt < $1.card.updatedAt }
     }
 
-    /// WebSocket pushed an upsert for a card. Three cases:
+    /// WebSocket pushed an upsert for a card. The Mac wrapper reuses
+    /// the same cardId across responses for a single session (one
+    /// `action_cards` row per session, re-upserted with refreshed
+    /// content + new `updatedAt`). So we can't use "new cardId" as
+    /// the response signal — we use timestamp instead.
     ///
-    ///   - sessionId has no entry: insert as `.awaitingUser`.
-    ///   - sessionId has an entry but its cardId matches incoming:
-    ///     refresh card content, leave the stage alone (could still
-    ///     be awaitingUser if we haven't replied yet, or awaitingResponse
-    ///     if our reply hasn't produced a *new* card yet).
-    ///   - sessionId has an entry and the incoming cardId is *new*: this
-    ///     is the moment the terminal produced a fresh response. Swap
-    ///     the card in and reset the stage to `.awaitingUser`.
+    /// Per-session decision:
     ///
-    /// The third case is the load-bearing one: it atomically clears the
-    /// chip (entry leaves `.awaitingResponse`) and surfaces the new card
-    /// (entry returns to `.awaitingUser`) in a single mutation. No race.
+    ///   - No entry yet → insert as `.awaitingUser`.
+    ///   - Entry in `.awaitingUser` / `.failed` → refresh content,
+    ///     keep stage.
+    ///   - Entry in `.awaitingResponse`:
+    ///       * `card.updatedAt > instructedAtMs` → terminal produced
+    ///         a fresh response after the user's reply. Atomic swap:
+    ///         stage → `.awaitingUser`, content refreshed.
+    ///       * otherwise → it's a re-upsert of the *pre-reply* card
+    ///         content (Mac's 2s reload tick). Keep stage; don't
+    ///         downgrade.
     public static func onCardUpsert(
         previous: [SessionEntry],
         card: CardPayload
@@ -134,22 +148,47 @@ public enum SessionEntryStore {
         var next = previous
         if let idx = next.firstIndex(where: { $0.sessionId == card.sessionId }) {
             let existing = next[idx]
-            if existing.card.cardId == card.cardId {
+            switch existing.stage {
+            case .awaitingUser, .failed:
                 next[idx] = SessionEntry(
                     sessionId: existing.sessionId,
                     card: card,
                     stage: existing.stage,
                     lastReplyText: existing.lastReplyText,
-                    lastInstructionId: existing.lastInstructionId
+                    lastInstructionId: existing.lastInstructionId,
+                    instructedRevision: existing.instructedRevision
                 )
-            } else {
-                // New cardId for this session — terminal produced a
-                // fresh response. Reset the entry.
-                next[idx] = SessionEntry(
-                    sessionId: existing.sessionId,
-                    card: card,
-                    stage: .awaitingUser
-                )
+            case .awaitingResponse:
+                // Stamp absent means the entry never went through
+                // markUserReplied (legacy or direct construction).
+                // Treat any upsert as the response so the chip
+                // doesn't stick forever in tests + bad migrations.
+                let isResponse: Bool
+                if let stamp = existing.instructedRevision {
+                    let incoming = card.responseRevision ?? 0
+                    isResponse = incoming > stamp
+                } else {
+                    isResponse = true
+                }
+                if isResponse {
+                    next[idx] = SessionEntry(
+                        sessionId: existing.sessionId,
+                        card: card,
+                        stage: .awaitingUser
+                    )
+                } else {
+                    // Pre-response re-upsert from Mac's reload tick
+                    // — same revision, refreshed content. Keep stage
+                    // so the chip doesn't flicker.
+                    next[idx] = SessionEntry(
+                        sessionId: existing.sessionId,
+                        card: card,
+                        stage: existing.stage,
+                        lastReplyText: existing.lastReplyText,
+                        lastInstructionId: existing.lastInstructionId,
+                        instructedRevision: existing.instructedRevision
+                    )
+                }
             }
         } else {
             next.append(SessionEntry(
@@ -208,6 +247,11 @@ public enum SessionEntryStore {
             next[idx].stage = .awaitingResponse
             next[idx].lastReplyText = text
             next[idx].lastInstructionId = instructionId
+            // Stamp the current `responseRevision`. The next
+            // cardUpsert that ships a strictly-greater revision is
+            // "terminal produced its response" — no clock skew,
+            // no content hashing.
+            next[idx].instructedRevision = next[idx].card.responseRevision ?? 0
         }
         return next
     }
@@ -245,6 +289,7 @@ public enum SessionEntryStore {
                 next[idx].stage = .awaitingUser
                 next[idx].lastReplyText = nil
                 next[idx].lastInstructionId = nil
+                next[idx].instructedRevision = nil
             }
         }
         return next

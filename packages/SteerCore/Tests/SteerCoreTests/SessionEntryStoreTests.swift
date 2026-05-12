@@ -8,7 +8,8 @@ final class SessionEntryStoreTests: XCTestCase {
     private func makeCard(
         sessionId: String,
         cardId: String,
-        updatedAtMs: Int64 = 0
+        updatedAtMs: Int64 = 0,
+        revision: Int? = nil
     ) -> CardPayload {
         CardPayload(
             cardId: cardId,
@@ -21,58 +22,59 @@ final class SessionEntryStoreTests: XCTestCase {
             payload: nil,
             state: "active",
             createdAt: 0,
-            updatedAt: updatedAtMs
+            updatedAt: updatedAtMs,
+            responseRevision: revision
         )
     }
 
     // MARK: - The atomic chip-clear / card-surface transition
 
-    func test_newCardForSession_swapsAwaitingResponseToAwaitingUserAtomically() {
-        // Initial state: one entry, awaitingResponse (user replied to
-        // cardId A, terminal still working).
+    func test_cardUpsertWithGreaterRevision_swapsAtomically() {
+        // User replied while card was at revision=3.
         let entryA = SessionEntry(
             sessionId: "S1",
-            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 3),
             stage: .awaitingResponse,
             lastReplyText: "hi",
-            lastInstructionId: "i1"
+            lastInstructionId: "i1",
+            instructedRevision: 3
         )
-        // Terminal finished → fresh card B arrives for the same session.
-        let cardB = makeCard(sessionId: "S1", cardId: "B", updatedAtMs: 2000)
+        // Terminal finished → Mac bumps revision to 4 and re-upserts.
         let next = SessionEntryStore.onCardUpsert(
-            previous: [entryA], card: cardB
+            previous: [entryA],
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 4)
         )
         XCTAssertEqual(next.count, 1)
-        XCTAssertEqual(next[0].card.cardId, "B")
+        XCTAssertEqual(next[0].card.responseRevision, 4)
         XCTAssertEqual(next[0].stage, .awaitingUser)
-        // Chip count is now 0; card carousel has the new card.
         XCTAssertEqual(
             SessionEntryStore.awaitingResponseEntries(in: next).count, 0
         )
-        XCTAssertEqual(
-            SessionEntryStore.awaitingUserEntries(in: next).count, 1
-        )
     }
 
-    // MARK: - WS re-upsert of the same cardId is a no-op for stage
+    // MARK: - Same revision → keep stage even on content refresh
 
-    func test_sameCardId_keepsStage() {
+    func test_sameRevisionReUpsert_keepsAwaitingResponse() {
+        // Mac's 2s reload tick re-publishes the same response-revision
+        // — classifier may have refreshed title / summary, but no new
+        // terminal response yet. Chip must stay lit.
         let entry = SessionEntry(
             sessionId: "S1",
-            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 3),
             stage: .awaitingResponse,
             lastReplyText: "x",
-            lastInstructionId: "i1"
+            lastInstructionId: "i1",
+            instructedRevision: 3
         )
-        // Same cardId, refreshed summary (Mac re-classified).
-        let refreshed = makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1100)
+        let refreshed = makeCard(
+            sessionId: "S1", cardId: "A", updatedAtMs: 1500, revision: 3
+        )
         let next = SessionEntryStore.onCardUpsert(
             previous: [entry], card: refreshed
         )
         XCTAssertEqual(next.count, 1)
-        XCTAssertEqual(next[0].card.updatedAt, 1100)
         XCTAssertEqual(next[0].stage, .awaitingResponse)
-        XCTAssertEqual(next[0].lastReplyText, "x")
+        XCTAssertEqual(next[0].card.updatedAt, 1500)
     }
 
     // MARK: - sendReply → marks awaitingResponse
@@ -80,15 +82,18 @@ final class SessionEntryStoreTests: XCTestCase {
     func test_markUserReplied_transitionsStage() {
         let entry = SessionEntry(
             sessionId: "S1",
-            card: makeCard(sessionId: "S1", cardId: "A"),
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 7),
             stage: .awaitingUser
         )
         let next = SessionEntryStore.markUserReplied(
-            previous: [entry], cardId: "A", text: "go", instructionId: "i1"
+            previous: [entry], cardId: "A", text: "go",
+            instructionId: "i1"
         )
         XCTAssertEqual(next[0].stage, .awaitingResponse)
         XCTAssertEqual(next[0].lastReplyText, "go")
         XCTAssertEqual(next[0].lastInstructionId, "i1")
+        // Stamp = card.responseRevision at the moment of reply.
+        XCTAssertEqual(next[0].instructedRevision, 7)
         // Chip count == 1, carousel == 0.
         XCTAssertEqual(
             SessionEntryStore.awaitingResponseEntries(in: next).count, 1
@@ -318,45 +323,59 @@ final class SessionEntryStoreTests: XCTestCase {
     // MARK: - The exact bug we kept hitting
 
     func test_chipAndCard_neverDisagree_acrossReplyAndResponse() {
-        // Step 1: card lands.
+        // Step 1: card lands at t=1000.
         var entries: [SessionEntry] = []
         entries = SessionEntryStore.onCardUpsert(
             previous: entries,
-            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000)
+            card: makeCard(
+                sessionId: "S1", cardId: "A",
+                updatedAtMs: 1000, revision: 1
+            )
         )
         XCTAssertEqual(
             SessionEntryStore.awaitingUserEntries(in: entries).count, 1
         )
-        XCTAssertEqual(
-            SessionEntryStore.awaitingResponseEntries(in: entries).count, 0
-        )
 
-        // Step 2: user replies. Chip == 1, carousel == 0.
+        // Step 2: user replies. Stamp = current responseRevision=1.
         entries = SessionEntryStore.markUserReplied(
-            previous: entries, cardId: "A", text: "go", instructionId: "i1"
+            previous: entries, cardId: "A", text: "go",
+            instructionId: "i1"
         )
+        XCTAssertEqual(entries[0].instructedRevision, 1)
         XCTAssertEqual(
-            SessionEntryStore.awaitingUserEntries(in: entries).count, 0
+            SessionEntryStore.awaitingResponseEntries(in: entries).count, 1
+        )
+
+        // Step 3: Mac's 2s reload tick re-upserts. Revision is still 1
+        // (no new response yet). Stage must NOT flicker.
+        entries = SessionEntryStore.onCardUpsert(
+            previous: entries,
+            card: makeCard(
+                sessionId: "S1", cardId: "A",
+                updatedAtMs: 2200, revision: 1
+            )
         )
         XCTAssertEqual(
             SessionEntryStore.awaitingResponseEntries(in: entries).count, 1
         )
 
-        // Step 3: Mac re-upserts the same card (its 2s reload tick).
-        // Stage must NOT flicker.
-        entries = SessionEntryStore.onCardUpsert(
-            previous: entries,
-            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1100)
+        // Step 4: Mac resolves the card before publishing the response.
+        // Entry must survive (otherwise chip drops too early).
+        entries = SessionEntryStore.onCardResolved(
+            previous: entries, cardId: "A"
         )
         XCTAssertEqual(
             SessionEntryStore.awaitingResponseEntries(in: entries).count, 1
         )
 
-        // Step 4: 10s later, terminal answers — new cardId B for same
-        // session. Chip → 0 and carousel ← 1 in one mutation.
+        // Step 5: 10s later, terminal answers. Mac bumps revision to
+        // 2 and re-upserts. Atomic transition: chip → 0, carousel ← 1.
         entries = SessionEntryStore.onCardUpsert(
             previous: entries,
-            card: makeCard(sessionId: "S1", cardId: "B", updatedAtMs: 12000)
+            card: makeCard(
+                sessionId: "S1", cardId: "A",
+                updatedAtMs: 12000, revision: 2
+            )
         )
         XCTAssertEqual(
             SessionEntryStore.awaitingUserEntries(in: entries).count, 1
@@ -364,6 +383,6 @@ final class SessionEntryStoreTests: XCTestCase {
         XCTAssertEqual(
             SessionEntryStore.awaitingResponseEntries(in: entries).count, 0
         )
-        XCTAssertEqual(entries[0].card.cardId, "B")
+        XCTAssertEqual(entries[0].card.responseRevision, 2)
     }
 }

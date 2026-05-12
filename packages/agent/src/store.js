@@ -74,6 +74,35 @@ export function createStore(filePath = databasePath) {
       SET status = ?, injected_at = ?, failure_reason = ?
       WHERE id = ?
     `),
+    /// Mark a session as awaiting the terminal's response. Called
+    /// at instruction-route time so refreshActionCard can detect
+    /// "next trusted entry after this is the response."
+    markSessionAwaitingResponse: db.prepare(`
+      UPDATE sessions
+      SET awaiting_response_since = ?
+      WHERE id = ?
+    `),
+    /// Bump revision when refreshActionCard sees a trusted entry
+    /// after awaiting_response_since. Atomic: increments AND clears
+    /// the marker in one statement so a second concurrent refresh
+    /// can't double-bump.
+    bumpResponseRevisionIfReady: db.prepare(`
+      UPDATE sessions
+      SET last_response_revision = last_response_revision + 1,
+          awaiting_response_since = NULL
+      WHERE id = ?
+        AND awaiting_response_since IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM transcript_entries
+          WHERE session_id = ?
+            AND stream IN ('report', 'stdout', 'stderr')
+            AND timestamp > sessions.awaiting_response_since
+        )
+    `),
+    /// Read the current revision for publishing.
+    selectResponseRevision: db.prepare(`
+      SELECT last_response_revision FROM sessions WHERE id = ?
+    `),
     insertMetricEvent: db.prepare(`
       INSERT INTO metric_events (id, session_id, room_id, type, timestamp, metadata_json)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -259,14 +288,21 @@ export function createStore(filePath = databasePath) {
       }
     },
     createInstruction({ id, sessionId, text }) {
+      const now = new Date().toISOString();
       statements.insertInstruction.run(
         id,
         DEFAULT_ROOM_ID,
         sessionId,
         text,
         "pending",
-        new Date().toISOString()
+        now
       );
+      // Stamp the session so the next trusted transcript entry
+      // (report/stdout/stderr after `now`) triggers a
+      // responseRevision bump in refreshActionCard. This is the
+      // signal iPhone uses to atomically transition the chip from
+      // `.awaitingResponse` to `.awaitingUser`.
+      statements.markSessionAwaitingResponse.run(now, sessionId);
       recordMetric({
         sessionId,
         type: "instruction_sent",
@@ -332,6 +368,12 @@ export function createStore(filePath = databasePath) {
   };
 
   function refreshActionCard(sessionId) {
+    // Bump responseRevision FIRST (before upsertActionCard) so the
+    // card row carries the post-bump revision in the same write
+    // transaction. iPhone sees one consistent upsert with the new
+    // revision and atomically swaps stage.
+    statements.bumpResponseRevisionIfReady.run(sessionId, sessionId);
+
     const session = statements.selectSession.get(sessionId);
     if (!session) return;
 
