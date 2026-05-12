@@ -304,7 +304,8 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
         category: row.category,
         accentHue: hueForCwd(row.cwd),
         branchLabel: gitBranchLabel(for: row.cwd),
-        thread: []
+        thread: [],
+        updatedAt: parseISODate(row.updatedAt) ?? Date()
     )
 }
 

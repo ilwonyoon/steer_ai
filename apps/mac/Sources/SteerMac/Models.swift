@@ -125,6 +125,12 @@ struct ActionCard: Identifiable {
     let accentHue: Double
     let branchLabel: String?
     var thread: [ThreadMessage]
+    /// `action_cards.updated_at` from SQLite. Used by
+    /// `InstructedSessionDecay` to tell "card from before the reply"
+    /// (chip stays) from "card produced after the reply" (chip falls
+    /// off). Defaults to `Date()` when constructed from non-SQLite
+    /// sources (mocks, previews) so callers don't have to thread it.
+    let updatedAt: Date
 
     init(
         id: String = UUID().uuidString,
@@ -142,7 +148,8 @@ struct ActionCard: Identifiable {
         category: String = "",
         accentHue: Double = 0,
         branchLabel: String? = nil,
-        thread: [ThreadMessage]
+        thread: [ThreadMessage],
+        updatedAt: Date = Date()
     ) {
         self.id = id
         self.sessionId = sessionId.isEmpty ? id : sessionId
@@ -160,6 +167,7 @@ struct ActionCard: Identifiable {
         self.accentHue = accentHue
         self.branchLabel = branchLabel
         self.thread = thread
+        self.updatedAt = updatedAt
     }
 }
 

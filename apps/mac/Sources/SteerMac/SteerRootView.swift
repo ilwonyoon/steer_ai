@@ -42,17 +42,16 @@ struct SteerRootView: View {
     /// reconcile pass.
     @State private var lastPublishedChipMemory: [String: ChipPublishMemory] = [:]
     @State private var liveChipsExpanded = false
-    /// Set of sessionIds where the user (typically from iPhone) issued
-    /// an instruction we already injected; the badge counts how many
-    /// of these are currently `run_state == "running"` and displays
-    /// "N running". A sessionId is *added* the moment we drain a
-    /// queued instruction targeting it, and *removed* the moment the
-    /// session falls out of `running` (stopped, hit a card, completed
-    /// — any non-running state). Effect: the chip only ever surfaces
-    /// "work the user kicked off", not idle sessions, not other
-    /// people's sessions, not running sessions that never received
-    /// an instruction from us.
-    @State private var instructedSessionIds: Set<String> = []
+    /// Map of `sessionId → instructed-at timestamp (ms)` for sessions
+    /// where the user (Mac card reply or iPhone drain) already
+    /// successfully injected a reply. Drives the Mac "N running" pill
+    /// AND the iPhone chip — both surfaces count the same set.
+    ///
+    /// Membership is governed entirely by `InstructedSessionDecay`
+    /// (SteerCore): the stamp lets the decay distinguish "card from
+    /// before the reply" (chip stays) from "card produced after the
+    /// reply" (chip falls off). See that helper for the full spec.
+    @State private var instructedSessions: [String: InstructedAt] = [:]
     @State private var replyDrafts: [String: String] = [:]
     @State private var attachmentDrafts: [String: [ReplyAttachment]] = [:]
     @Namespace private var sessionTransition
@@ -78,7 +77,7 @@ struct SteerRootView: View {
     /// in the active instruction-processing window — see that
     /// comment for the full membership rules.
     private var instructedRunningCount: Int {
-        instructedSessionIds.count
+        instructedSessions.count
     }
 
     var body: some View {
@@ -278,7 +277,9 @@ struct SteerRootView: View {
             // as "user-kicked-off" so the top pill counts it. Without
             // this hook the pill only ever surfaced iPhone drains and
             // missed every Mac-side card reply.
-            instructedSessionIds.insert(sessionId)
+            instructedSessions[sessionId] = InstructedAt(
+                atMs: Int64(Date().timeIntervalSince1970 * 1000)
+            )
             await reload()
         } catch {
             lastError = "send failed"
@@ -313,38 +314,36 @@ struct SteerRootView: View {
         let loadedCards = await store.loadCards()
         await notifyForNewCards(loadedCards)
         let activeSessionIds = Set(loadedCards.map(\.sessionId))
-        let loadedChipsRaw = await store.loadLiveSessions(excluding: activeSessionIds)
-        // Belt-and-suspenders: loadLiveSessions runs a separate sqlite3
-        // subprocess from loadCards, so a session that flipped from
-        // `running` to `waiting` between the two queries can briefly
-        // show up in BOTH lists ("1 running · 1 waiting" for what is
-        // really one session). Filter the chip list one more time
-        // here, in the same tick, against the cards we just observed.
-        let loadedChips = loadedChipsRaw.filter { !activeSessionIds.contains($0.sessionId) }
+        // We need ALL live sessions for the iPhone "N running" chip,
+        // including ones that currently have an active card. The chip
+        // counts sessions the user already replied to and the terminal
+        // is still working on; cards drop in/out of that window but
+        // membership in `instructedSessionIds` is the source of truth.
+        // Mac UI's chip header (`liveChips`) uses the card-filtered
+        // view so we don't double-list a session that has its own card.
+        let loadedLive = await store.loadLiveSessions(excluding: [])
+        let loadedChips = loadedLive.filter { !activeSessionIds.contains($0.sessionId) }
         cards = loadedCards
         liveChips = loadedChips
-        // Decay instructed-session membership. A session stays in the
-        // set from the moment we inject an instruction until ONE of:
-        //
-        //   1. The session disappears from the live snapshot — it
-        //      ended, disconnected, or fell off the 90s live cutoff.
-        //   2. A card appeared for that session — the user has a
-        //      direct surface (the card) to handle it, so the pill
-        //      no longer needs to advertise the in-progress work.
-        //
-        // We deliberately do NOT decay just because the wrapper
-        // flipped run_state back to "waiting". Short replies finish
-        // before the next reload tick and would make the pill
-        // flicker into existence for a single frame, so the user
-        // never sees it. Holding membership through the whole
-        // instruction-processing window matches the user's mental
-        // model: "if I sent something and it isn't visibly resolved
-        // yet, the pill should still show it".
-        let liveSessionIds = Set(loadedChips.map(\.sessionId))
-        let cardSessionIds = Set(loadedCards.map(\.sessionId))
-        instructedSessionIds = instructedSessionIds
-            .intersection(liveSessionIds)
-            .subtracting(cardSessionIds)
+        // Decay instructed-session membership. Logic lives in
+        // SteerCore.InstructedSessionDecay (with unit tests covering
+        // the full spec). Crucially we use the raw `loadedLive` set,
+        // not the card-filtered `loadedChips`: if we kept using the
+        // filtered set, every reply to an existing card would
+        // immediately drop the session from the chip before the
+        // terminal had a chance to produce its next response.
+        let liveSessionIds = Set(loadedLive.map(\.sessionId))
+        let cardSnapshots = loadedCards.map {
+            CardUpdateSnapshot(
+                sessionId: $0.sessionId,
+                updatedAtMs: Int64($0.updatedAt.timeIntervalSince1970 * 1000)
+            )
+        }
+        instructedSessions = InstructedSessionDecay.decay(
+            previous: instructedSessions,
+            liveSessionIds: liveSessionIds,
+            cards: cardSnapshots
+        )
         isLoading = false
         // Keep the user's focus stable across reloads. If the previously
         // focused session is gone (resolved / disconnected), fall back to
@@ -452,7 +451,21 @@ struct SteerRootView: View {
                 let (cardsToPublish, idsToResolve) = diffCardsForPublish(
                     loadedCards: loadedCards
                 )
-                let chipDiff = diffChipsForPublish(loadedChips: loadedChips)
+                // iPhone chip counts the *exact same set* the Mac UI
+                // top pill counts: sessions the user has replied to
+                // and the terminal is still working on (membership
+                // managed by `InstructedSessionDecay`). NOT the
+                // card-filtered Mac UI chip list (`loadedChips`),
+                // which excludes sessions that already have an active
+                // card — that exclusion only exists so the Mac UI
+                // doesn't double-list a session in both the chip
+                // header and the card stack. iPhone's chip is the
+                // only top-of-screen signal, so membership must match
+                // `instructedSessions` directly.
+                let chipsForPublish = loadedLive.filter {
+                    instructedSessions[$0.sessionId] != nil
+                }
+                let chipDiff = diffChipsForPublish(loadedChips: chipsForPublish)
                 if !cardsToPublish.isEmpty || !idsToResolve.isEmpty {
                     await syncToiPhone(
                         publishCards: cardsToPublish,
@@ -675,9 +688,11 @@ struct SteerRootView: View {
                 // Track this session as "user-kicked-off". The next
                 // reload tick will check whether it actually entered
                 // run_state=running and surface it in the top pill.
-                // Membership decays automatically when the session
-                // leaves running (see reload()).
-                instructedSessionIds.insert(record.targetSessionId)
+                // Membership decays automatically via
+                // `InstructedSessionDecay` (see reload()).
+                instructedSessions[record.targetSessionId] = InstructedAt(
+                    atMs: Int64(Date().timeIntervalSince1970 * 1000)
+                )
             } catch {
                 await SyncClient.shared.markInstructionFailed(
                     instructionId: record.instructionId,
