@@ -34,15 +34,6 @@ final class DevicePresenceObserver: ObservableObject {
 
     @Published private(set) var state: State = .neverConnected
     @Published private(set) var devices: [DeviceSnapshot] = []
-    /// Live sessions the Mac last reported (running / waiting /
-    /// blocked, last 5 minutes). The chip composes its label from
-    /// `runningCount` so the user sees "1 running" or "2 running ·
-    /// 1 waiting" in the connection capsule.
-    @Published private(set) var liveSessions: [SessionSnapshot] = []
-
-    var runningCount: Int {
-        liveSessions.filter { $0.runState == "running" }.count
-    }
 
     private weak var inbox: SyncInbox?
     private var pollTimer: Timer?
@@ -138,9 +129,11 @@ final class DevicePresenceObserver: ObservableObject {
             if state != .neverConnected { state = .neverConnected }
             return
         }
-        // Single combined request — was two (devices + sessions).
-        // Phase A1.
-        let (fetchedDevices, fetchedSessions) = await fetchPresence()
+        // Devices only — the session count side of /v1/sync/presence
+        // is unused now that the chip derives "N running" locally from
+        // SyncInbox.activeSessionIds. The endpoint still returns
+        // sessions for older clients; we just drop them on the floor.
+        let fetchedDevices = await fetchPresenceDevices()
         if devices != fetchedDevices {
             devices = fetchedDevices
         }
@@ -148,18 +141,15 @@ final class DevicePresenceObserver: ObservableObject {
         if state != nextState {
             state = nextState
         }
-        if liveSessions != fetchedSessions {
-            liveSessions = fetchedSessions
-        }
     }
 
-    private func fetchPresence() async -> ([DeviceSnapshot], [SessionSnapshot]) {
-        guard let inbox else { return ([], []) }
+    private func fetchPresenceDevices() async -> [DeviceSnapshot] {
+        guard let inbox else { return [] }
         do {
             let resp: PresenceResponse = try await inbox.getJSONRaw("/v1/sync/presence")
-            return (resp.devices, resp.sessions)
+            return resp.devices
         } catch {
-            return ([], [])
+            return []
         }
     }
 
