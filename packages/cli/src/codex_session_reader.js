@@ -2,7 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
+// Default to ~/.codex/sessions; overridable for tests (and the
+// occasional debug-against-fixture session) via env.
+const CODEX_SESSIONS_DIR =
+  process.env.STEER_CODEX_SESSIONS_DIR ??
+  path.join(os.homedir(), ".codex", "sessions");
 const POLL_INTERVAL_MS = 250;
 const DISCOVERY_TIMEOUT_MS = 15_000;
 const DEBUG_LOG = process.env.STEER_READER_DEBUG_LOG;
@@ -40,6 +44,16 @@ export function startCodexSessionReader({ spawnedAt, onAgentMessage, onError }) 
     pollTimer.unref?.();
   };
 
+  // Whether we've already surfaced the "log not found yet"
+  // warning. We still keep polling past the discovery timeout
+  // because codex sometimes defers jsonl creation past 15s
+  // (slow disk, codex startup-time, the user reattaching to a
+  // wrapper that just finished its CLI boot). The fix for the
+  // 2026-05-12 dogfood regression: the previous code did
+  // `return;` here, killing the reader permanently — when the
+  // jsonl finally landed there was nothing left to read it.
+  let discoveryWarningEmitted = false;
+
   const tick = async () => {
     if (cancelled) return;
     try {
@@ -48,10 +62,17 @@ export function startCodexSessionReader({ spawnedAt, onAgentMessage, onError }) 
         if (candidate) {
           watchedFile = candidate;
           debug("watchedFile set", { file: watchedFile, spawnedAt: spawnedAt.toISOString() });
-        } else if (Date.now() - spawnedAt.getTime() > DISCOVERY_TIMEOUT_MS) {
-          debug("discovery timeout", { spawnedAt: spawnedAt.toISOString() });
-          onError?.(new Error("codex session log not found within 15s"));
-          return;
+        } else if (
+          !discoveryWarningEmitted &&
+          Date.now() - spawnedAt.getTime() > DISCOVERY_TIMEOUT_MS
+        ) {
+          debug("discovery timeout (continuing to poll)", { spawnedAt: spawnedAt.toISOString() });
+          discoveryWarningEmitted = true;
+          onError?.(
+            new Error(
+              "codex session log not found within 15s — continuing to poll"
+            )
+          );
         }
       }
 
