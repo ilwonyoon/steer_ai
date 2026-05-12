@@ -383,6 +383,27 @@ public final class SyncClient: ObservableObject {
         }
     }
 
+    /// Sibling to `fetchActiveCards` for the chip side. The cold-start
+    /// path uses this to seed `ChipReconciler`'s baseline so any
+    /// session the previous Mac process published as "running"
+    /// gets an explicit `runState="ended"` publish on first reload —
+    /// otherwise the relay keeps showing it as live for 90 s while
+    /// `last_activity_at` ages past the cutoff, and the iPhone chip
+    /// stays stuck at "1 running" the whole time.
+    public func fetchLiveSessions() async -> [SessionSnapshot] {
+        guard isSignedIn else { return [] }
+        struct ListResponse: Decodable { let sessions: [SessionSnapshot] }
+        do {
+            let resp: ListResponse = try await getJSON("/v1/sync/sessions")
+            return resp.sessions
+        } catch {
+            if !isTransientError(error) {
+                SignInDebugLog.write("[fetchLiveSessions] failed: \(error)")
+            }
+            return []
+        }
+    }
+
     public func publishCard(_ card: CardPayload) async {
         guard isSignedIn else {
             SignInDebugLog.write("[publish] skipped (not signed in) card=\(card.cardId)")

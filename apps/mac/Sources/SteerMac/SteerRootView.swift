@@ -37,7 +37,10 @@ struct SteerRootView: View {
     /// listLiveSessions cutoff drops sessions whose row hasn't been
     /// touched in 90s, and dedupe alone would let a steadily running
     /// session fall off that cliff and stop showing on iPhone.
-    @State private var lastPublishedChipFingerprints: [String: (fp: String, at: Date)] = [:]
+    /// Baseline used by `ChipReconciler` (SteerCore). Cold-start
+    /// seeded from `GET /v1/sync/sessions`; updated after each
+    /// reconcile pass.
+    @State private var lastPublishedChipMemory: [String: ChipPublishMemory] = [:]
     @State private var liveChipsExpanded = false
     /// Set of sessionIds where the user (typically from iPhone) issued
     /// an instruction we already injected; the badge counts how many
@@ -382,11 +385,11 @@ struct SteerRootView: View {
         if !signedIn || !toggleOn {
             if !lastPublishedCardIds.isEmpty
                 || !lastPublishedCardHashes.isEmpty
-                || !lastPublishedChipFingerprints.isEmpty
+                || !lastPublishedChipMemory.isEmpty
             {
                 lastPublishedCardIds.removeAll()
                 lastPublishedCardHashes.removeAll()
-                lastPublishedChipFingerprints.removeAll()
+                lastPublishedChipMemory.removeAll()
             }
             // Re-seed from relay on the next sign-in / toggle-on
             // cycle (the orphan-cleanup path runs once per
@@ -413,9 +416,29 @@ struct SteerRootView: View {
                 if !didSeedFromRelay {
                     let remoteCards = await SyncClient.shared.fetchActiveCards()
                     lastPublishedCardIds = Set(remoteCards.map(\.cardId))
+                    // Same cold-start treatment for the chip map. Any
+                    // session the previous Mac process published as
+                    // "running" — but the current local store no
+                    // longer reports as live — would otherwise stay
+                    // visible on iPhone's chip until relay's 90 s
+                    // `last_activity_at` cutoff aged it out. Seeding
+                    // here lets the next reconcile pass send an
+                    // explicit "ended" publish so the chip clears
+                    // within the iPhone's poll cadence (~5 s).
+                    let remoteSessions = await SyncClient.shared.fetchLiveSessions()
+                    let seedNow = Date().timeIntervalSince1970
+                    var seedMap: [String: ChipPublishMemory] = [:]
+                    for s in remoteSessions {
+                        let fp = "\(s.runState)|\(s.projectName ?? "")|\(s.provider)"
+                        seedMap[s.sessionId] = ChipPublishMemory(
+                            fingerprint: fp,
+                            publishedAtEpoch: seedNow
+                        )
+                    }
+                    lastPublishedChipMemory = seedMap
                     didSeedFromRelay = true
                     SignInDebugLog.write(
-                        "[reconcile] cold-start seed: relay had \(remoteCards.count) active card(s)"
+                        "[reconcile] cold-start seed: relay had \(remoteCards.count) active card(s), \(remoteSessions.count) live session(s)"
                     )
                 }
                 // Diff-based publish. Only PUT the cards/chips that
@@ -429,15 +452,18 @@ struct SteerRootView: View {
                 let (cardsToPublish, idsToResolve) = diffCardsForPublish(
                     loadedCards: loadedCards
                 )
-                let chipsToPublish = diffChipsForPublish(loadedChips: loadedChips)
+                let chipDiff = diffChipsForPublish(loadedChips: loadedChips)
                 if !cardsToPublish.isEmpty || !idsToResolve.isEmpty {
                     await syncToiPhone(
                         publishCards: cardsToPublish,
                         idsToResolve: idsToResolve
                     )
                 }
-                if !chipsToPublish.isEmpty {
-                    await syncLiveSessionsToiPhone(chips: chipsToPublish)
+                if !chipDiff.publishChips.isEmpty || !chipDiff.resolveChips.isEmpty {
+                    await syncLiveSessionsToiPhone(
+                        publishChips: chipDiff.publishChips,
+                        resolveChips: chipDiff.resolveChips
+                    )
                 }
             }
             // Drain on every 60s tick at most. The primary drain
@@ -487,8 +513,18 @@ struct SteerRootView: View {
     /// can render the "1 running" badge inside its connection chip.
     /// LiveSessionChip is what RunningBadge already consumes locally;
     /// we lift the same shape to the wire as SessionSnapshot.
-    private func syncLiveSessionsToiPhone(chips: [LiveSessionChip]) async {
-        for chip in chips {
+    ///
+    /// `publishChips` are live sessions (runState=running/waiting/blocked)
+    /// the relay should mirror. `resolveChips` are session ids the
+    /// local store no longer reports as live — we publish them with
+    /// `runState="ended"` so the relay's `listLiveSessions` cutoff
+    /// drops them on the very next iPhone poll instead of waiting
+    /// 90 s for `last_activity_at` to age out.
+    private func syncLiveSessionsToiPhone(
+        publishChips: [LiveSessionChip],
+        resolveChips: [String]
+    ) async {
+        for chip in publishChips {
             let snapshot = SessionSnapshot(
                 sessionId: chip.sessionId,
                 provider: chip.provider.rawValue,
@@ -496,6 +532,17 @@ struct SteerRootView: View {
                 branchLabel: nil,
                 runState: chip.runState,
                 lastActivityAt: Int64(chip.lastActivityAt.timeIntervalSince1970 * 1000)
+            )
+            await SyncClient.shared.publishSession(snapshot)
+        }
+        for id in resolveChips {
+            let snapshot = SessionSnapshot(
+                sessionId: id,
+                provider: "",
+                projectName: nil,
+                branchLabel: nil,
+                runState: "ended",
+                lastActivityAt: Int64(Date().timeIntervalSince1970 * 1000)
             )
             await SyncClient.shared.publishSession(snapshot)
         }
@@ -560,29 +607,30 @@ struct SteerRootView: View {
     ///    been touched in 90s, so without a periodic re-publish a
     ///    healthy long-running session would fall off the iPhone
     ///    chip's "N running" count after ~90s of no activity.
+    /// Delegates to `ChipReconciler` (SteerCore) for the actual
+    /// diff so the logic is unit-tested in isolation. Translates
+    /// the chip array into snapshots, then materializes the
+    /// reconciler's id-only decision back into LiveSessionChip
+    /// payloads for the caller. Updates `lastPublishedChipMemory`
+    /// optimistically (same retry behavior the cards path uses).
     private func diffChipsForPublish(
         loadedChips: [LiveSessionChip]
-    ) -> [LiveSessionChip] {
-        var next: [LiveSessionChip] = []
-        let now = Date()
-        let heartbeatInterval: TimeInterval = 30
-        for chip in loadedChips {
-            let fp = "\(chip.runState)|\(chip.project)|\(chip.provider.rawValue)"
-            let prev = lastPublishedChipFingerprints[chip.sessionId]
-            let staleHeartbeat = prev.map { now.timeIntervalSince($0.at) > heartbeatInterval } ?? true
-            if prev?.fp != fp || staleHeartbeat {
-                next.append(chip)
-                lastPublishedChipFingerprints[chip.sessionId] = (fp, now)
-            }
+    ) -> (publishChips: [LiveSessionChip], resolveChips: [String]) {
+        let snapshots = loadedChips.map { chip in
+            ChipSnapshot(
+                sessionId: chip.sessionId,
+                fingerprint: "\(chip.runState)|\(chip.project)|\(chip.provider.rawValue)"
+            )
         }
-        // Prune snapshots for chips that no longer exist locally so
-        // the dictionary doesn't grow unbounded across long-running
-        // sessions.
-        let liveIds = Set(loadedChips.map(\.sessionId))
-        for key in lastPublishedChipFingerprints.keys where !liveIds.contains(key) {
-            lastPublishedChipFingerprints.removeValue(forKey: key)
-        }
-        return next
+        let decision = ChipReconciler.reconcile(
+            currentLocal: snapshots,
+            lastPublished: lastPublishedChipMemory,
+            now: Date().timeIntervalSince1970
+        )
+        let toPublishIds = decision.publishIds.union(decision.heartbeatIds)
+        let publishChips = loadedChips.filter { toPublishIds.contains($0.sessionId) }
+        lastPublishedChipMemory = decision.nextPublished
+        return (publishChips, Array(decision.resolveIds))
     }
 
     private func syncToiPhone(
