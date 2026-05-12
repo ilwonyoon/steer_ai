@@ -655,6 +655,34 @@ public final class SyncInbox: ObservableObject {
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task: task)
         }
+        // Drive a 30s client-side keepalive — Cloudflare DOs close
+        // idle WebSockets after ~5–10 min. Without this the iPhone's
+        // /connect socket drops every few minutes and any card.upsert
+        // pushed by the Mac during the backoff window arrives late
+        // (or only after the next presence poll catches up). See the
+        // matching block in apps/mac SyncClient.connectWebSocket.
+        pingTask?.cancel()
+        pingTask = Task { [weak self] in
+            await self?.pingLoop(task: task)
+        }
+    }
+
+    private var pingTask: Task<Void, Never>?
+
+    private func pingLoop(task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard task === webSocketTask else { return }
+            let ping = WSMessage.ping
+            guard let data = try? JSONEncoder().encode(ping),
+                  let s = String(data: data, encoding: .utf8) else { continue }
+            do {
+                try await task.send(.string(s))
+            } catch {
+                return
+            }
+        }
     }
 
     /// Tracked across reconnect attempts so the backoff grows. Reset

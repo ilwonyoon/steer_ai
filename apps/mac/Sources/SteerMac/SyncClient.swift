@@ -474,6 +474,44 @@ public final class SyncClient: ObservableObject {
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task: task)
         }
+        // Cloudflare Workers Durable Objects close idle WebSockets
+        // after ~5–10 min. We saw the wrangler tail print
+        //   GET /v1/stream - Canceled @ 11:01:31 PM (last activity 10:55)
+        // every ~6 min in the user's session, dropping the socket
+        // during the exact window an iPhone reply would have been
+        // pushed. The relay only sends a single ping on accept and
+        // never again; clients didn't send any ping either. Drive
+        // a client-side ping every 30s so Cloudflare's idle timer
+        // never trips: any pong (or even the bare ping send) keeps
+        // the socket warm. Sized at 30s so we tolerate one missed
+        // ping cycle before Cloudflare's window expires.
+        pingTask?.cancel()
+        pingTask = Task { [weak self] in
+            await self?.pingLoop(task: task)
+        }
+    }
+
+    private var pingTask: Task<Void, Never>?
+
+    private func pingLoop(task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            // If the receive loop already moved on to a new socket,
+            // stop pinging the old one.
+            guard task === webSocketTask else { return }
+            let ping = WSMessage.ping
+            guard let data = try? JSONEncoder().encode(ping),
+                  let s = String(data: data, encoding: .utf8) else { continue }
+            do {
+                try await task.send(.string(s))
+            } catch {
+                // Send failure means the socket is already dead;
+                // the receive loop will surface the same error and
+                // trigger reconnect. Just exit the ping loop.
+                return
+            }
+        }
     }
 
     /// Tracked across reconnect attempts so the backoff grows. Reset
