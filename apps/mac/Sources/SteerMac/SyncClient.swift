@@ -136,7 +136,17 @@ public final class SyncClient: ObservableObject {
         } catch {
             self.pendingSignIn = nil
             SignInDebugLog.write("[apple-signin] failed: \(error)")
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            // Same canceled-suppression rationale as
+            // handleAppleSignInResult above — keep silent on user
+            // cancel + macOS 26 transient retry-cancel, surface
+            // everything else.
+            let ns = error as NSError
+            let isCanceled =
+                ns.domain == ASAuthorizationError.errorDomain
+                && ns.code == ASAuthorizationError.canceled.rawValue
+            if !isCanceled {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -157,7 +167,24 @@ public final class SyncClient: ObservableObject {
             }
             await handleAppleCredential(credential)
         case .failure(let error):
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            SignInDebugLog.write("[apple-signin] onCompletion failure: \(error)")
+            // ASAuthorizationError.canceled fires when the user
+            // dismisses the system sheet OR — more often than you'd
+            // expect — when macOS 26's SignInWithAppleButton emits a
+            // transient cancellation before re-presenting the sheet
+            // and succeeding on the next pass. Either way it's not
+            // something the user wants to read in red right above
+            // the button they just clicked.
+            //
+            // Other failure modes (network, missing entitlement)
+            // SHOULD surface, so we only silence the canceled code.
+            let ns = error as NSError
+            let isCanceled =
+                ns.domain == ASAuthorizationError.errorDomain
+                && ns.code == ASAuthorizationError.canceled.rawValue
+            if !isCanceled {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
             status = .signedOut
         }
     }
