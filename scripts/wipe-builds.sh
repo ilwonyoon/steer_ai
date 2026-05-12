@@ -29,6 +29,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> Killing every Steer/SteerMac process spawned from this repo"
 pkill -f "$ROOT_DIR/.build/.*/Contents/MacOS/SteerMac" 2>/dev/null || true
 pkill -f "swift run SteerMac"                          2>/dev/null || true
+# Same reason as in refresh-dogfood.sh: kill the auto-spawned
+# SteerAgent so a stale node process doesn't serve old code on
+# the next start.
+pkill -9 -f "packages/agent/src/agent.js"              2>/dev/null || true
+rm -f "$HOME/.steer/steer.sock"
 sleep 1
 
 echo "==> Wiping .build/*.app"

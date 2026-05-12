@@ -59,6 +59,18 @@ pkill -f "/.build/Steer.app/Contents/MacOS/SteerMac"   2>/dev/null || true
 pkill -f "swift run SteerMac"                          2>/dev/null || true
 # Anything that opened our app via launchd
 pkill -fl "ai.steer.mac" 2>/dev/null || true
+# CRITICAL: also kill the SteerAgent node process. Mac auto-spawns
+# it on launch but never reaps it on quit, so a SteerAgent from an
+# older main commit can outlive Steer.app and keep serving the
+# Unix socket with stale code (stale classifier, stale store,
+# stale publishCard wire). Symptom: Steer.app gets the new logic
+# but its backend is still the previous build, so cards stop
+# regenerating after the first iPhone reply.
+pkill -9 -f "packages/agent/src/agent.js"              2>/dev/null || true
+# Drop the stale Unix socket so the next SteerAgent can bind. The
+# kill above leaves an orphan socket file the next process treats
+# as 'already running' and exits.
+rm -f "$HOME/.steer/steer.sock"
 sleep 2
 
 echo "==> Removing every .app folder under .build/ (old bundle names included)"
