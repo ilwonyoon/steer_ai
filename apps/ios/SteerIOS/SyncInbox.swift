@@ -18,7 +18,19 @@ public final class SyncInbox: ObservableObject {
     public static let shared = SyncInbox()
 
     @Published public private(set) var status: Status = .signedOut
+
+    /// Single source of truth for "what sessions are we tracking, and
+    /// what stage is each in." All other published projections (cards,
+    /// pendingReplies, activeSessionIds) derive from this. Mutations
+    /// MUST go through SessionEntryStore + setSessions so the derived
+    /// arrays stay consistent in one tick.
+    @Published public private(set) var sessions: [SessionEntry] = []
+
+    /// Cards the user must respond to. Derived from `sessions`. Kept
+    /// as a published projection so existing UI bindings don't have to
+    /// learn the new model.
     @Published public private(set) var cards: [CardPayload] = []
+
     @Published public private(set) var lastError: String?
 
     public enum Status: Equatable {
@@ -451,25 +463,18 @@ public final class SyncInbox: ObservableObject {
         if loadPhase == .idle { loadPhase = .bootstrapping }
         do {
             let resp: CardListResponse = try await getJSON("/v1/sync/cards")
-            // Filter out cards we're optimistically replying to so
-            // the GET-driven reload doesn't undo the user's send.
-            // pendingReplies clears when the relay broadcasts the
-            // matching card.resolved (see handleWSText).
-            let pendingCardIds = Set(pendingReplies.map(\.cardId))
-            let priorCardIds = Set(cards.map(\.cardId))
-            cards = resp.cards
-                .filter { !pendingCardIds.contains($0.cardId) }
-                .sorted { $0.updatedAt < $1.updatedAt }
-            // Any card id we hadn't seen before is a fresh response
-            // for that session → drop matching .injected rows.
-            let newSessionIds = Set(
-                cards
-                    .filter { !priorCardIds.contains($0.cardId) }
-                    .map(\.sessionId)
+            // applyBootstrap preserves any sessions currently in
+            // .awaitingResponse / .failed (the user replied; Mac may
+            // have resolved the original card server-side, and the
+            // GET will lack it — we don't want to drop the entry
+            // until the WS push for the fresh card lands). It also
+            // refreshes content for sessions already in
+            // .awaitingUser and removes ones the relay no longer has.
+            setSessions(
+                SessionEntryStore.applyBootstrap(
+                    previous: sessions, cards: resp.cards
+                )
             )
-            for sid in newSessionIds {
-                pendingReplies = transitions(forCardArrivalIn: sid)
-            }
             // First card list landed — UI can leave the cold-start
             // placeholder, even when the list is empty.
             loadPhase = .ready
@@ -540,8 +545,10 @@ public final class SyncInbox: ObservableObject {
     }
 
     /// In-flight reply that the user already saw "leave" the card
-    /// stack. Stays here until the relay POST resolves. Failed sends
-    /// stay with status=failed so the chip can offer retry/cancel.
+    /// Legacy projection of `sessions`. UI surfaces (PendingRepliesRow,
+    /// failure banner) that pre-date the unified model still read this.
+    /// Computed for backwards compatibility; the canonical source is
+    /// `sessions`.
     public struct PendingReply: Identifiable, Equatable {
         public let id: String              // instruction id
         public let cardId: String
@@ -551,79 +558,97 @@ public final class SyncInbox: ObservableObject {
         public let sentAt: Date
         public var status: Status
 
-        /// .sending  → POST in flight
-        /// .injected → relay enqueued; Mac is or will pick it up.
-        ///             The chip stays lit until a fresh card for
-        ///             this sessionId arrives — that's the only
-        ///             signal we trust as "terminal answered."
-        /// .failed   → user must retry or cancel.
         public enum Status: Equatable {
-            case sending
-            case injected
+            case sending      // entry currently `.awaitingResponse`
+            case injected     // (kept for binary compat, unused now)
             case failed(String)
         }
-
-        /// Project this row into the pure transition type the
-        /// SteerCore helper consumes. The helper doesn't know
-        /// anything about iPhone-specific fields (cardId, text,
-        /// sentAt) — it only needs (id, sessionId, status).
-        var transitionSnapshot: PendingReplySnapshot {
-            let s: PendingReplyStatus
-            switch status {
-            case .sending: s = .sending
-            case .injected: s = .injected
-            case .failed(let r): s = .failed(r)
-            }
-            return PendingReplySnapshot(
-                id: id, sessionId: sessionId, status: s
-            )
-        }
     }
+
+    /// Sessions whose stage is `.awaitingResponse` or `.failed`,
+    /// projected as PendingReply rows. Old UI bindings consume this.
     @Published public private(set) var pendingReplies: [PendingReply] = []
 
-    /// Optimistic send: yank the card from `cards` immediately (the
-    /// user's intent is "I'm done with it"), put a row in
-    /// pendingReplies, and POST in the background. Success: drop the
-    /// row. Failure: keep the row at .failed + push the card back so
-    /// the user can retry without losing context.
+    /// Sessions in `.awaitingResponse`. The chip count is exactly
+    /// this set's size — derived from `sessions`, not from polling
+    /// the relay.
+    public var activeSessionIds: Set<String> {
+        Set(SessionEntryStore.awaitingResponseEntries(in: sessions)
+            .map(\.sessionId))
+    }
+
+    /// Single mutation funnel. Recomputes the derived projections in
+    /// the same tick the source changes — UI never sees a state where
+    /// the chip and the carousel disagree.
+    private func setSessions(_ next: [SessionEntry]) {
+        sessions = next
+        cards = SessionEntryStore.awaitingUserEntries(in: next).map(\.card)
+        pendingReplies = (
+            SessionEntryStore.awaitingResponseEntries(in: next)
+            + SessionEntryStore.failedEntries(in: next)
+        ).compactMap(makePendingReply(from:))
+    }
+
+    private func makePendingReply(from entry: SessionEntry) -> PendingReply? {
+        guard let instructionId = entry.lastInstructionId,
+              let text = entry.lastReplyText
+        else { return nil }
+        let status: PendingReply.Status
+        switch entry.stage {
+        case .awaitingResponse: status = .sending
+        case .failed(let r):    status = .failed(r)
+        case .awaitingUser:     return nil
+        }
+        return PendingReply(
+            id: instructionId,
+            cardId: entry.card.cardId,
+            sessionId: entry.sessionId,
+            cardTitle: entry.card.title,
+            text: text,
+            sentAt: Date(),
+            status: status
+        )
+    }
+
+    /// Optimistic send. Atomically moves the session entry from
+    /// `.awaitingUser` to `.awaitingResponse` — same array, one
+    /// mutation. The chip count rises and the card carousel drops the
+    /// card in the same SwiftUI tick.
     public func sendReply(text: String, for card: CardPayload) {
         guard isSignedIn else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // The card the user is replying to should already be in
+        // `sessions` (we drove it there via WS upsert or bootstrap).
+        // If it isn't, this is a stale UI binding — bail.
+        guard sessions.contains(where: { $0.card.cardId == card.cardId })
+        else { return }
 
-        // Snapshot the card BEFORE we remove it so we can restore on
-        // failure.
-        let snapshot = card
         let instructionId = UUID().uuidString
-        let pending = PendingReply(
-            id: instructionId,
-            cardId: card.cardId,
-            sessionId: card.sessionId,
-            cardTitle: card.title,
-            text: trimmed,
-            sentAt: Date(),
-            status: .sending
+        setSessions(
+            SessionEntryStore.markUserReplied(
+                previous: sessions,
+                cardId: card.cardId,
+                text: trimmed,
+                instructionId: instructionId
+            )
         )
-        pendingReplies.append(pending)
-        cards.removeAll { $0.cardId == card.cardId }
 
         Task { [weak self] in
             await self?.postReply(
-                pendingId: instructionId,
+                instructionId: instructionId,
                 request: InstructionRequestV2(
                     instructionId: instructionId,
-                    targetSessionId: snapshot.sessionId,
+                    targetSessionId: card.sessionId,
                     text: trimmed
-                ),
-                cardSnapshot: snapshot
+                )
             )
         }
     }
 
     private func postReply(
-        pendingId: String,
-        request: InstructionRequestV2,
-        cardSnapshot: CardPayload
+        instructionId: String,
+        request: InstructionRequestV2
     ) async {
         struct ReplyResponse: Decodable {
             let ok: Bool
@@ -634,76 +659,71 @@ public final class SyncInbox: ObservableObject {
                 "/v1/sync/instructions",
                 body: request
             )
-            // POST accepted by relay → the row transitions from
-            // .sending to .injected. We deliberately do NOT drop
-            // the row here: the user's mental model is "I replied
-            // and the terminal is working." The row only clears
-            // when a new card for this session arrives (the
-            // terminal produced its response), driven from
-            // upsertCard via PendingReplyTransitions.
-            if let idx = pendingReplies.firstIndex(where: { $0.id == pendingId }),
-               pendingReplies[idx].status == .sending {
-                pendingReplies[idx].status = .injected
-            }
+            // Success = entry stays at .awaitingResponse. We don't
+            // need to do anything here; the chip will clear when the
+            // terminal produces a fresh card (WS upsert with new
+            // cardId for this session).
         } catch {
-            // Restore the card and mark the pending row failed.
-            if !cards.contains(where: { $0.cardId == cardSnapshot.cardId }) {
-                cards.append(cardSnapshot)
-                cards.sort { $0.updatedAt < $1.updatedAt }
-            }
-            if let idx = pendingReplies.firstIndex(where: { $0.id == pendingId }) {
-                pendingReplies[idx].status = .failed(error.localizedDescription)
-            }
+            setSessions(
+                SessionEntryStore.markReplyFailed(
+                    previous: sessions,
+                    instructionId: instructionId,
+                    reason: error.localizedDescription
+                )
+            )
         }
     }
 
-    /// Sessions currently in the "user replied, terminal still
-    /// working" state. The MacConnectionChip and MacSyncStatusView
-    /// derive their running-count from this set. Equivalent to the
-    /// Mac side's `instructedSessions.keys`, but computed entirely
-    /// from local iPhone state (the relay's outdated
-    /// `/v1/sync/sessions` polling is no longer consulted).
-    public var activeSessionIds: Set<String> {
-        PendingReplyTransitions.activeSessionIds(
-            in: pendingReplies.map(\.transitionSnapshot)
+    /// Manual retry from the failed-reply row. Re-runs the POST with
+    /// the same text against the same session.
+    public func retryPendingReply(_ instructionId: String) {
+        guard let entry = sessions.first(where: {
+            $0.lastInstructionId == instructionId
+        }) else { return }
+        guard let text = entry.lastReplyText else { return }
+        let newInstructionId = UUID().uuidString
+        // Reuse the same card; just reset stage + bump instruction id.
+        setSessions(
+            SessionEntryStore.markUserReplied(
+                previous: sessions,
+                cardId: entry.card.cardId,
+                text: text,
+                instructionId: newInstructionId
+            )
         )
+        Task { [weak self] in
+            await self?.postReply(
+                instructionId: newInstructionId,
+                request: InstructionRequestV2(
+                    instructionId: newInstructionId,
+                    targetSessionId: entry.sessionId,
+                    text: text
+                )
+            )
+        }
     }
 
-    private func transitions(
-        forCardArrivalIn sessionId: String
-    ) -> [PendingReply] {
-        let snapshots = pendingReplies.map(\.transitionSnapshot)
-        let next = PendingReplyTransitions.onCardArrivedForSession(
-            previous: snapshots, sessionId: sessionId
+    /// Cancel a failed reply — entry returns to `.awaitingUser` so
+    /// the card resurfaces in the carousel for the user to edit or
+    /// skip.
+    public func cancelPendingReply(_ instructionId: String) {
+        setSessions(
+            SessionEntryStore.cancelFailedReply(
+                previous: sessions,
+                instructionId: instructionId
+            )
         )
-        let keepIds = Set(next.map(\.id))
-        return pendingReplies.filter { keepIds.contains($0.id) }
-    }
-
-    /// Manual retry from the pending-reply chip. Requeues the same
-    /// text against the same session.
-    public func retryPendingReply(_ id: String) {
-        guard let pending = pendingReplies.first(where: { $0.id == id }) else { return }
-        let cardId = pending.cardId
-        // Drop the failed row; sendReply will append a fresh sending
-        // row. If the card is still visible (because we restored it
-        // on failure), pull it back out.
-        pendingReplies.removeAll { $0.id == id }
-        guard let card = cards.first(where: { $0.cardId == cardId }) else { return }
-        sendReply(text: pending.text, for: card)
-    }
-
-    /// Cancel a failed reply — drop the pending row but leave the
-    /// restored card visible so the user can rewrite or skip.
-    public func cancelPendingReply(_ id: String) {
-        pendingReplies.removeAll { $0.id == id }
     }
 
     public func resolveCard(_ cardId: String) async {
         guard isSignedIn else { return }
         do {
             try await deleteRequest("/v1/sync/cards/\(cardId)")
-            cards.removeAll { $0.cardId == cardId }
+            setSessions(
+                SessionEntryStore.onCardResolved(
+                    previous: sessions, cardId: cardId
+                )
+            )
         } catch {
             lastError = "resolveCard failed: \(error.localizedDescription)"
         }
@@ -793,43 +813,31 @@ public final class SyncInbox: ObservableObject {
         }
         switch message {
         case .cardUpsert(let card):
-            // Drop upserts for any card the user already replied to.
-            // Mac re-publishes every active card on each reload tick
-            // (~2s), which races our optimistic removal: the user
-            // taps Send → we remove the card → 1s later Mac's tick
-            // re-publishes the same row → WS broadcast → card pops
-            // back in. The reconcile loop on Mac then resolves it
-            // ~1s after that ("disappear, reappear, disappear"). We
-            // gate WS upserts on the pendingReplies set so the
-            // optimistic state wins.
-            if pendingReplies.contains(where: { $0.cardId == card.cardId }) {
-                return
-            }
-            // Keep ordering by updatedAt asc; replace existing or append.
-            let isNewCardId = !cards.contains(where: { $0.cardId == card.cardId })
-            if let idx = cards.firstIndex(where: { $0.cardId == card.cardId }) {
-                cards[idx] = card
-            } else {
-                cards.append(card)
-            }
-            cards.sort { $0.updatedAt < $1.updatedAt }
-            // A *new* card id for this session means the terminal
-            // produced a fresh response — that's the signal we trust
-            // to clear the running chip. Only run on new ids (re-
-            // upserts of the same cardId are just classifier
-            // updates, not new responses).
-            if isNewCardId {
-                pendingReplies = transitions(forCardArrivalIn: card.sessionId)
-            }
+            // SessionEntryStore handles every case:
+            //   - Same cardId: refresh content, preserve stage. The
+            //     "Mac re-publishes my optimistically-removed card"
+            //     race is gone — the entry's stage already says
+            //     awaitingResponse, and the upsert can't downgrade it.
+            //   - New cardId for an existing session: the terminal
+            //     produced a fresh response. Atomic swap: stage
+            //     resets to .awaitingUser, chip count drops by one,
+            //     carousel gains the new card — all in one mutation.
+            //   - Brand-new session: insert as .awaitingUser.
+            setSessions(
+                SessionEntryStore.onCardUpsert(
+                    previous: sessions, card: card
+                )
+            )
             // First WS upsert during cold-start counts as ready —
             // we have at least one real card even if the bootstrap
             // GET hasn't returned yet.
             if loadPhase != .ready { loadPhase = .ready }
         case .cardResolved(let id):
-            cards.removeAll { $0.cardId == id }
-            // A resolve from the server is the authoritative signal
-            // that our pending reply made it through; clear the row.
-            pendingReplies.removeAll { $0.cardId == id }
+            setSessions(
+                SessionEntryStore.onCardResolved(
+                    previous: sessions, cardId: id
+                )
+            )
         case .ping:
             sendPong()
         default:
