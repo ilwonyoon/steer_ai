@@ -29,23 +29,19 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-// The reader reads STEER_CODEX_SESSIONS_DIR at module-load time
-// (see codex_session_reader.js). We seed a per-process root and
-// then each test sets up its OWN subdir + RE-IMPORTS the module
-// so the new dir is picked up. Cleaner than mutating shared
-// state across tests.
+// The reader reads STEER_CODEX_SESSIONS_DIR PER POLL (function
+// call, not module-level constant) so each test can safely
+// repoint it without re-importing the module. See
+// codex_session_reader.js codexSessionsDir().
+import { startCodexSessionReader } from "../src/codex_session_reader.js";
+
 const SESSIONS_ROOT = fs.mkdtempSync(
   path.join(os.tmpdir(), "steer-codex-reader-root-")
 );
 
-// Each test calls `loadReader(sessionsDir)` to get a fresh
-// reader pointed at its isolated dir. We force a fresh module
-// import (cache-busting query string) so the module-level
-// CODEX_SESSIONS_DIR reads the current env.
 async function loadReader(sessionsDir) {
   process.env.STEER_CODEX_SESSIONS_DIR = sessionsDir;
-  const mod = await import(`../src/codex_session_reader.js?t=${Math.random()}`);
-  return mod.startCodexSessionReader;
+  return startCodexSessionReader;
 }
 
 let sessionCounter = 0;
