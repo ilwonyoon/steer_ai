@@ -1,18 +1,27 @@
 import SwiftUI
 import SteerCore
 
-/// Compact rounded capsule with a colored dot + Mac display label.
-/// Sits in the InboxView header (top-right) per
-/// IOS_PRE_CONNECTION_ONBOARDING.md "Persistent Mac Connection
-/// Indicator". Tapping opens MacSyncStatusView.
+/// Single capsule chip at the top of InboxView that surfaces ALL
+/// connection-related signals — Mac presence, in-flight replies,
+/// running sessions. It used to be three separate widgets
+/// (MacConnectionChip, PendingRepliesChip, LiveSessionChipRow);
+/// stacking them broke the user's mental model that the header
+/// state ("Mac") and the activity state ("1 running") are the
+/// same slot. Tapping opens MacSyncStatusView, which lists running
+/// sessions and pending replies inline so the affordance now
+/// matches: every chip variant has the same destination.
 struct MacConnectionChip: View {
     let state: DevicePresenceObserver.State
-    /// Sessions the Mac is actively executing (no card yet — waiting
-    /// for stop). Mirrors the Mac status-bar "1 running" badge. Cards
-    /// already in the stack are NOT counted here: they're already
-    /// visible in the carousel below, so surfacing them in the chip
-    /// would just duplicate the same number on screen.
+    /// Sessions the Mac is actively executing. Comes from the
+    /// instructed-session set the Mac publishes (see
+    /// SteerCore.InstructedSessionDecay).
     var runningCount: Int = 0
+    /// Replies the iPhone is currently shipping to the Mac. Mid-
+    /// flight — not yet confirmed by markInjected.
+    var sendingCount: Int = 0
+    /// Replies that the Mac rejected, network failed, etc. The user
+    /// can retry/cancel them from the sheet.
+    var failedCount: Int = 0
     let onTap: () -> Void
 
     var body: some View {
@@ -35,18 +44,29 @@ struct MacConnectionChip: View {
         .accessibilityLabel("Mac connection: \(label).")
     }
 
-    /// Connected Mac with at least one running session → "N running".
-    /// No running sessions → connection-state label ("Mac" / "Stale"
-    /// / "Offline"). Waiting cards live in the carousel; we never
-    /// duplicate that count up here.
+    /// Priority: failed > sending > running > state.label. Failed is
+    /// always loudest because it's the only state the user can fix.
+    /// Sending takes precedence over running so the user sees their
+    /// own reply moving before they see the resulting work.
     private var label: String {
+        var parts: [String] = []
+        if failedCount > 0 { parts.append("\(failedCount) failed") }
+        if sendingCount > 0 { parts.append("\(sendingCount) sending") }
         if case .connected = state, runningCount > 0 {
-            return "\(runningCount) running"
+            parts.append("\(runningCount) running")
         }
-        return state.label
+        if parts.isEmpty { return state.label }
+        return parts.joined(separator: " · ")
     }
 
+    /// Failed dominates the dot color — that's the actionable state.
+    /// Sending stays green-ish (work in progress), running uses the
+    /// running color, idle falls back to the connection state.
     private var dotColor: Color {
+        if failedCount > 0 { return SteerColors.blocked }
+        if sendingCount > 0 || runningCount > 0 {
+            return SteerColors.running
+        }
         switch state {
         case .demo: return SteerColors.tertiaryInk
         case .neverConnected: return SteerColors.tertiaryInk
@@ -58,12 +78,19 @@ struct MacConnectionChip: View {
     }
 }
 
-/// Sheet shown when the user taps the chip. Surfaces the live state,
-/// the underlying Mac device row, and recovery instructions matched
-/// to the current state — copy verbatim from
-/// IOS_PRE_CONNECTION_ONBOARDING.md.
+/// Sheet shown when the user taps the chip. Single destination for
+/// every chip variant so the affordance is consistent — Mac state,
+/// running sessions (when any), and pending replies (when any) all
+/// live in one list. Recovery instructions only show for states
+/// where the user can do something about it (offline / stale /
+/// error / neverConnected); the connected case used to surface a
+/// "What Now" section but it just restated what the user already
+/// knew, so we drop it.
 struct MacSyncStatusView: View {
     @ObservedObject var observer: DevicePresenceObserver
+    let pendingReplies: [SyncInbox.PendingReply]
+    let onRetry: (String) -> Void
+    let onCancel: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -85,6 +112,30 @@ struct MacSyncStatusView: View {
                     Text("State")
                 }
 
+                if !runningSessions.isEmpty {
+                    Section {
+                        ForEach(runningSessions, id: \.sessionId) { session in
+                            RunningSessionRow(session: session)
+                        }
+                    } header: {
+                        Text("Running")
+                    }
+                }
+
+                if !pendingReplies.isEmpty {
+                    Section {
+                        ForEach(pendingReplies) { reply in
+                            PendingReplyRow(
+                                reply: reply,
+                                onRetry: onRetry,
+                                onCancel: onCancel
+                            )
+                        }
+                    } header: {
+                        Text("Pending replies")
+                    }
+                }
+
                 if let mac = primaryMac {
                     Section {
                         LabeledRow(label: "Display name", value: mac.displayName ?? "—")
@@ -97,14 +148,19 @@ struct MacSyncStatusView: View {
                     }
                 }
 
-                Section {
-                    ForEach(recoverySteps, id: \.self) { step in
-                        Text(step)
+                // Recovery steps only when the user has something to
+                // fix. Connected/demo just show the live state above —
+                // adding a "What Now" section restated the obvious.
+                if needsRecoverySection {
+                    Section {
+                        ForEach(recoverySteps, id: \.self) { step in
+                            Text(step)
+                        }
+                    } header: {
+                        Text(recoveryTitle)
+                    } footer: {
+                        Text("Replies queue while the Mac is offline.")
                     }
-                } header: {
-                    Text(recoveryTitle)
-                } footer: {
-                    Text("Replies queue while the Mac is offline.")
                 }
             }
             .navigationTitle("Mac Sync Status")
@@ -115,6 +171,17 @@ struct MacSyncStatusView: View {
                 }
             }
             .refreshable { await observer.refresh() }
+        }
+    }
+
+    private var runningSessions: [SessionSnapshot] {
+        observer.liveSessions.filter { $0.runState == "running" }
+    }
+
+    private var needsRecoverySection: Bool {
+        switch observer.state {
+        case .neverConnected, .stale, .offline, .error: return true
+        case .connected, .demo: return false
         }
     }
 
@@ -211,6 +278,107 @@ private struct LabeledRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+        }
+    }
+}
+
+private struct RunningSessionRow: View {
+    let session: SessionSnapshot
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(SteerColors.running)
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.projectName ?? session.sessionId)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text(providerLabel)
+                        .font(.system(size: 13))
+                        .foregroundStyle(SteerColors.secondaryInk)
+                    if let branch = session.branchLabel {
+                        Text("·").foregroundStyle(SteerColors.tertiaryInk)
+                        Text(branch)
+                            .font(.system(size: 13))
+                            .foregroundStyle(SteerColors.secondaryInk)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            Spacer()
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var providerLabel: String {
+        switch session.provider {
+        case "claude": return "Claude Code"
+        case "codex": return "Codex CLI"
+        case "gemini": return "Gemini CLI"
+        default: return "CLI"
+        }
+    }
+}
+
+private struct PendingReplyRow: View {
+    let reply: SyncInbox.PendingReply
+    let onRetry: (String) -> Void
+    let onCancel: (String) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: statusIcon)
+                .font(.system(size: 13))
+                .foregroundStyle(statusColor)
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(reply.cardTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                Text(reply.text)
+                    .font(.system(size: 14))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .lineLimit(2)
+                if case .failed(let reason) = reply.status {
+                    Text(reason)
+                        .font(.system(size: 12))
+                        .foregroundStyle(SteerColors.blocked)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            if case .failed = reply.status {
+                VStack(spacing: 6) {
+                    Button("Retry") { onRetry(reply.id) }
+                        .font(.system(size: 14, weight: .semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                    Button {
+                        onCancel(reply.id)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(SteerColors.tertiaryInk)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var statusIcon: String {
+        switch reply.status {
+        case .sending: return "paperplane.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+    private var statusColor: Color {
+        switch reply.status {
+        case .sending: return SteerColors.running
+        case .failed: return SteerColors.blocked
         }
     }
 }

@@ -58,6 +58,17 @@ struct InboxView: View {
         }
     }
 
+    private var sendingRepliesCount: Int {
+        inbox.pendingReplies.filter { $0.status == .sending }.count
+    }
+
+    private var failedRepliesCount: Int {
+        inbox.pendingReplies.reduce(0) { acc, p in
+            if case .failed = p.status { return acc + 1 }
+            return acc
+        }
+    }
+
     private var currentIndex: Int {
         guard let focusedSessionId,
               let idx = cards.firstIndex(where: { $0.sessionId == focusedSessionId })
@@ -92,7 +103,14 @@ struct InboxView: View {
             }
         }
         .sheet(isPresented: $showsMacSyncStatus) {
-            MacSyncStatusView(observer: devicePresence)
+            MacSyncStatusView(
+                observer: devicePresence,
+                pendingReplies: inbox.pendingReplies,
+                onRetry: { inbox.retryPendingReply($0) },
+                onCancel: { inbox.cancelPendingReply($0) }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showsSettings) {
             NavigationStack {
@@ -221,6 +239,8 @@ struct InboxView: View {
                 onExitDemo: { inbox.exitDemoMode() },
                 connectionState: devicePresence.state,
                 runningCount: devicePresence.runningCount,
+                sendingCount: sendingRepliesCount,
+                failedCount: failedRepliesCount,
                 onTapChip: { showsMacSyncStatus = true },
                 onTapSettings: { showsSettings = true }
             )
@@ -232,22 +252,12 @@ struct InboxView: View {
             if inbox.notificationPermission == .denied {
                 NotificationsDeniedBanner()
             }
-
-            if !inbox.pendingReplies.isEmpty {
-                PendingRepliesChip(
-                    pending: inbox.pendingReplies,
-                    onRetry: { inbox.retryPendingReply($0) },
-                    onCancel: { inbox.cancelPendingReply($0) }
-                )
-                .padding(.leading, 4)
-            }
-            if !liveChips.isEmpty {
-                LiveSessionChipRow(
-                    chips: liveChips,
-                    isExpanded: $liveChipsExpanded
-                )
-                .padding(.leading, 4)
-            }
+            // PendingRepliesChip + LiveSessionChipRow were separate
+            // capsules stacked below the header — that broke the
+            // user's mental model that header chip and activity state
+            // are the same slot. The MacConnectionChip now folds
+            // sending / failed / running counts into its label, and
+            // MacSyncStatusView (sheet) lists the per-row detail.
 
             if inbox.loadPhase != .ready && cards.isEmpty {
                 // Cold-start placeholder. HeaderBar above stays
@@ -400,6 +410,8 @@ private struct HeaderBar: View {
     var onExitDemo: (() -> Void)? = nil
     var connectionState: DevicePresenceObserver.State = .neverConnected
     var runningCount: Int = 0
+    var sendingCount: Int = 0
+    var failedCount: Int = 0
     var onTapChip: (() -> Void)? = nil
     var onTapSettings: (() -> Void)? = nil
 
@@ -421,6 +433,8 @@ private struct HeaderBar: View {
                 MacConnectionChip(
                     state: connectionState,
                     runningCount: runningCount,
+                    sendingCount: sendingCount,
+                    failedCount: failedCount,
                     onTap: onTapChip
                 )
             }
