@@ -328,7 +328,7 @@ describe("dual-write: legacy mutations produce event rows", () => {
     expect((events[0].payload as { cardId: string }).cardId).toBe("c-dw-2");
   });
 
-  it("POST /v1/sync/sessions inserts a session.upsert event", async () => {
+  it("POST /v1/sync/sessions is a deprecated no-op (no event written)", async () => {
     const jwt = await makeJwt("user-1");
     const res = await call(
       "/v1/sync/sessions",
@@ -344,10 +344,15 @@ describe("dual-write: legacy mutations produce event rows", () => {
       jwt
     );
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; deprecated?: boolean };
+    expect(body.ok).toBe(true);
+    expect(body.deprecated).toBe(true);
 
+    // Critical: no session.upsert event landed. Older Mac binaries
+    // that still publish here must not pile up dead session rows on
+    // the event log.
     const events = await new Store(env).eventsSince("user-1", 0);
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("session.upsert");
+    expect(events).toHaveLength(0);
   });
 
   it("retrying the SAME PUT /v1/sync/cards/:id (same updatedAt) dedupes", async () => {

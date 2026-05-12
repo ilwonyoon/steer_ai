@@ -438,43 +438,32 @@ app.post("/v1/sync/instructions/:id/status", async (c) => {
 });
 
 /**
- * POST /v1/sync/sessions
- * Mac heartbeats live session metadata so iPhone can label cards
- * with which project/branch they came from.
+ * POST /v1/sync/sessions  [DEPRECATED]
+ *
+ * Originally Mac heartbeated live-session metadata here so iPhone
+ * could render "1 running" alongside the Mac chip. iPhone now
+ * derives that count locally from its own SessionEntry array
+ * (which is fed by card upserts carrying responseRevision), so
+ * the publish path is dead code on every supported client.
+ *
+ * Keep the route returning 200 so an older Mac binary that
+ * happens to still publish doesn't error or retry-storm. Just
+ * skip the store write + event dual-write so we don't pile
+ * up junk rows server-side.
  */
 app.post("/v1/sync/sessions", async (c) => {
-  const body = await c.req.json<SessionSnapshot>();
-  const userId = c.get("user").userId;
-  const store = new Store(c.env);
-  await store.upsertSession(userId, body);
-  // v3 dual-write: session.upsert event. Idempotency key is
-  // (sessionId, runState, lastActivityAt) — any of those three
-  // changing produces a new event, repeating the exact same state
-  // is a no-op. Without the lastActivityAt component, the Mac's
-  // periodic chip republish (same sessionId+runState every reload
-  // tick when nothing changed) would still create a new event row
-  // every tick.
-  await appendEventDualWrite(
-    store,
-    userId,
-    "session.upsert",
-    body as unknown as Record<string, unknown>,
-    producerDeviceId(c),
-    `session.upsert:${body.sessionId}:${body.runState}:${body.lastActivityAt}`
-  );
-  return c.json({ ok: true });
+  return c.json({ ok: true, deprecated: true });
 });
 
 /**
- * GET /v1/sync/sessions
- * iPhone reads this to render the live-session badge (e.g. "1
- * running") next to the Mac chip. Only running / waiting / blocked
- * sessions from the last 5 minutes are returned.
+ * GET /v1/sync/sessions  [DEPRECATED]
+ *
+ * Same story as the POST sibling: no current client consumes
+ * this. Return an empty list so any straggler client keeps
+ * working without ever showing stale chip data.
  */
 app.get("/v1/sync/sessions", async (c) => {
-  const store = new Store(c.env);
-  const sessions = await store.listLiveSessions(c.get("user").userId);
-  return c.json({ sessions });
+  return c.json({ sessions: [], deprecated: true });
 });
 
 /**
@@ -487,11 +476,12 @@ app.get("/v1/sync/sessions", async (c) => {
 app.get("/v1/sync/presence", async (c) => {
   const store = new Store(c.env);
   const userId = c.get("user").userId;
-  const [devices, sessions] = await Promise.all([
-    store.listDevices(userId),
-    store.listLiveSessions(userId),
-  ]);
-  return c.json({ devices, sessions });
+  const devices = await store.listDevices(userId);
+  // `sessions` is intentionally an empty list. Current iOS reads
+  // only `devices` from this response; the sessions field is kept
+  // in the shape for backwards compat with any older iOS build
+  // that still decodes it. Saves one DO read per poll.
+  return c.json({ devices, sessions: [] });
 });
 
 /**
