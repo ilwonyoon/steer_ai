@@ -16,6 +16,34 @@ YYYY-MM-DD — PR N status: in-progress | awaiting-user | green
 
 ---
 
+## 2026-05-12 (afternoon) — Storage track audit deepened
+
+User asked whether the storage layer itself is production-grade.
+Initial diagnosis (transcript bloat) was correct but partial. A
+fuller audit covering seven dimensions — retention, migrations,
+concurrency, recovery, observability, perf budgets, backup —
+found that the wrapper-disconnect chain has two coupled root
+causes (transcript runaway + an agent-spawn race that
+singleton-checks on the wrong primitive), and three more
+dimensions are flat ❌ on top of that.
+
+Plan revised in `docs/STORAGE_PRODUCTION_READINESS.md`:
+
+  - Three-PR plan → seven-PR plan (S0–S7).
+  - S0 lays a migration runner; S1 is the immediate concurrency
+    unbreak; S2 stops the bloat; S3 prunes + recovers the
+    existing 1.8GB; S4 fixes corruption/disk-full; S5 ships
+    health.json + Settings → Storage; S6 sets measured SLOs;
+    S7 adds export.
+  - Two acceptable train-stop points: after S1 (just the unbreak)
+    or after S3 (size cap + recovery). Full S0–S7 is the
+    production-grade target.
+  - New golden set entries G15–G20 added for the audit
+    dimensions.
+
+User QA still pending on whether to take S0–S7 in full or stop
+at S3 for the App Store ship. v3 PR 2 still paused.
+
 ## 2026-05-12 — PR 1: merged. v3 PAUSED. Storage track active.
 
 PR 1 merged to main via PR #35 (commit bc90da4). Production worker
