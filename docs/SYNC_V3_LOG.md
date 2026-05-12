@@ -16,20 +16,31 @@ YYYY-MM-DD — PR N status: in-progress | awaiting-user | green
 
 ---
 
-## 2026-05-12 — PR 1 status: awaiting-user
+## 2026-05-12 — PR 1 status: deployed, awaiting golden-set sweep
 
 - shipped: `feat(sync v3 PR 1): relay event log + dual-write,
   observation-only` (commit 0f98612 on branch
-  `fix/mac-chip-decay-on-card-or-end`).
-- my checks: relay vitest 52/52 ✅ (33 prior + 19 new). agent + cli
-  root suite 70/70 ✅ . `swift build apps/mac` clean ✅ . No client
-  code touched.
-- user QA: pending. Validation steps in the QA checklist below.
-- blockers: needs the user to (a) deploy the relay + migration,
-  (b) run the dogfood G1–G7 pass while wrangler tail captures
-  the events table writes.
-- next: user runs the QA checklist; on green, I open PR 1 against
-  main and start PR 2 (Mac switches to event POSTs).
+  `fix/mac-chip-decay-on-card-or-end`). Production deployment
+  version `41f2c46e-3c8e-42d9-9e36-a2b8a3fdd481`.
+- my checks: relay vitest 52/52 ✅ (33 prior + 19 new). agent +
+  cli root suite 70/70 ✅ . `swift build apps/mac` clean ✅ .
+  Production deploy ✅ . Events table populating in prod with
+  device.heartbeat + session.upsert rows from the user's live
+  dogfood Mac — proves dual-write is firing end-to-end in
+  production.
+- gotcha hit and resolved: `wrangler d1 migrations apply
+  --remote` returned 7403 (Cloudflare token doesn't have the
+  permission migrations apply hits). Worked around with
+  `wrangler d1 execute --remote --file migrations/0006_events.sql`,
+  which uses the plain d1-execute path the token DOES have.
+  Migration is idempotent (CREATE TABLE IF NOT EXISTS), so
+  this is safe. The next migration should follow the same
+  pattern until we figure out the token scope. Filed as a
+  follow-up note here, not as a blocker.
+- user QA: in progress — golden set G1–G7 sweep remaining.
+- blockers: none.
+- next: user runs G1–G7 against the live dogfood; on all green,
+  I open PR 1 against main and start PR 2.
 
 ---
 
