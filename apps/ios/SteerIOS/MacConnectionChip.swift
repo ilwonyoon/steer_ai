@@ -12,13 +12,10 @@ import SteerCore
 /// matches: every chip variant has the same destination.
 struct MacConnectionChip: View {
     let state: DevicePresenceObserver.State
-    /// Sessions the Mac is actively executing. Comes from the
-    /// instructed-session set the Mac publishes (see
-    /// SteerCore.InstructedSessionDecay).
+    /// Sessions the user has replied to where the terminal hasn't
+    /// produced a fresh card yet. Derived locally on iPhone from
+    /// `SyncInbox.activeSessionIds` (sending ∪ injected).
     var runningCount: Int = 0
-    /// Replies the iPhone is currently shipping to the Mac. Mid-
-    /// flight — not yet confirmed by markInjected.
-    var sendingCount: Int = 0
     /// Replies that the Mac rejected, network failed, etc. The user
     /// can retry/cancel them from the sheet.
     var failedCount: Int = 0
@@ -44,14 +41,13 @@ struct MacConnectionChip: View {
         .accessibilityLabel("Mac connection: \(label).")
     }
 
-    /// Priority: failed > sending > running > state.label. Failed is
-    /// always loudest because it's the only state the user can fix.
-    /// Sending takes precedence over running so the user sees their
-    /// own reply moving before they see the resulting work.
+    /// "running" already counts sending + injected pending rows
+    /// (the SyncInbox `activeSessionIds` set), so we no longer
+    /// separately label sending. Failed is the only orthogonal
+    /// state — the user has to fix it.
     private var label: String {
         var parts: [String] = []
         if failedCount > 0 { parts.append("\(failedCount) failed") }
-        if sendingCount > 0 { parts.append("\(sendingCount) sending") }
         if case .connected = state, runningCount > 0 {
             parts.append("\(runningCount) running")
         }
@@ -60,13 +56,11 @@ struct MacConnectionChip: View {
     }
 
     /// Failed dominates the dot color — that's the actionable state.
-    /// Sending stays green-ish (work in progress), running uses the
-    /// running color, idle falls back to the connection state.
+    /// Running uses the running color (sending rolls into running),
+    /// idle falls back to the connection state.
     private var dotColor: Color {
         if failedCount > 0 { return SteerColors.blocked }
-        if sendingCount > 0 || runningCount > 0 {
-            return SteerColors.running
-        }
+        if runningCount > 0 { return SteerColors.running }
         switch state {
         case .demo: return SteerColors.tertiaryInk
         case .neverConnected: return SteerColors.tertiaryInk
@@ -93,6 +87,26 @@ struct MacSyncStatusView: View {
     let onCancel: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
+    /// One row per active (sending or injected) reply. Same data
+    /// the chip count reflects, so the user sees a per-session
+    /// breakdown of what's "running" on Mac. Failed rows fall into
+    /// the Pending replies section instead.
+    private var runningReplies: [SyncInbox.PendingReply] {
+        pendingReplies.filter { reply in
+            switch reply.status {
+            case .sending, .injected: return true
+            case .failed: return false
+            }
+        }
+    }
+
+    private var failedReplies: [SyncInbox.PendingReply] {
+        pendingReplies.filter { reply in
+            if case .failed = reply.status { return true }
+            return false
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -112,19 +126,19 @@ struct MacSyncStatusView: View {
                     Text("State")
                 }
 
-                if !runningSessions.isEmpty {
+                if !runningReplies.isEmpty {
                     Section {
-                        ForEach(runningSessions, id: \.sessionId) { session in
-                            RunningSessionRow(session: session)
+                        ForEach(runningReplies) { reply in
+                            RunningReplyRow(reply: reply)
                         }
                     } header: {
                         Text("Running")
                     }
                 }
 
-                if !pendingReplies.isEmpty {
+                if !failedReplies.isEmpty {
                     Section {
-                        ForEach(pendingReplies) { reply in
+                        ForEach(failedReplies) { reply in
                             PendingReplyRow(
                                 reply: reply,
                                 onRetry: onRetry,
@@ -132,7 +146,7 @@ struct MacSyncStatusView: View {
                             )
                         }
                     } header: {
-                        Text("Pending replies")
+                        Text("Failed replies")
                     }
                 }
 
@@ -172,10 +186,6 @@ struct MacSyncStatusView: View {
             }
             .refreshable { await observer.refresh() }
         }
-    }
-
-    private var runningSessions: [SessionSnapshot] {
-        observer.liveSessions.filter { $0.runState == "running" }
     }
 
     private var needsRecoverySection: Bool {
@@ -282,8 +292,8 @@ private struct LabeledRow: View {
     }
 }
 
-private struct RunningSessionRow: View {
-    let session: SessionSnapshot
+private struct RunningReplyRow: View {
+    let reply: SyncInbox.PendingReply
 
     var body: some View {
         HStack(spacing: 10) {
@@ -291,34 +301,31 @@ private struct RunningSessionRow: View {
                 .fill(SteerColors.running)
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.projectName ?? session.sessionId)
+                Text(reply.cardTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: 6) {
-                    Text(providerLabel)
-                        .font(.system(size: 13))
-                        .foregroundStyle(SteerColors.secondaryInk)
-                    if let branch = session.branchLabel {
-                        Text("·").foregroundStyle(SteerColors.tertiaryInk)
-                        Text(branch)
-                            .font(.system(size: 13))
-                            .foregroundStyle(SteerColors.secondaryInk)
-                            .lineLimit(1)
-                    }
-                }
+                // The user's own reply text, dimmed. Helps when
+                // multiple sessions are running at once and they
+                // need to recall what they said.
+                Text(reply.text)
+                    .font(.system(size: 13))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .lineLimit(2)
             }
             Spacer()
+            Image(systemName: statusIcon)
+                .font(.system(size: 12))
+                .foregroundStyle(SteerColors.tertiaryInk)
         }
         .padding(.vertical, 2)
     }
 
-    private var providerLabel: String {
-        switch session.provider {
-        case "claude": return "Claude Code"
-        case "codex": return "Codex CLI"
-        case "gemini": return "Gemini CLI"
-        default: return "CLI"
+    private var statusIcon: String {
+        switch reply.status {
+        case .sending: return "paperplane.fill"
+        case .injected: return "hourglass"
+        case .failed: return "exclamationmark.triangle.fill"
         }
     }
 }
@@ -372,12 +379,13 @@ private struct PendingReplyRow: View {
     private var statusIcon: String {
         switch reply.status {
         case .sending: return "paperplane.fill"
+        case .injected: return "hourglass"
         case .failed: return "exclamationmark.triangle.fill"
         }
     }
     private var statusColor: Color {
         switch reply.status {
-        case .sending: return SteerColors.running
+        case .sending, .injected: return SteerColors.running
         case .failed: return SteerColors.blocked
         }
     }

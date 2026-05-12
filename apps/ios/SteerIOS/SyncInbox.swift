@@ -456,9 +456,20 @@ public final class SyncInbox: ObservableObject {
             // pendingReplies clears when the relay broadcasts the
             // matching card.resolved (see handleWSText).
             let pendingCardIds = Set(pendingReplies.map(\.cardId))
+            let priorCardIds = Set(cards.map(\.cardId))
             cards = resp.cards
                 .filter { !pendingCardIds.contains($0.cardId) }
                 .sorted { $0.updatedAt < $1.updatedAt }
+            // Any card id we hadn't seen before is a fresh response
+            // for that session → drop matching .injected rows.
+            let newSessionIds = Set(
+                cards
+                    .filter { !priorCardIds.contains($0.cardId) }
+                    .map(\.sessionId)
+            )
+            for sid in newSessionIds {
+                pendingReplies = transitions(forCardArrivalIn: sid)
+            }
             // First card list landed — UI can leave the cold-start
             // placeholder, even when the list is empty.
             loadPhase = .ready
@@ -540,7 +551,33 @@ public final class SyncInbox: ObservableObject {
         public let sentAt: Date
         public var status: Status
 
-        public enum Status: Equatable { case sending, failed(String) }
+        /// .sending  → POST in flight
+        /// .injected → relay enqueued; Mac is or will pick it up.
+        ///             The chip stays lit until a fresh card for
+        ///             this sessionId arrives — that's the only
+        ///             signal we trust as "terminal answered."
+        /// .failed   → user must retry or cancel.
+        public enum Status: Equatable {
+            case sending
+            case injected
+            case failed(String)
+        }
+
+        /// Project this row into the pure transition type the
+        /// SteerCore helper consumes. The helper doesn't know
+        /// anything about iPhone-specific fields (cardId, text,
+        /// sentAt) — it only needs (id, sessionId, status).
+        var transitionSnapshot: PendingReplySnapshot {
+            let s: PendingReplyStatus
+            switch status {
+            case .sending: s = .sending
+            case .injected: s = .injected
+            case .failed(let r): s = .failed(r)
+            }
+            return PendingReplySnapshot(
+                id: id, sessionId: sessionId, status: s
+            )
+        }
     }
     @Published public private(set) var pendingReplies: [PendingReply] = []
 
@@ -597,7 +634,17 @@ public final class SyncInbox: ObservableObject {
                 "/v1/sync/instructions",
                 body: request
             )
-            pendingReplies.removeAll { $0.id == pendingId }
+            // POST accepted by relay → the row transitions from
+            // .sending to .injected. We deliberately do NOT drop
+            // the row here: the user's mental model is "I replied
+            // and the terminal is working." The row only clears
+            // when a new card for this session arrives (the
+            // terminal produced its response), driven from
+            // upsertCard via PendingReplyTransitions.
+            if let idx = pendingReplies.firstIndex(where: { $0.id == pendingId }),
+               pendingReplies[idx].status == .sending {
+                pendingReplies[idx].status = .injected
+            }
         } catch {
             // Restore the card and mark the pending row failed.
             if !cards.contains(where: { $0.cardId == cardSnapshot.cardId }) {
@@ -608,6 +655,29 @@ public final class SyncInbox: ObservableObject {
                 pendingReplies[idx].status = .failed(error.localizedDescription)
             }
         }
+    }
+
+    /// Sessions currently in the "user replied, terminal still
+    /// working" state. The MacConnectionChip and MacSyncStatusView
+    /// derive their running-count from this set. Equivalent to the
+    /// Mac side's `instructedSessions.keys`, but computed entirely
+    /// from local iPhone state (the relay's outdated
+    /// `/v1/sync/sessions` polling is no longer consulted).
+    public var activeSessionIds: Set<String> {
+        PendingReplyTransitions.activeSessionIds(
+            in: pendingReplies.map(\.transitionSnapshot)
+        )
+    }
+
+    private func transitions(
+        forCardArrivalIn sessionId: String
+    ) -> [PendingReply] {
+        let snapshots = pendingReplies.map(\.transitionSnapshot)
+        let next = PendingReplyTransitions.onCardArrivedForSession(
+            previous: snapshots, sessionId: sessionId
+        )
+        let keepIds = Set(next.map(\.id))
+        return pendingReplies.filter { keepIds.contains($0.id) }
     }
 
     /// Manual retry from the pending-reply chip. Requeues the same
@@ -736,12 +806,21 @@ public final class SyncInbox: ObservableObject {
                 return
             }
             // Keep ordering by updatedAt asc; replace existing or append.
+            let isNewCardId = !cards.contains(where: { $0.cardId == card.cardId })
             if let idx = cards.firstIndex(where: { $0.cardId == card.cardId }) {
                 cards[idx] = card
             } else {
                 cards.append(card)
             }
             cards.sort { $0.updatedAt < $1.updatedAt }
+            // A *new* card id for this session means the terminal
+            // produced a fresh response — that's the signal we trust
+            // to clear the running chip. Only run on new ids (re-
+            // upserts of the same cardId are just classifier
+            // updates, not new responses).
+            if isNewCardId {
+                pendingReplies = transitions(forCardArrivalIn: card.sessionId)
+            }
             // First WS upsert during cold-start counts as ready —
             // we have at least one real card even if the bootstrap
             // GET hasn't returned yet.

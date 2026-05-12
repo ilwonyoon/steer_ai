@@ -58,10 +58,6 @@ struct InboxView: View {
         }
     }
 
-    private var sendingRepliesCount: Int {
-        inbox.pendingReplies.filter { $0.status == .sending }.count
-    }
-
     private var failedRepliesCount: Int {
         inbox.pendingReplies.reduce(0) { acc, p in
             if case .failed = p.status { return acc + 1 }
@@ -238,8 +234,13 @@ struct InboxView: View {
                 isDemo: inbox.isDemoMode,
                 onExitDemo: { inbox.exitDemoMode() },
                 connectionState: devicePresence.state,
-                runningCount: devicePresence.runningCount,
-                sendingCount: sendingRepliesCount,
+                // Chip "N running" now derives from iPhone-local
+                // state — the user's own pending replies that
+                // haven't yet been answered by a new card. This is
+                // the same set the Mac side computes from
+                // `instructedSessions`. The relay's
+                // /v1/sync/sessions polling is no longer the source.
+                runningCount: inbox.activeSessionIds.count,
                 failedCount: failedRepliesCount,
                 onTapChip: { showsMacSyncStatus = true },
                 onTapSettings: { showsSettings = true }
@@ -410,7 +411,6 @@ private struct HeaderBar: View {
     var onExitDemo: (() -> Void)? = nil
     var connectionState: DevicePresenceObserver.State = .neverConnected
     var runningCount: Int = 0
-    var sendingCount: Int = 0
     var failedCount: Int = 0
     var onTapChip: (() -> Void)? = nil
     var onTapSettings: (() -> Void)? = nil
@@ -433,7 +433,6 @@ private struct HeaderBar: View {
                 MacConnectionChip(
                     state: connectionState,
                     runningCount: runningCount,
-                    sendingCount: sendingCount,
                     failedCount: failedCount,
                     onTap: onTapChip
                 )
