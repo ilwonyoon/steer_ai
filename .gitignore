@@ -26,3 +26,4 @@ packages/relay/.dev.vars
 *.p12
 *.provisionprofile
 *.p8
+/setup-sparkle-secrets.sh
