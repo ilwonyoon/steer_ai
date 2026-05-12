@@ -147,45 +147,54 @@ indicator advances as the system catches up.
 
 Every instruction the user produces (Mac card reply, iPhone card
 reply, future quick-action chips) travels through this status
-machine. We persist the status locally on the producing device
-and stamp every event with the status it advanced to.
+machine. The internal pipeline has several technical stages —
+POST sent, server id assigned, Mac wrapper injected, session
+`run_state` flipped — but the **user only ever sees two visible
+states**:
 
 ```
 ┌─────────────┐
-│   queued    │  user tapped send, optimistic apply already on screen
+│   queued    │  user tapped send, their reply text shows in the
+│             │  card area with a quiet pulse. internally this
+│             │  covers: POSTing → server-assigned id → Mac fetch
+│             │  via nudge → PTY inject → session.run_state running.
 └──────┬──────┘
-       │  POST /v1/sync/events {type: "instruction.queued", …}
+       │
+       │  success path: wrapper hits its next stop, a new card
+       │  arrives in the stack. the queued pill simply fades as
+       │  the new card slides in. no separate "done" state — the
+       │  new card IS the completion signal.
+       │
+       │  failure path: POST 4xx, Mac never injects within
+       │  timeout, wrapper exits unexpectedly. flip to "failed".
        ▼
 ┌─────────────┐
-│   sent      │  relay assigned an id, our POST returned 200
-└──────┬──────┘
-       │  Mac receives nudge → fetches event → injects into PTY
-       │  Mac POSTs {type: "instruction.injected"} on success
-       ▼
-┌─────────────┐
-│  injected   │  Mac's wrapper has the bytes in stdin
-└──────┬──────┘
-       │  agent observes session.run_state flip to "running"
-       │  Mac POSTs {type: "session.upsert", run_state: "running"}
-       ▼
-┌─────────────┐
-│   running   │  CLI is actively producing output
-└──────┬──────┘
-       │  wrapper hits a stop, classifier emits new card
-       │  Mac POSTs {type: "card.upsert", …}
-       ▼
-┌─────────────┐
-│    done     │  iPhone shows the new card; instruction's UI dimensional
-│             │  collapses (status pill fades, scroll position preserved)
-└─────────────┘
-
-       │   on any failure (POST 5xx, wrapper exit, injection refused):
-       │   producer flips status to "failed", surfaces inline retry.
-       ▼
-┌─────────────┐
-│   failed    │  user sees "Tap to retry"; tapping re-enters at queued.
+│   failed    │  same spot in the UI shows "Tap to retry". one tap
+│             │  re-enters the pipeline at queued.
 └─────────────┘
 ```
+
+Why we collapse the technical stages into one user-visible
+`queued`:
+
+- **`sent` vs `injected` vs `running` are all "your message is
+  on its way"** from the user's perspective. Splitting them
+  into separate pills creates rapid flicker (sent → injected
+  → running within ~1s) that's more distracting than
+  informative.
+- **The completion signal is the new card itself.** A separate
+  "Done" pill that appears next to a fresh card and immediately
+  fades is noise — the card's arrival IS the done state. We
+  don't render redundant signals.
+- **Failure is the only branch worth distinguishing.** And it
+  takes over the same UI slot, so there's no extra surface to
+  learn — the queued pill becomes the retry affordance.
+
+The internal status field still tracks the full technical
+sequence (queued, sent, injected, running, failed) because
+that's what lets the data layer know when to advance and when
+to time out. The UI just renders two buckets: "pending" (any
+non-failed state before card arrival) and "failed".
 
 ### Why we draw the pipeline this way
 
@@ -238,22 +247,40 @@ asynchronous from the UI.
 ### Status transitions and the event log
 
 Producer-local status advancement is **derived from the event
-log**, not stored on the relay. The flow:
+log**, not stored on the relay. The internal flow advances
+through several technical stages even though the UI only
+renders two:
 
 1. User taps send → producer writes a row with status=`queued`,
-   immediately shows it in the UI.
-2. Producer POSTs `instruction.queued` event. On 200, advance to
-   `sent` and record `server_event_id`.
-3. Producer keeps listening on its event stream. When it sees
-   `instruction.injected` (matching its idempotency key) from
-   the Mac, advance to `injected`.
-4. When it sees `session.upsert` with `run_state="running"` for
-   the targeted session, advance to `running`. (Mac UI advances
-   on its own — it's the producer of session events; iPhone
-   advances via incoming events.)
-5. When it sees `card.upsert` for the targeted session, advance
-   to `done` and remove the inflight row after a short fade
-   animation.
+   immediately shows the pending pill in the UI.
+2. Producer POSTs `instruction.queued` event. On 200, advance
+   internal status to `sent` and record `server_event_id`.
+   UI does not change — still showing the queued pill.
+3. Producer listens on its event stream. When it sees
+   `instruction.injected` (matching idempotency key), advance
+   internal status to `injected`. UI unchanged.
+4. When it sees `session.upsert` with `run_state="running"`
+   for the targeted session, advance internal status to
+   `running`. UI unchanged.
+5. When `card.upsert` arrives for the targeted session, the
+   inflight row is **removed** entirely as the new card
+   animates in. The new card itself is the completion signal;
+   no separate "done" state is rendered.
+
+Any of those steps can fail and transition to `failed`:
+- step 2 fails → POST 4xx or final retry exhaustion
+- step 3 fails → no `instruction.injected` within timeout
+- step 4 fails → session reports failed run_state, or wrapper
+  exits abnormally
+- step 5 fails → no `card.upsert` within a longer timeout
+  (configurable per session — some compute genuinely takes
+  minutes)
+
+On `failed`, the same inflight row stays in the UI with the
+failed pill ("Tap to retry") swapped in. Retry resets the
+internal status to `queued` with the same `client_uuid` so
+the idempotency key carries over and prevents double-execution
+if the original POST actually succeeded.
 
 The local row is the source of truth for "what does my UI show
 right now". The event log is the source of truth for "what
@@ -641,4 +668,5 @@ For sanity:
 | 2026-05-12 | Keep HTTP for writes. | D1 audit trail value > write latency value. WS for writes adds replay / ordering complexity for marginal gain. |
 | 2026-05-12 | Don't migrate off Cloudflare. | Deployment cost + ops surface is well within targets after v3. |
 | 2026-05-12 | Four sequenced PRs, not big-bang. | Each PR is verifiable in isolation; PR 4 can hold until iOS release-train ready. |
-| 2026-05-12 | Instruction lifecycle is part of the architecture, not the UI. | User insight: latency stops being visible when the send-frame is the event horizon and a visible queued→sent→injected→running→done pipeline runs against the local row. The event-log design enables this with minimal code; the UI is only the rendering of a derived status. |
+| 2026-05-12 | Instruction lifecycle is part of the architecture, not the UI. | User insight: latency stops being visible when the send-frame is the event horizon and a status pipeline runs against the local row. The event-log design enables this with minimal code; the UI is only the rendering of a derived status. |
+| 2026-05-12 | UI surfaces TWO states (queued / failed), not five. | User: "Done은 없지 — done하면 카드가 생성되서 돌아오잖아". The new card's arrival is itself the completion signal; rendering a separate "Done" pill alongside a fresh card is redundant. sent / injected / running are all "on its way" from the user's perspective and would only flicker. Internal status field still tracks all stages for timeout + retry logic; the UI just renders two buckets. |
