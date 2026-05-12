@@ -300,13 +300,27 @@ public final class SyncClient: ObservableObject {
 
     // MARK: - Cards
 
-    /// "Cancelled" / NSURLErrorCancelled is an in-flight URLSession
-    /// task that lost its race with another tick — not a real failure
-    /// the user should see. We treat it as silent so the Settings
-    /// status row doesn't flap red on every reload.
+    /// Errors we deliberately HIDE from the Settings status row, even
+    /// though they're real failures, because they all resolve on the
+    /// very next tick without user intervention:
+    ///
+    ///   * NSURLErrorCancelled — in-flight URLSession task lost its
+    ///     race with the next reload tick.
+    ///   * HTTP 401 unauthorized — stale or absent JWT. Shows up
+    ///     during the brief window between app launch and the first
+    ///     refreshMe/sign-in completing, or right after the JWT
+    ///     expires. The 2s reload loop tries again immediately, so
+    ///     flashing red here just makes a healthy sign-in look
+    ///     broken. The user already sees the truthful state in the
+    ///     "Status:" row ("Not signed in" vs "Signed in as ...").
+    ///
+    /// Both still get written to relay-client.log via SignInDebugLog
+    /// so we can still diagnose persistent issues.
     private func isTransientError(_ error: Error) -> Bool {
         let ns = error as NSError
-        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+        if ns.domain == "SyncClient" && ns.code == 401 { return true }
+        return false
     }
 
     /// Publish a single live-session snapshot. Mirrors the Mac
