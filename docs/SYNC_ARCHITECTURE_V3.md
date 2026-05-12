@@ -131,6 +131,178 @@ returns `events WHERE user_id = ? AND id > N ORDER BY id LIMIT 500`.
 
 ---
 
+## Instruction lifecycle — optimistic UI from send-frame
+
+We can't make the network fast. We *can* make the user not notice
+it. The architectural answer is: the moment the user taps send,
+treat that as the canonical event horizon and drive a visible
+status pipeline forward from there. The UI never blocks on a
+network response.
+
+This is the same mental model as iMessage / WhatsApp delivery
+states — the user sees their message immediately, the status
+indicator advances as the system catches up.
+
+### The pipeline
+
+Every instruction the user produces (Mac card reply, iPhone card
+reply, future quick-action chips) travels through this status
+machine. We persist the status locally on the producing device
+and stamp every event with the status it advanced to.
+
+```
+┌─────────────┐
+│   queued    │  user tapped send, optimistic apply already on screen
+└──────┬──────┘
+       │  POST /v1/sync/events {type: "instruction.queued", …}
+       ▼
+┌─────────────┐
+│   sent      │  relay assigned an id, our POST returned 200
+└──────┬──────┘
+       │  Mac receives nudge → fetches event → injects into PTY
+       │  Mac POSTs {type: "instruction.injected"} on success
+       ▼
+┌─────────────┐
+│  injected   │  Mac's wrapper has the bytes in stdin
+└──────┬──────┘
+       │  agent observes session.run_state flip to "running"
+       │  Mac POSTs {type: "session.upsert", run_state: "running"}
+       ▼
+┌─────────────┐
+│   running   │  CLI is actively producing output
+└──────┬──────┘
+       │  wrapper hits a stop, classifier emits new card
+       │  Mac POSTs {type: "card.upsert", …}
+       ▼
+┌─────────────┐
+│    done     │  iPhone shows the new card; instruction's UI dimensional
+│             │  collapses (status pill fades, scroll position preserved)
+└─────────────┘
+
+       │   on any failure (POST 5xx, wrapper exit, injection refused):
+       │   producer flips status to "failed", surfaces inline retry.
+       ▼
+┌─────────────┐
+│   failed    │  user sees "Tap to retry"; tapping re-enters at queued.
+└─────────────┘
+```
+
+### Why we draw the pipeline this way
+
+- **The user's commit point is `queued`, not `sent`.** As soon
+  as they hit send, the UI shows their message *in the
+  conversation* with a faint status indicator. We never show a
+  spinner *blocking* the message. The producer's send button is
+  immediately reusable.
+- **Status flows are visible, not implicit.** A pill near the
+  message text reads `Sending…` → `Sent` → `Running` → fades out
+  on the new card. The user can always look at it and know where
+  their request is. This is the same trust signal SMS read
+  receipts provide — visible progress is calming even when total
+  duration is identical.
+- **Failure has a single, in-line affordance.** A failed status
+  becomes a tappable "Retry" right where the user typed. No
+  modal, no toast, no "something went wrong" — just a single
+  tap to re-enter the pipeline. Failed events are not
+  auto-retried; user judgment governs.
+- **The pipeline is identical on Mac and iPhone.** The Mac card
+  composer surface gets the same status pill iPhone does. Code
+  reuse is high; mental model is one. (Today the Mac composer
+  has no status feedback at all — replies disappear into a void;
+  v3 fixes this side effect of "Mac is the producer".)
+
+### Status persistence
+
+Each producer device keeps a small local table of in-flight
+instructions:
+
+```sql
+CREATE TABLE inflight_instructions (
+  client_uuid TEXT PRIMARY KEY,    -- our idempotency key
+  target_session_id TEXT,
+  text TEXT,
+  status TEXT,                     -- queued | sent | injected | running | done | failed
+  failure_reason TEXT,             -- nullable
+  created_at INTEGER,
+  last_status_at INTEGER,
+  server_event_id INTEGER          -- nullable until 'sent'
+);
+```
+
+Why we need this: an instruction can be in `queued` while the
+device is offline (airplane mode). It must survive app restart
+so the user sees their pending request the next time they open
+the app. Status persistence lets the network be genuinely
+asynchronous from the UI.
+
+### Status transitions and the event log
+
+Producer-local status advancement is **derived from the event
+log**, not stored on the relay. The flow:
+
+1. User taps send → producer writes a row with status=`queued`,
+   immediately shows it in the UI.
+2. Producer POSTs `instruction.queued` event. On 200, advance to
+   `sent` and record `server_event_id`.
+3. Producer keeps listening on its event stream. When it sees
+   `instruction.injected` (matching its idempotency key) from
+   the Mac, advance to `injected`.
+4. When it sees `session.upsert` with `run_state="running"` for
+   the targeted session, advance to `running`. (Mac UI advances
+   on its own — it's the producer of session events; iPhone
+   advances via incoming events.)
+5. When it sees `card.upsert` for the targeted session, advance
+   to `done` and remove the inflight row after a short fade
+   animation.
+
+The local row is the source of truth for "what does my UI show
+right now". The event log is the source of truth for "what
+actually happened". They reconcile via `server_event_id` +
+idempotency.
+
+### Crash / quit / network drop behavior
+
+- **Quit during `queued`.** Row persists. On next launch, the
+  producer notices a pending row with no `server_event_id`,
+  retries the POST. Idempotency key (the `client_uuid`)
+  dedupes if the previous POST actually succeeded.
+- **Quit during `sent`.** Row has `server_event_id` already.
+  The producer's next snapshot/event fetch will surface
+  `instruction.injected` etc. and advance the row.
+- **Network drop between `queued` and `sent`.** UI shows
+  "Sending…" with a quiet pulse. After ~10s the pill advances
+  to "Will retry when online" but doesn't fail — only an
+  explicit server 4xx fails. Retries follow normal backoff.
+- **Mac never injects.** The event log will not produce an
+  `instruction.injected` event. After a configurable wait
+  (default 60s after `sent`), producer shows "Waiting on Mac"
+  with a tappable "Send anyway" / "Cancel" affordance. This
+  is the rare path; most of the time the WS nudge gets there
+  in under a second.
+
+### Why this belongs in the architecture, not the UI layer
+
+A common reaction is "this is just how we render send buttons,
+not architecture." It's actually architecture for two reasons:
+
+1. The event-stream design *enables* clean optimistic UI. Without
+   server-assigned ids + idempotency + producer cursor, every
+   producer would have to track its own "did this actually
+   happen" state, and reconciliation after disconnect would be
+   custom code per surface. With the event log, the rule is
+   simply "advance my row when the matching event arrives."
+2. Failure handling has architecture-level invariants. A failed
+   POST that the server actually processed must be detectable
+   (idempotency by `client_uuid`); a successful POST that the
+   server lost must be retryable. Both are properties of the
+   event log + idempotency key shape, not of the UI.
+
+The UI layer's only job is to *visually represent* the status
+field. Everything that makes the status correct lives in the
+data layer.
+
+---
+
 ## API surface
 
 The full HTTP surface after v3:
@@ -455,6 +627,11 @@ For sanity:
    — undefined product behavior; today the wrapper ownership model
    excludes this case. Mark as "won't fix in v3" unless feedback
    says otherwise.
+5. **Instruction lifecycle timeouts.** Default proposals:
+   queued → sent retry-on-failure with 1/2/4/8s backoff; sent →
+   injected "Waiting on Mac" affordance at 60s; running → done
+   no timeout (genuine compute can take minutes). Confirm or
+   tune before PR 2 lands the producer-side status machine.
 
 ## Decision log
 
@@ -464,3 +641,4 @@ For sanity:
 | 2026-05-12 | Keep HTTP for writes. | D1 audit trail value > write latency value. WS for writes adds replay / ordering complexity for marginal gain. |
 | 2026-05-12 | Don't migrate off Cloudflare. | Deployment cost + ops surface is well within targets after v3. |
 | 2026-05-12 | Four sequenced PRs, not big-bang. | Each PR is verifiable in isolation; PR 4 can hold until iOS release-train ready. |
+| 2026-05-12 | Instruction lifecycle is part of the architecture, not the UI. | User insight: latency stops being visible when the send-frame is the event horizon and a visible queued→sent→injected→running→done pipeline runs against the local row. The event-log design enables this with minimal code; the UI is only the rendering of a derived status. |
