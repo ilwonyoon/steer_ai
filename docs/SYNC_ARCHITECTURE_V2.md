@@ -1,5 +1,10 @@
 # Sync architecture v2 — push, not poll
 
+> **Status: superseded by `docs/SYNC_ARCHITECTURE_V3.md` (2026-05-12).**
+> v2's hybrid model (polling + WS broadcasts) shipped, cut cost ~75%,
+> and exposed the dual-consistency-model defect that motivated v3.
+> Kept here as the historical record of how we got there.
+
 Today the Mac↔relay↔iPhone path is a polling loop dressed up as push.
 This doc lays out what changes and what we leave alone.
 
