@@ -32,6 +32,20 @@ SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 ENTITLEMENTS="${ENTITLEMENTS:-$MAC_DIR/Steer.entitlements}"
 PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
 
+# Fail loudly when the requested entitlements file doesn't exist on
+# disk. Previously codesign was invoked with `--entitlements <path>`
+# even for missing paths — bash's `[ -f "$ENTITLEMENTS" ]` guard at
+# line 56 silently skipped the file, codesign produced an unentitled
+# binary, and Sign in with Apple failed at runtime with error 1000
+# while every layer above looked correct. If the caller picked a
+# specific entitlements file we must honor it or refuse to build.
+if [ -n "$ENTITLEMENTS" ] && [ ! -f "$ENTITLEMENTS" ]; then
+  echo "error: entitlements file not found: $ENTITLEMENTS" >&2
+  echo "  Pass ENTITLEMENTS=/abs/path or unset it to use the default" >&2
+  echo "  (apps/mac/Steer.entitlements, direct-distribution)." >&2
+  exit 1
+fi
+
 has_entitlement() {
   local plist="$1"
   local key="$2"
@@ -101,12 +115,19 @@ fi
 
 if [ -f "$MAC_DIR/Resources/AppIcon.icns" ]; then
   cp "$MAC_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
-  # CFBundleIconFile is the classic key the Finder/Dock honor; CFBundleIconName
-  # is what macOS 11+ system surfaces (notification center, share sheet, etc.)
-  # read first. SwiftPM doesn't compile .xcassets so we can't ship an Asset.car
-  # AppIcon group — declaring the icns under both keys keeps both code paths
-  # happy and stops UserNotifications from falling back to the generic mask.
-  ICON_KEY_BLOCK=$'\n  <key>CFBundleIconFile</key>\n  <string>AppIcon</string>\n  <key>CFBundleIconName</key>\n  <string>AppIcon</string>'
+  # Use CFBundleIconFile ONLY. CFBundleIconName (macOS 11+) tells the
+  # system to look up "AppIcon" inside Assets.car — and if Assets.car
+  # is absent (which it always is in SwiftPM builds — `swift build`
+  # never compiles xcassets), the system fails the lookup and falls
+  # back to a generic grid placeholder *everywhere it honors the new
+  # key first*. The most visible casualty was the Sign in with Apple
+  # confirmation dialog rendering a grid square instead of our icon,
+  # even though Contents/Resources/AppIcon.icns was valid and Finder/
+  # Dock picked it up via the classic key.
+  #
+  # Re-add CFBundleIconName only after the actool step that emits
+  # Assets.car with an AppIcon image set lands in this script.
+  ICON_KEY_BLOCK=$'\n  <key>CFBundleIconFile</key>\n  <string>AppIcon</string>'
 else
   ICON_KEY_BLOCK=""
 fi
