@@ -712,12 +712,20 @@ private struct SignInPrompt: View {
                     .font(.system(size: 30, weight: .semibold, design: .monospaced))
                     .foregroundStyle(SteerColors.ink)
 
-                Text("Never let your AI sit idle.")
-                    .font(.system(size: 16, weight: .regular, design: .monospaced))
-                    .foregroundStyle(SteerColors.secondaryInk)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 2)
+                // Two-line value prop that completes the driving
+                // metaphor encoded in the product name: line 1 is
+                // the negative ("don't let your AI loaf"), line 2
+                // is the affirmative call to action ("you set the
+                // direction, you set the speed").
+                VStack(spacing: 4) {
+                    Text("Never let your AI sit idle.")
+                    Text("Set the course. Steer faster.")
+                }
+                .font(.system(size: 16, weight: .regular, design: .monospaced))
+                .foregroundStyle(SteerColors.secondaryInk)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+                .padding(.top, 2)
 
                 if let err = inbox.lastError {
                     Text(err)
