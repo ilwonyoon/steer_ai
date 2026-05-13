@@ -3,11 +3,20 @@ import SwiftUI
 /// iOS port of Mac ActionCardView. Same layout: tinted SessionHeader,
 /// terminal excerpt, ReplyDock — wrapped in a rounded card with a
 /// subtle stroke and shadow.
-struct ActionCardView: View {
-    let card: ActionCard
+struct ActionCardView<Card: CardDisplayable>: View {
+    let card: Card
     @Binding var reply: String
     let onSend: (String) -> Void
     var replyFieldFocused: FocusState<Bool>.Binding? = nil
+    /// Called when the user taps the card body (header or transcript)
+    /// while the keyboard is up. The parent dismisses focus.
+    /// simultaneousGesture is used so a vertical drag inside the
+    /// transcript starts a scroll instead of firing a tap.
+    var onBodyTap: (() -> Void)? = nil
+    /// Placeholder for the reply field. Real cards use the default
+    /// ("reply to this session"); onboarding cards override it
+    /// per-card so the user sees the suggested word inline.
+    var replyPlaceholder: String? = nil
 
     private var headerTint: Color {
         SteerColors.hueTint(hue: card.accentHue, intensity: 0.65)
@@ -20,6 +29,10 @@ struct ActionCardView: View {
                 .padding(.top, 20)
                 .padding(.bottom, 14)
                 .background(headerTint)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onBodyTap?()
+                }
 
             Divider()
 
@@ -29,6 +42,15 @@ struct ActionCardView: View {
                 .padding(.top, 14)
                 .padding(.bottom, 16)
                 .layoutPriority(1)
+                // simultaneousGesture coexists with the inner
+                // ScrollView's drag: a drag still scrolls, but a
+                // clean (no-drag) tap fires and dismisses the
+                // keyboard. Plain onTapGesture would either be
+                // swallowed by ScrollView's gesture priority or
+                // would fire mid-scroll.
+                .simultaneousGesture(
+                    TapGesture().onEnded { onBodyTap?() }
+                )
 
             Divider()
 
@@ -37,7 +59,12 @@ struct ActionCardView: View {
             // keyboard. contentShape on the padded wrapper makes the
             // padding hit-testable; onTapGesture forwards focus to
             // the field via the parent's @FocusState binding.
-            ReplyDock(reply: $reply, onSend: onSend, externalFocus: replyFieldFocused)
+            ReplyDock(
+                reply: $reply,
+                onSend: onSend,
+                placeholder: replyPlaceholder,
+                externalFocus: replyFieldFocused
+            )
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
                 .padding(.bottom, 12)
@@ -63,8 +90,8 @@ struct ActionCardView: View {
     }
 }
 
-struct SessionHeader: View {
-    let card: ActionCard
+struct SessionHeader<Card: CardDisplayable>: View {
+    let card: Card
 
     var body: some View {
         HStack(alignment: .top) {
@@ -95,16 +122,21 @@ struct SessionHeader: View {
 
             Spacer()
 
-            Text(card.age)
-                .font(.system(size: 13))
-                .foregroundStyle(SteerColors.secondaryInk)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(SteerColors.subtleFill, in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(SteerColors.softSeparator, lineWidth: 1)
-                }
+            // Age capsule is hidden when the card doesn't carry an
+            // age string (onboarding cards leave it blank). Real
+            // cards always populate it.
+            if !card.age.isEmpty {
+                Text(card.age)
+                    .font(.system(size: 13))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(SteerColors.subtleFill, in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .stroke(SteerColors.softSeparator, lineWidth: 1)
+                    }
+            }
         }
     }
 }

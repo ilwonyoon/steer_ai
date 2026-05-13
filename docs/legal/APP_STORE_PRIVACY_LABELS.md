@@ -80,8 +80,8 @@ The public policy must say:
 
 - [x] Relay has an authenticated account deletion endpoint: `DELETE /v1/me`.
 - [x] iOS app exposes account deletion in an easy-to-find account/settings UI.
-- [ ] Public Privacy Policy URL is live and matches `PRIVACY_POLICY.md`.
-- [ ] Public Terms URL is live and matches `TERMS_OF_SERVICE.md`.
+- [x] Public Privacy Policy URL is live and matches `PRIVACY_POLICY.md`: `https://ilwonyoon.github.io/steer_ai/privacy/`.
+- [x] Public Terms URL is live and matches `TERMS_OF_SERVICE.md`: `https://ilwonyoon.github.io/steer_ai/terms/`.
 - [ ] Production Cloudflare log retention setting is documented.
 - [ ] App Store Connect privacy answers are updated from this file.
 - [ ] Any analytics, crash reporting, or telemetry SDK added later is reflected here before submission.

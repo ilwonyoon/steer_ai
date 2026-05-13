@@ -1,6 +1,7 @@
 import SwiftUI
 import SteerCore
 import AuthenticationServices
+import UserNotifications
 import os.log
 
 private let diagLog = Logger(subsystem: "ai.steer.ios", category: "diag")
@@ -23,6 +24,15 @@ struct InboxView: View {
     /// running on every keystroke / focus tick and stalling input
     /// response on the device.
     @State private var cards: [ActionCard] = []
+    /// Tracks the OS lifecycle phase (active / inactive / background)
+    /// so we can force a WebSocket reconnect + cards reload the moment
+    /// the user returns to the foreground. iOS suspends URLSession
+    /// sockets in the background and Cloudflare DOs close idle sockets
+    /// after ~5–10 min, so a phone that was locked for a while will
+    /// have a dead WS the next time the user opens the app. The
+    /// existing 30s ping is enough to keep a foreground socket warm,
+    /// not enough to revive one that was killed in suspend.
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var replyFieldFocused: Bool
     /// Tracks the actual keyboard phase (will-show / did-hide). The
     /// compact carousel renders only when this is false, so it never
@@ -32,6 +42,18 @@ struct InboxView: View {
     @StateObject private var devicePresence: DevicePresenceObserver
     @State private var showsMacSyncStatus = false
     @State private var showsSettings = false
+    /// Sticks in UserDefaults so the onboarding flow runs exactly
+    /// once per install. `@AppStorage` keeps the state synced with
+    /// the persisted bool; setting it to `true` is what advances
+    /// the user out of OnboardingFlowView into SignInPrompt.
+    @AppStorage("ai.steer.onboardingCompleted")
+    private var onboardingCompleted: Bool = false
+
+    private func completeOnboarding() {
+        withAnimation(.easeInOut(duration: 0.28)) {
+            onboardingCompleted = true
+        }
+    }
 
     init(inbox: SyncInbox) {
         self.inbox = inbox
@@ -58,6 +80,13 @@ struct InboxView: View {
         }
     }
 
+    private var failedRepliesCount: Int {
+        inbox.pendingReplies.reduce(0) { acc, p in
+            if case .failed = p.status { return acc + 1 }
+            return acc
+        }
+    }
+
     private var currentIndex: Int {
         guard let focusedSessionId,
               let idx = cards.firstIndex(where: { $0.sessionId == focusedSessionId })
@@ -72,19 +101,41 @@ struct InboxView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Solid fill only. Putting onTapGesture on the background
-            // here intercepted the first tap on HeaderBar buttons —
-            // the buttons sit on top in z-order, but SwiftUI's
-            // gesture priority quirk meant the user had to tap
-            // Settings 2× before the sheet opened. Keyboard dismiss
-            // moved into ReplyDock's own contentShape + the system
-            // .scrollDismissesKeyboard behaviour on the carousel.
+            // Solid fill only — gestures live on a separate layer below.
             SteerColors.appBackground.ignoresSafeArea()
 
+            // Keyboard-dismiss layer. Active only while the keyboard
+            // is up (`keyboard.height > 0`), otherwise allows hit-test
+            // to pass straight through to whatever's underneath. This
+            // is what makes "tap any blank space → keyboard closes"
+            // work without stealing the first tap on HeaderBar's
+            // Settings or Mac chip buttons. Buttons sit higher in the
+            // ZStack and SwiftUI's hit-test consults them first; this
+            // layer only catches taps that hit empty background.
+            if keyboard.height > 0 {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        replyFieldFocused = false
+                    }
+                    .accessibilityHidden(true)
+            }
+
+            // Order: SignIn → Onboarding → Inbox. The user
+            // ratifies their identity first (the standard "this is
+            // an account-bound app" mental model), then we teach
+            // them how the card flow works *as our authenticated
+            // user*, then we drop them in their real inbox.
             if !inbox.isSignedIn {
                 SignInPrompt(inbox: inbox)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("sign-in-prompt")
+            } else if !onboardingCompleted && !inbox.isDemoMode && !SyncInbox.fixtureModeEnabled {
+                OnboardingFlowView(onComplete: completeOnboarding)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("onboarding-flow")
+                    .transition(.opacity)
             } else {
                 content
                     .accessibilityElement(children: .contain)
@@ -92,7 +143,14 @@ struct InboxView: View {
             }
         }
         .sheet(isPresented: $showsMacSyncStatus) {
-            MacSyncStatusView(observer: devicePresence)
+            MacSyncStatusView(
+                observer: devicePresence,
+                pendingReplies: inbox.pendingReplies,
+                onRetry: { inbox.retryPendingReply($0) },
+                onCancel: { inbox.cancelPendingReply($0) }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showsSettings) {
             NavigationStack {
@@ -108,6 +166,24 @@ struct InboxView: View {
             devicePresence.start()
             cards = inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
             await inbox.refreshNotificationPermission()
+        }
+        // Force a WebSocket re-establish + cards refresh whenever the
+        // app comes back to the foreground. Background suspend kills
+        // the socket; without this the user opens Steer to a stale
+        // inbox until the next presence-poll tick (~15s) catches up.
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            inbox.reconnectWebSocketIfNeeded()
+            // The relay's APNS fanout sets `aps.badge = 1` on every
+            // push so the app icon carries a red dot when the user
+            // has unread cards. They're considered "read" the moment
+            // the app reaches the foreground — anything still
+            // pending is visible in the carousel itself.
+            UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
+            Task {
+                await inbox.reload()
+                await devicePresence.refresh()
+            }
         }
         .onReceive(inbox.$cards) { newCards in
             cards = newCards.map { CardPayloadMapping.actionCard(from: $0) }
@@ -177,9 +253,19 @@ struct InboxView: View {
                 message: "Demo cards",
                 detail: "Tap Use Live Sync to connect your Mac."
             )
+        case .connecting:
+            // First poll still in flight after sign-in. Reads as
+            // "we're trying" — not "no Mac" yet. Same shape as
+            // .neverConnected; just softer copy.
+            EmptyStateView(
+                icon: "antenna.radiowaves.left.and.right",
+                message: "Reaching your Mac",
+                detail: "Looking for a paired Steer for Mac…"
+            )
         case .neverConnected:
-            // First-run, never paired. CTAs only here so the user has
-            // an obvious path forward before any real session exists.
+            // First poll returned and confirmed no paired Mac.
+            // CTAs surface here so the user has an obvious path
+            // forward.
             EmptyStateView(
                 icon: "terminal",
                 message: "No Steer sessions yet",
@@ -197,18 +283,25 @@ struct InboxView: View {
                 detail: "Running sessions appear here when they stop."
             )
         case .stale, .offline:
+            // No CTA — there's nothing the user can do from the
+            // phone to bring the Mac back online; surfacing a "Mac
+            // Status" button just made them tap something that
+            // restated the same fact. The chip at the top already
+            // signals offline/stale, the detail line tells them
+            // replies queue.
             EmptyStateView(
                 icon: "wifi.slash",
                 message: "Mac offline",
-                detail: "Replies will queue until your Mac is back.",
-                primaryCTA: ("Mac Status", { showsMacSyncStatus = true })
+                detail: "Replies will queue until your Mac is back."
             )
         case .error:
+            // Same reasoning as .stale / .offline — opening the Mac
+            // Sync sheet doesn't fix a relay outage. Keep the surface
+            // honest: the line tells them what's wrong, and that's it.
             EmptyStateView(
                 icon: "exclamationmark.triangle",
                 message: "Sync issue",
-                detail: "Can't reach the relay.",
-                primaryCTA: ("Mac Status", { showsMacSyncStatus = true })
+                detail: "Can't reach the relay."
             )
         }
     }
@@ -220,7 +313,14 @@ struct InboxView: View {
                 isDemo: inbox.isDemoMode,
                 onExitDemo: { inbox.exitDemoMode() },
                 connectionState: devicePresence.state,
-                runningCount: devicePresence.runningCount,
+                // Chip "N running" now derives from iPhone-local
+                // state — the user's own pending replies that
+                // haven't yet been answered by a new card. This is
+                // the same set the Mac side computes from
+                // `instructedSessions`. The relay's
+                // /v1/sync/sessions polling is no longer the source.
+                runningCount: inbox.activeSessionIds.count,
+                failedCount: failedRepliesCount,
                 onTapChip: { showsMacSyncStatus = true },
                 onTapSettings: { showsSettings = true }
             )
@@ -232,22 +332,12 @@ struct InboxView: View {
             if inbox.notificationPermission == .denied {
                 NotificationsDeniedBanner()
             }
-
-            if !inbox.pendingReplies.isEmpty {
-                PendingRepliesChip(
-                    pending: inbox.pendingReplies,
-                    onRetry: { inbox.retryPendingReply($0) },
-                    onCancel: { inbox.cancelPendingReply($0) }
-                )
-                .padding(.leading, 4)
-            }
-            if !liveChips.isEmpty {
-                LiveSessionChipRow(
-                    chips: liveChips,
-                    isExpanded: $liveChipsExpanded
-                )
-                .padding(.leading, 4)
-            }
+            // PendingRepliesChip + LiveSessionChipRow were separate
+            // capsules stacked below the header — that broke the
+            // user's mental model that header chip and activity state
+            // are the same slot. The MacConnectionChip now folds
+            // sending / failed / running counts into its label, and
+            // MacSyncStatusView (sheet) lists the per-row detail.
 
             if inbox.loadPhase != .ready && cards.isEmpty {
                 // Cold-start placeholder. HeaderBar above stays
@@ -267,7 +357,8 @@ struct InboxView: View {
                     card: card,
                     reply: replyBinding(for: card.sessionId),
                     onSend: { text in send(text, to: card.sessionId) },
-                    replyFieldFocused: $replyFieldFocused
+                    replyFieldFocused: $replyFieldFocused,
+                    onBodyTap: { replyFieldFocused = false }
                 )
                 .id(card.id)
                 .offset(x: cardDragOffset)
@@ -400,6 +491,7 @@ private struct HeaderBar: View {
     var onExitDemo: (() -> Void)? = nil
     var connectionState: DevicePresenceObserver.State = .neverConnected
     var runningCount: Int = 0
+    var failedCount: Int = 0
     var onTapChip: (() -> Void)? = nil
     var onTapSettings: (() -> Void)? = nil
 
@@ -421,6 +513,7 @@ private struct HeaderBar: View {
                 MacConnectionChip(
                     state: connectionState,
                     runningCount: runningCount,
+                    failedCount: failedCount,
                     onTap: onTapChip
                 )
             }
@@ -603,78 +696,149 @@ private struct SignInPrompt: View {
     @State private var isSigningIn = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "rectangle.stack.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(SteerColors.tertiaryInk)
-            Text("Steer")
-                .font(.title3.weight(.semibold))
-            Text("Approve your Mac AI from your phone.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        ZStack {
+            // Animated dot grid + bezier "attention" routing. Pure
+            // background — every interactive element sits in the
+            // VStack above it.
+            RoutingFieldView()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            // Light bottom vignette so the CTA stays legible
+            // without washing out the whole field. Top stays
+            // open — the routing is the hero.
+            LinearGradient(
+                colors: [
+                    SteerColors.appBackground.opacity(0.0),
+                    SteerColors.appBackground.opacity(0.0),
+                    SteerColors.appBackground.opacity(0.35),
+                    SteerColors.appBackground.opacity(0.55)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+            .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                Spacer()
+
+                // App icon was previously rendered above the
+                // wordmark, but it competed with the routing field
+                // for attention and read as "logo applique" rather
+                // than identity. The wordmark + value prop carry
+                // enough identity on their own; the icon already
+                // lives on the lock screen / home screen.
+
+                // Mono wordmark + value prop. The routing field
+                // is the visual hero; the foreground stays
+                // typographic. SF Mono is the closest built-in
+                // approximation of JetBrains Mono — same kind of
+                // even-rhythm geometric grotesque — so we don't
+                // need to ship a custom font binary.
+                Text("Steer")
+                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(SteerColors.ink)
+
+                // Two-line value prop that completes the driving
+                // metaphor encoded in the product name: line 1 is
+                // the negative ("don't let your AI loaf"), line 2
+                // is the affirmative call to action ("you set the
+                // direction, you set the speed").
+                VStack(spacing: 4) {
+                    Text("Never let your AI sit idle.")
+                    Text("Set the course. Steer faster.")
+                }
+                .font(.system(size: 16, weight: .regular, design: .monospaced))
+                .foregroundStyle(SteerColors.secondaryInk)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
-            if let err = inbox.lastError {
-                Text(err)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-            VStack(spacing: 12) {
-                Button {
-                    inbox.enterDemoMode()
-                } label: {
-                    Text("Try Demo")
-                        .font(.callout.weight(.semibold))
-                        .frame(width: 240, height: 44)
-                        .background(Color.accentColor.opacity(0.12))
-                        .foregroundStyle(Color.accentColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("try-demo-button")
+                .padding(.top, 2)
 
-                // Apple's native button is required by App Store
-                // guideline 4.8 (custom black capsules get flagged).
-                // XCUITest can't drive the system Apple ID sheet, so
-                // we hide the button under `--uitest-signed-out` and
-                // surface a stand-in placeholder identifier instead.
-                if SyncInbox.uitestSignedOutMode {
-                    Text("Sign in with Apple (disabled in UI tests)")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 240, height: 44)
-                        .accessibilityIdentifier("apple-signin-stub")
-                } else {
-                    SignInWithAppleButton(.signIn) { request in
-                        request.requestedScopes = [.fullName, .email]
-                    } onCompletion: { result in
-                        Task {
-                            isSigningIn = true
-                            await inbox.handleAppleSignInResult(result)
-                            isSigningIn = false
+                if let err = inbox.lastError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                Spacer()
+
+                VStack(spacing: 14) {
+                    // Apple's native button is required by App
+                    // Store guideline 4.8. XCUITest can't drive
+                    // the system Apple ID sheet, so under the
+                    // `--uitest-signed-out` mode we render a
+                    // placeholder.
+                    if SyncInbox.uitestSignedOutMode {
+                        Text("Sign in with Apple (disabled in UI tests)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: 320)
+                            .frame(height: 56)
+                            .accessibilityIdentifier("apple-signin-stub")
+                    } else {
+                        // SignInWithAppleButton's Apple logo + label
+                        // are sized internally by the system as a
+                        // fixed ratio of the button's height — we
+                        // can't tune them independently. A taller
+                        // button gives a more prominent logo. 56pt
+                        // is the largest height Apple's HIG
+                        // examples use; combined with radius 20 it
+                        // reads as a primary CTA pill.
+                        SignInWithAppleButton(.signIn) { request in
+                            request.requestedScopes = [.fullName, .email]
+                        } onCompletion: { result in
+                            Task {
+                                isSigningIn = true
+                                await inbox.handleAppleSignInResult(result)
+                                isSigningIn = false
+                            }
                         }
+                        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                        .frame(maxWidth: 320)
+                        .frame(height: 56)
+                        .cornerRadius(20)
+                        .disabled(isSigningIn)
+                        .accessibilityIdentifier("apple-signin-button")
                     }
-                    .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                    .frame(width: 240, height: 44)
-                    .disabled(isSigningIn)
-                    .accessibilityIdentifier("apple-signin-button")
+                    if isSigningIn {
+                        ProgressView().controlSize(.small)
+                    }
+
+                    Button("Try Demo") {
+                        inbox.enterDemoMode()
+                    }
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(maxWidth: 320)
+                    .frame(height: 44)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("try-demo-button")
+
+                    HStack(spacing: 16) {
+                        Link("Privacy", destination: URL(string: "https://ilwonyoon.github.io/steer_ai/privacy/")!)
+                        Text("·").foregroundStyle(SteerColors.tertiaryInk)
+                        Link("Terms", destination: URL(string: "https://ilwonyoon.github.io/steer_ai/terms/")!)
+                        Text("·").foregroundStyle(SteerColors.tertiaryInk)
+                        Link("Support", destination: URL(string: "https://ilwonyoon.github.io/steer_ai/support/")!)
+                    }
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .padding(.top, 4)
                 }
-                if isSigningIn {
-                    ProgressView().controlSize(.small)
-                }
+                .padding(.bottom, 36)
             }
-            HStack(spacing: 14) {
-                Link("Privacy", destination: URL(string: "https://steer.ai/privacy")!)
-                Link("Terms", destination: URL(string: "https://steer.ai/terms")!)
-                Link("Support", destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
-            }
-            .font(.footnote)
-            .padding(.top, 8)
-            Spacer()
+            .padding(.horizontal, 24)
         }
-        .padding()
+        // SignIn is a marketing hero — the routing field, the
+        // wordmark, and the Apple button all read crisper on a
+        // dark background. We force-pin dark here regardless of the
+        // user's system theme so the screen is consistent across
+        // devices. The rest of the app (Inbox, Settings, etc.)
+        // continues to honor the system setting.
+        .preferredColorScheme(.dark)
     }
+
 }

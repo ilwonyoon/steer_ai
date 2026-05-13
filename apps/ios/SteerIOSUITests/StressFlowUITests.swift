@@ -70,7 +70,7 @@ final class StressFlowUITests: XCTestCase {
             reply.typeText("r\(i)")
             app.buttons["reply-send"].tap()
             let cleared = expectation(
-                for: NSPredicate(format: "value == 'reply to this session'"),
+                for: NSPredicate(format: "value == 'Reply to this session'"),
                 evaluatedWith: reply, handler: nil
             )
             wait(for: [cleared], timeout: 2)

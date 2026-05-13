@@ -11,6 +11,27 @@ These checks define the minimum product loop that must keep working before any U
 5. The reopened card shows the completed message with readable formatting, stable line breaks, and no transient repaint/status noise.
 6. Disconnected terminal cards disappear automatically and never keep notifying.
 
+## Instruction Delivery Contract (G14)
+
+An injected instruction MUST produce a `last_response_revision` bump within
+a reasonable window of its `injected_at` timestamp. Specifically:
+
+- An instruction ack'd as `status: "injected"` signals that the PTY received
+  the input. The next trusted output (`report`, `stdout`, `stderr`) from the
+  provider after `awaiting_response_since` MUST bump `last_response_revision`.
+- `steer send` MUST NOT silently discard an instruction when the agent returns
+  a transient "session not found" or "session is disconnected" error. It must
+  retry for up to `SEND_RECONNECT_RETRY_MS` (8 s) to absorb wrapper socket
+  bounce / agent restart windows before failing hard. This budget intentionally
+  exceeds the agent lock stale-reclaim window after SIGKILL.
+- The PTY instruction payload and its submit keystroke (`\r`) MUST be written
+  as a single atomic `ptyProcess.write` call. Splitting them across a
+  `setTimeout` creates a race window where providers that reject paste during
+  streaming (Codex, Claude) may silently discard the input.
+
+Regression tests: `packages/cli/test/instruction_delivery_invariant.test.js`
+(run with `STEER_INTEGRATION=1 npm test`).
+
 ## Source Rules
 
 - `report`, provider-native stdout/stderr, and hook/app-server events are trusted action-card sources.

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Store distribution. Xcode 15+ deprecated the older
+         "app-store" value in favor of "app-store-connect" — same
+         flow, new name. Other valid values: "ad-hoc",
+         "enterprise", "development". We only ever take this code
+         path for App Store submission; ad-hoc / TestFlight upload
+         flows reuse the same .ipa once altool accepts it. -->
+    <key>method</key>
+    <string>app-store-connect</string>
+
+    <!-- Steer's Apple Developer team. Pulled from the existing
+         DEVELOPMENT_TEAM in project.pbxproj so the export tool
+         doesn't have to guess. -->
+    <key>teamID</key>
+    <string>LG7667PAS6</string>
+
+    <!-- Symbols are useful for App Store Connect crash symbolication.
+         No reason to skip them. -->
+    <key>uploadSymbols</key>
+    <true/>
+
+    <!-- Bitcode has been deprecated by Apple since Xcode 14. Keep
+         this explicitly false so the export step doesn't waste time
+         trying to embed it. -->
+    <key>uploadBitcode</key>
+    <false/>
+
+    <!-- Automatic signing — the export tool will resolve the
+         distribution certificate + App Store profile from the
+         account on disk. If the team has multiple distribution
+         profiles the export will fail and we'll switch to
+         manual signing (set signingStyle to "manual" and add a
+         provisioningProfiles dict mapping bundle id → profile
+         name). -->
+    <key>signingStyle</key>
+    <string>automatic</string>
+
+    <!-- Strip Swift symbol info from the binary to keep the .ipa
+         small. App Store Connect will still get dSYMs because
+         uploadSymbols is true. -->
+    <key>stripSwiftSymbols</key>
+    <true/>
+</dict>
+</plist>

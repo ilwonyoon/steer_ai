@@ -254,6 +254,20 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     agent.write({ type: "state", sessionId, runState: "running" });
     const merged = formatInstructionWithAttachments(message.text, message.attachments);
     const input = formatPtyInstructionInput(provider, merged);
+    // Codex / Claude TUI input requires a small gap between the
+    // bracketed-paste END sequence and the submit keystroke. When
+    // both arrive in the same PTY write, the TUI sees `\r` as part
+    // of the paste payload (not a separate "press enter") and the
+    // line stays unsubmitted in the input box — exactly the
+    // observed dogfood regression where reply text appears in the
+    // terminal but never executes.
+    //
+    // 50 ms is the empirically derived gap that previously worked
+    // before the atomic-write experiment. We send the bracketed
+    // payload, wait one frame, then send the carriage return. The
+    // ack still fires after both writes so the agent records the
+    // instruction as injected only once the submit keystroke is on
+    // the wire.
     ptyProcess.write(input);
     setTimeout(() => {
       ptyProcess.write("\r");
@@ -618,12 +632,69 @@ async function sendInstruction(args) {
     throw new Error("usage: steer send <sessionId> <instruction> [--attach <path>]...");
   }
 
-  const response = await requestAgent({ type: "send", sessionId, text, attachments });
-  if (response.type === "error") {
-    console.error(response.error);
-    process.exit(1);
+  // How long we retry when the agent returns a transient
+  // "session not found" / "session is disconnected" error.
+  // The wrapper's agent_link reconnects within ~250 ms on a
+  // normal socket bounce and up to ~6 s after a SIGKILL restart
+  // while the OS-level agent lock reaches its stale threshold.
+  // 8 s keeps send alive across that restart window without
+  // blocking the caller too long if the session genuinely ended.
+  //
+  // Inlined here instead of a module-level const because the
+  // CLI dispatcher at the top of this file awaits sendInstruction
+  // before module evaluation reaches any const declared *after*
+  // the dispatcher — running into a TDZ ReferenceError. Inline
+  // const is fine; the value is set on every send call.
+  const SEND_RECONNECT_RETRY_MS = 8000;
+  const deadline = Date.now() + SEND_RECONNECT_RETRY_MS;
+  let backoffMs = 150;
+  let lastError;
+
+  while (true) {
+    let response;
+    try {
+      response = await requestAgent({ type: "send", sessionId, text, attachments });
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      if (!isTransientAgentSendError(lastError) || Date.now() >= deadline) {
+        throw error;
+      }
+      const remaining = deadline - Date.now();
+      await delay(Math.min(backoffMs, remaining));
+      backoffMs = Math.min(backoffMs * 2, 500);
+      continue;
+    }
+
+    if (response.type !== "error") {
+      console.log(JSON.stringify(response, null, 2));
+      return;
+    }
+
+    // Retry only for transient "session not yet registered" or "socket
+    // bounce" errors. Any other error (bad sessionId format, unknown type,
+    // etc.) is permanent and should surface immediately.
+    const isTransient =
+      typeof response.error === "string" &&
+      isTransientAgentSendError(response.error);
+
+    if (!isTransient || Date.now() >= deadline) {
+      console.error(response.error);
+      process.exit(1);
+    }
+
+    lastError = response.error;
+    const remaining = deadline - Date.now();
+    await delay(Math.min(backoffMs, remaining));
+    backoffMs = Math.min(backoffMs * 2, 500);
   }
-  console.log(JSON.stringify(response, null, 2));
+}
+
+function isTransientAgentSendError(message) {
+  return (
+    message.includes("session not found") ||
+    message.includes("session is disconnected") ||
+    message.includes("SteerAgent did not start within")
+  );
 }
 
 function parseSendArgs(args) {
@@ -807,13 +878,13 @@ async function startAgent() {
   });
   child.unref();
 
-  const deadline = Date.now() + 3000;
+  const deadline = Date.now() + 7000;
   while (Date.now() < deadline) {
     if (fs.existsSync(socketPath)) return;
     await delay(50);
   }
 
-  throw new Error("SteerAgent did not start within 3s");
+  throw new Error("SteerAgent did not start within 7s");
 }
 
 function printUsage() {
@@ -982,4 +1053,3 @@ function handleClaudeStream(raw, agent, sessionId) {
     }
   }
 }
-

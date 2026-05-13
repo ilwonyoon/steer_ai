@@ -196,7 +196,7 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
   }
   const userId = c.get("user").userId;
   const store = new Store(c.env);
-  const { inserted, changed } = await store.upsertCard(userId, body);
+  const { inserted, changed, becameActive } = await store.upsertCard(userId, body);
 
   // v3 dual-write — emit a card.upsert event for every meaningful
   // change. PR 1 only writes; no consumer yet. We dedupe on
@@ -228,16 +228,31 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
     await broadcast(c.env, userId, { type: "card.upsert", card: body });
   }
 
-  // Fan out APNS push only on FIRST insert of a given cardId. Mac
-  // re-publishes every active card every reload tick (~2s); without
-  // this guard each tick would re-pump a notification and the user's
-  // lock screen fills up in seconds. WebSocket broadcast above is
-  // separately the live-state path and stays per-tick.
+  // Fan out APNS push on every NEW user-actionable card. SteerAgent
+  // reuses `card-${sessionId}` as the card_id for every card on a
+  // session, so after the first card is resolved (user replied),
+  // every subsequent stop/blocker/etc on the same session is an
+  // UPDATE not an INSERT. Gating on `inserted` alone meant only the
+  // very first card of a session's lifetime ever pushed; everything
+  // after was silent.
+  //
+  // `becameActive` covers both:
+  //   1. first INSERT with state="active" (same as the old gate)
+  //   2. UPDATE that flips state from "done" (resolved) back to
+  //      "active" (next turn after the user's reply)
+  //
+  // Mac still re-publishes every active card on its 2s reload tick,
+  // but those republishes are state-stable (active → active) so
+  // they never trip becameActive. No notification spam.
   if (
-    inserted &&
-    body.state === "active" &&
+    becameActive &&
     ["blocker", "decision", "question", "waiting"].includes(body.category)
   ) {
+    // Suppress the noisy "[apns] fanout" log line distinguishing
+    // first-insert from re-activation: the user's relay tail
+    // already sees `card.upsert ... inserted=true|false` from the
+    // event log, no need to repeat here.
+    void inserted;
     // c.executionCtx throws under the in-process test runtime; in
     // production it returns a real ExecutionContext. Use a try/catch
     // so the fanout still fires either way (just without
@@ -296,6 +311,12 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
             body: bodyText,
             cardIcon,
             apsEnvironment: d.apsEnvironment,
+            // Bump the app-icon badge so users see the unread dot
+            // even when their Focus filter mutes the banner. The
+            // iPhone app clears the badge to 0 the next time the
+            // app reaches the foreground (setBadgeCount(0) in
+            // SteerIOSApp's scenePhase observer).
+            badge: 1,
             customPayload: { cardId: card.cardId, sessionId: card.sessionId },
           });
           console.log(
@@ -438,43 +459,32 @@ app.post("/v1/sync/instructions/:id/status", async (c) => {
 });
 
 /**
- * POST /v1/sync/sessions
- * Mac heartbeats live session metadata so iPhone can label cards
- * with which project/branch they came from.
+ * POST /v1/sync/sessions  [DEPRECATED]
+ *
+ * Originally Mac heartbeated live-session metadata here so iPhone
+ * could render "1 running" alongside the Mac chip. iPhone now
+ * derives that count locally from its own SessionEntry array
+ * (which is fed by card upserts carrying responseRevision), so
+ * the publish path is dead code on every supported client.
+ *
+ * Keep the route returning 200 so an older Mac binary that
+ * happens to still publish doesn't error or retry-storm. Just
+ * skip the store write + event dual-write so we don't pile
+ * up junk rows server-side.
  */
 app.post("/v1/sync/sessions", async (c) => {
-  const body = await c.req.json<SessionSnapshot>();
-  const userId = c.get("user").userId;
-  const store = new Store(c.env);
-  await store.upsertSession(userId, body);
-  // v3 dual-write: session.upsert event. Idempotency key is
-  // (sessionId, runState, lastActivityAt) — any of those three
-  // changing produces a new event, repeating the exact same state
-  // is a no-op. Without the lastActivityAt component, the Mac's
-  // periodic chip republish (same sessionId+runState every reload
-  // tick when nothing changed) would still create a new event row
-  // every tick.
-  await appendEventDualWrite(
-    store,
-    userId,
-    "session.upsert",
-    body as unknown as Record<string, unknown>,
-    producerDeviceId(c),
-    `session.upsert:${body.sessionId}:${body.runState}:${body.lastActivityAt}`
-  );
-  return c.json({ ok: true });
+  return c.json({ ok: true, deprecated: true });
 });
 
 /**
- * GET /v1/sync/sessions
- * iPhone reads this to render the live-session badge (e.g. "1
- * running") next to the Mac chip. Only running / waiting / blocked
- * sessions from the last 5 minutes are returned.
+ * GET /v1/sync/sessions  [DEPRECATED]
+ *
+ * Same story as the POST sibling: no current client consumes
+ * this. Return an empty list so any straggler client keeps
+ * working without ever showing stale chip data.
  */
 app.get("/v1/sync/sessions", async (c) => {
-  const store = new Store(c.env);
-  const sessions = await store.listLiveSessions(c.get("user").userId);
-  return c.json({ sessions });
+  return c.json({ sessions: [], deprecated: true });
 });
 
 /**
@@ -487,11 +497,12 @@ app.get("/v1/sync/sessions", async (c) => {
 app.get("/v1/sync/presence", async (c) => {
   const store = new Store(c.env);
   const userId = c.get("user").userId;
-  const [devices, sessions] = await Promise.all([
-    store.listDevices(userId),
-    store.listLiveSessions(userId),
-  ]);
-  return c.json({ devices, sessions });
+  const devices = await store.listDevices(userId);
+  // `sessions` is intentionally an empty list. Current iOS reads
+  // only `devices` from this response; the sessions field is kept
+  // in the shape for backwards compat with any older iOS build
+  // that still decodes it. Saves one DO read per poll.
+  return c.json({ devices, sessions: [] });
 });
 
 /**

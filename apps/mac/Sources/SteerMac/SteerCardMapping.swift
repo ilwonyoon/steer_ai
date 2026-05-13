@@ -31,7 +31,8 @@ enum SteerCardMapping {
             ],
             state: cardState(card.state),
             createdAt: timestampMs(now),
-            updatedAt: timestampMs(now)
+            updatedAt: timestampMs(now),
+            responseRevision: card.responseRevision
         )
     }
 
@@ -64,6 +65,11 @@ extension CardPayload {
         hasher.combine(summary)
         hasher.combine(actionPrompt)
         hasher.combine(state)
+        // Bumping responseRevision must force a republish even if
+        // every other field is unchanged — that's the whole point
+        // of the counter. iPhone is watching this number to decide
+        // when to atomically swap chip → carousel.
+        hasher.combine(responseRevision)
         // payload is [String: AnyCodable]; AnyCodable is Hashable.
         // Canonicalize key order so dictionary iteration order
         // doesn't change the hash across re-encodes.

@@ -29,16 +29,22 @@ Live delivery requires Steer for Mac because the coding agent sessions run local
 
 ## Review Credentials
 
-TODO: Add final demo mode instructions before submission.
+No demo account is required. The app includes a built-in demo mode that
+does not require Sign in with Apple, a prepared Mac, or access to private
+developer data.
 
-If a live relay review account is provided, include:
+Reviewer flow:
 
-- Apple ID or review account setup instructions.
-- Whether a prepared Mac is online.
-- What card should appear after sign-in.
-- Expected reply status behavior.
+1. Install and open the app.
+2. Tap `Try Demo` on the signed-out screen.
+3. Review the sample action cards.
+4. Type a reply and tap send.
+5. Open Settings to verify Support, Privacy Policy, Terms, Sign Out, and
+   Delete Account surfaces.
 
-If no live account is provided, Demo Mode must be complete enough to review the app's core functionality without signing in.
+The demo uses local sample cards and simulated delivery state. Live sync
+requires the user's own Steer for Mac setup, but live sync is not required
+to evaluate the iPhone app's core card review and reply workflow.
 
 ## Important Limits
 

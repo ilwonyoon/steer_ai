@@ -74,7 +74,7 @@ final class CardFlowUITests: XCTestCase {
 
         // After send the field's value clears and focus drops. The
         // text field's `value` is the placeholder when empty.
-        let predicate = NSPredicate(format: "value == 'reply to this session'")
+        let predicate = NSPredicate(format: "value == 'Reply to this session'")
         let cleared = expectation(for: predicate, evaluatedWith: replyField, handler: nil)
         wait(for: [cleared], timeout: 3)
     }

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Steer Privacy Policy</title>
+  <link rel="stylesheet" href="../assets/legal.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand"><a href="../">Steer</a></div>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Effective date: May 10, 2026</p>
+      <p class="lead">This Privacy Policy explains how Steer collects, uses, stores, and deletes information when you use the Steer iPhone app, Steer for Mac, and Steer's relay service.</p>
+    </header>
+
+    <h2>What Steer Does</h2>
+    <p>Steer is an action inbox for local Mac coding agents. The Mac app observes Steer-managed CLI sessions, turns waiting or blocked moments into action cards, and can deliver replies back to the local session when the user sends a reply from Steer.</p>
+    <p>The iPhone app is not a remote terminal and does not mirror a live shell. It shows synced action cards, lets you write replies, and shows delivery status.</p>
+
+    <h2>Information We Collect</h2>
+    <p>Steer collects the minimum information needed to authenticate you and sync action cards between your own devices.</p>
+
+    <h3>Account Information</h3>
+    <p>When you sign in with Apple, Steer receives and stores:</p>
+    <ul>
+      <li>Apple's stable user identifier for your account.</li>
+      <li>Your Apple relay email or real email, if Apple provides it.</li>
+      <li>Your display name, if Apple provides it and you choose to share it.</li>
+    </ul>
+    <p>Steer stores a session token in the device Keychain so you can stay signed in.</p>
+
+    <h3>Action Card And Session Information</h3>
+    <p>If you enable iPhone sync, Steer may send the following from your Mac to the Steer relay:</p>
+    <ul>
+      <li>Action card IDs and session IDs.</li>
+      <li>Card category, priority, title, summary, state, and timestamps.</li>
+      <li>Short terminal excerpts used to explain why the card needs attention.</li>
+      <li>Suggested reply options.</li>
+      <li>Project display label, provider label, and branch label.</li>
+    </ul>
+    <p>Terminal excerpts and project labels may contain sensitive coding context, local path fragments, repository names, errors, command output, or other information shown by your CLI tools. Do not enable sync for sessions that may expose data you do not want transmitted to the relay.</p>
+
+    <h3>Replies And Delivery Status</h3>
+    <p>When you send a reply from iPhone, Steer stores:</p>
+    <ul>
+      <li>The reply text.</li>
+      <li>The target session ID.</li>
+      <li>The instruction ID.</li>
+      <li>Queued, injected, or failed delivery status.</li>
+      <li>Failure reason, if delivery fails.</li>
+    </ul>
+    <p>The Mac app later reads queued replies from the relay and injects them into the matching local Steer-managed session.</p>
+
+    <h3>Local Mac Data</h3>
+    <p>Steer for Mac stores local session data on your Mac, including the local SQLite database and session transcript logs under the user's Steer data directory. Local transcript logs are not sent to the relay unless they are turned into synced card fields or terminal excerpts.</p>
+
+    <h3>Diagnostics</h3>
+    <p>Steer does not currently use third-party analytics SDKs or advertising SDKs. The relay provider and platform infrastructure may process operational request metadata, such as IP address, timestamps, request paths, and error logs, to operate and secure the service.</p>
+
+    <h2>How We Use Information</h2>
+    <p>Steer uses collected information to:</p>
+    <ul>
+      <li>Authenticate your devices.</li>
+      <li>Sync action cards between your Mac and iPhone.</li>
+      <li>Queue replies from iPhone and deliver them through your Mac.</li>
+      <li>Show delivery status and errors.</li>
+      <li>Maintain service reliability, prevent abuse, and debug operational issues.</li>
+    </ul>
+    <p>Steer does not sell your personal information. Steer does not use your synced card content, terminal excerpts, or replies for advertising. Steer does not use your content to train AI models.</p>
+
+    <h2>Third-Party Services</h2>
+    <p>Steer uses the following service providers:</p>
+    <ul>
+      <li>Apple Sign in with Apple, for authentication.</li>
+      <li>Cloudflare Workers, D1, and Durable Objects, for the Steer relay, database, and WebSocket fanout.</li>
+    </ul>
+    <p>These providers process information as needed to provide their services to Steer.</p>
+    <p>Third-party coding tools that you use with Steer, such as Claude Code, Codex CLI, Gemini CLI, or other command-line tools, are governed by their own terms and privacy policies. Steer does not control those services.</p>
+
+    <h2>Data Retention</h2>
+    <p>Steer keeps relay account data and synced action data while your account is active or until you delete your account. Resolved cards and historical instruction records may remain in the relay until deleted through account deletion or future cleanup tools.</p>
+    <p>Local Mac transcripts and databases remain on your Mac until you delete them or use a Steer cleanup feature.</p>
+
+    <h2>Account Deletion</h2>
+    <p>You can delete your Steer relay account from the app. Deleting your account removes your relay user record and associated relay cards, instructions, and sessions from Steer's database, unless retention is required by law.</p>
+    <p>Deleting your relay account does not automatically delete local files on your Mac. You may separately remove local Steer data from your Mac.</p>
+
+    <h2>Security</h2>
+    <p>Steer uses Sign in with Apple for authentication. Session tokens are stored in the device Keychain. Network requests to the relay use HTTPS or secure WebSocket connections.</p>
+    <p>No system can be guaranteed perfectly secure. You should avoid syncing sessions that display secrets, private keys, customer data, confidential code, or other highly sensitive information.</p>
+
+    <h2>Children's Privacy</h2>
+    <p>Steer is intended for developers and is not directed to children.</p>
+
+    <h2>Changes</h2>
+    <p>We may update this Privacy Policy when Steer's product, data practices, or service providers change. The effective date above will be updated when material changes are made.</p>
+
+    <h2>Contact</h2>
+    <p>For privacy questions or deletion requests, contact <a href="mailto:superwedge.labs@gmail.com">superwedge.labs@gmail.com</a>.</p>
+
+    <footer>
+      <p><a href="../terms/">Terms of Service</a> · <a href="../support/">Support</a></p>
+    </footer>
+  </main>
+</body>
+</html>

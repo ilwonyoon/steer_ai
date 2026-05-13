@@ -1,0 +1,422 @@
+import XCTest
+@testable import SteerCore
+
+final class SessionEntryStoreTests: XCTestCase {
+
+    // MARK: - Helpers
+
+    private func makeCard(
+        sessionId: String,
+        cardId: String,
+        updatedAtMs: Int64 = 0,
+        revision: Int? = nil
+    ) -> CardPayload {
+        CardPayload(
+            cardId: cardId,
+            sessionId: sessionId,
+            category: "question",
+            priority: "normal",
+            title: "title-\(cardId)",
+            summary: "summary",
+            actionPrompt: nil,
+            payload: nil,
+            state: "active",
+            createdAt: 0,
+            updatedAt: updatedAtMs,
+            responseRevision: revision
+        )
+    }
+
+    // MARK: - The atomic chip-clear / card-surface transition
+
+    func test_cardUpsertWithGreaterRevision_swapsAtomically() {
+        // User replied while card was at revision=3.
+        let entryA = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 3),
+            stage: .awaitingResponse,
+            lastReplyText: "hi",
+            lastInstructionId: "i1",
+            instructedRevision: 3
+        )
+        // Terminal finished → Mac bumps revision to 4 and re-upserts.
+        let next = SessionEntryStore.onCardUpsert(
+            previous: [entryA],
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 4)
+        )
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(next[0].card.responseRevision, 4)
+        XCTAssertEqual(next[0].stage, .awaitingUser)
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: next).count, 0
+        )
+    }
+
+    // MARK: - Same revision → keep stage even on content refresh
+
+    func test_sameRevisionReUpsert_keepsAwaitingResponse() {
+        // Mac's 2s reload tick re-publishes the same response-revision
+        // — classifier may have refreshed title / summary, but no new
+        // terminal response yet. Chip must stay lit.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 3),
+            stage: .awaitingResponse,
+            lastReplyText: "x",
+            lastInstructionId: "i1",
+            instructedRevision: 3
+        )
+        let refreshed = makeCard(
+            sessionId: "S1", cardId: "A", updatedAtMs: 1500, revision: 3
+        )
+        let next = SessionEntryStore.onCardUpsert(
+            previous: [entry], card: refreshed
+        )
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(next[0].stage, .awaitingResponse)
+        XCTAssertEqual(next[0].card.updatedAt, 1500)
+    }
+
+    // MARK: - sendReply → marks awaitingResponse
+
+    func test_markUserReplied_transitionsStage() {
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", revision: 7),
+            stage: .awaitingUser
+        )
+        let next = SessionEntryStore.markUserReplied(
+            previous: [entry], cardId: "A", text: "go",
+            instructionId: "i1"
+        )
+        XCTAssertEqual(next[0].stage, .awaitingResponse)
+        XCTAssertEqual(next[0].lastReplyText, "go")
+        XCTAssertEqual(next[0].lastInstructionId, "i1")
+        // Stamp = card.responseRevision at the moment of reply.
+        XCTAssertEqual(next[0].instructedRevision, 7)
+        // Chip count == 1, carousel == 0.
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: next).count, 1
+        )
+        XCTAssertEqual(
+            SessionEntryStore.awaitingUserEntries(in: next).count, 0
+        )
+    }
+
+    // MARK: - POST failure transitions to failed
+
+    func test_markReplyFailed_movesAwaitingResponseToFailed() {
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .awaitingResponse,
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let next = SessionEntryStore.markReplyFailed(
+            previous: [entry], instructionId: "i1", reason: "boom"
+        )
+        XCTAssertEqual(next[0].stage, .failed("boom"))
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: next).count, 0
+        )
+        XCTAssertEqual(
+            SessionEntryStore.failedEntries(in: next).count, 1
+        )
+    }
+
+    func test_markReplyFailed_doesNotDowngradeFailed() {
+        // Idempotency: a duplicate failure ack shouldn't flip back.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .failed("prior"),
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let next = SessionEntryStore.markReplyFailed(
+            previous: [entry], instructionId: "i1", reason: "newer"
+        )
+        XCTAssertEqual(next[0].stage, .failed("prior"))
+    }
+
+    // MARK: - cancelFailedReply restores awaitingUser
+
+    func test_cancelFailedReply_returnsToAwaitingUser() {
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .failed("net"),
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let next = SessionEntryStore.cancelFailedReply(
+            previous: [entry], instructionId: "i1"
+        )
+        XCTAssertEqual(next[0].stage, .awaitingUser)
+        XCTAssertNil(next[0].lastReplyText)
+        XCTAssertNil(next[0].lastInstructionId)
+    }
+
+    // MARK: - cardResolved drops entry
+
+    func test_cardResolved_dropsAwaitingUser() {
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .awaitingUser
+        )
+        let next = SessionEntryStore.onCardResolved(
+            previous: [entry], cardId: "A"
+        )
+        XCTAssertEqual(next, [])
+    }
+
+    func test_cardResolved_dropsAwaitingResponseEntry() {
+        // Earlier we tried to hold .awaitingResponse entries through
+        // the gap between card.resolved and the next card.upsert, on
+        // the theory that the chip would otherwise flicker 1 → 0 → 1.
+        // In practice the hold was unbounded — if the wrapper died,
+        // the user signed out, or the response card raced through a
+        // different code path, the entry stuck at .awaitingResponse
+        // forever and the chip stayed lit on dead sessions the user
+        // could not dismiss. We now drop on resolve regardless of
+        // stage and accept the brief flicker.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            stage: .awaitingResponse,
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let afterResolve = SessionEntryStore.onCardResolved(
+            previous: [entry], cardId: "A"
+        )
+        XCTAssertEqual(afterResolve, [])
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: afterResolve).count,
+            0
+        )
+    }
+
+    func test_cardResolved_dropsFailedEntry() {
+        // Failed reply has the card resolved — the user can't
+        // retry against a non-existent card anyway, so drop it.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .failed("x"),
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let next = SessionEntryStore.onCardResolved(
+            previous: [entry], cardId: "A"
+        )
+        XCTAssertEqual(next, [])
+    }
+
+    // MARK: - Bootstrap preserves in-flight stages
+
+    func test_applyBootstrap_dropsAwaitingResponseWhenServerHasNone() {
+        // Previously we held .awaitingResponse entries through an
+        // empty GET on the theory that Mac would publish the
+        // response card on its own. In practice the response card
+        // sometimes never showed up (Mac process died, wrapper
+        // paste-submit failure, sign-out mid-flight, etc.) and the
+        // entry stuck at .awaitingResponse forever. The relay GET
+        // is now treated as authoritative: if the server has no
+        // card for this session, drop the entry.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            stage: .awaitingResponse,
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let next = SessionEntryStore.applyBootstrap(
+            previous: [entry], cards: []
+        )
+        XCTAssertEqual(next, [])
+    }
+
+    func test_applyBootstrap_promotesAwaitingResponseWhenServerHasNewCard() {
+        // The "iPhone reply landed while WS was idle-dropped" case.
+        // The user posted the instruction from background, the response
+        // notification fired, but the WS frame for the new card never
+        // reached the in-memory store because the socket was asleep.
+        // When the app comes back to the foreground and reloads the
+        // server's card list, the entry must transition out of
+        // .awaitingResponse — otherwise the chip pins at "1 running"
+        // and the carousel stays empty even though the relay has the
+        // response card sitting right there.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            stage: .awaitingResponse,
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let serverCard = makeCard(
+            sessionId: "S1", cardId: "B", updatedAtMs: 2000, revision: 2
+        )
+        let next = SessionEntryStore.applyBootstrap(
+            previous: [entry], cards: [serverCard]
+        )
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(next[0].card.cardId, "B")
+        XCTAssertEqual(next[0].stage, .awaitingUser)
+    }
+
+    func test_applyBootstrap_dropsFailedWhenServerHasNone() {
+        // Same authority rule applies to .failed entries: if the
+        // relay doesn't have the card any more, there's nothing for
+        // the user to retry against.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .failed("x"),
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let next = SessionEntryStore.applyBootstrap(
+            previous: [entry], cards: []
+        )
+        XCTAssertEqual(next, [])
+    }
+
+    func test_applyBootstrap_dropsAwaitingUserCardsMacResolved() {
+        // Conversely: a card the user was looking at, that Mac
+        // resolved server-side (e.g. user replied on Mac), should
+        // disappear on the next bootstrap GET.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A"),
+            stage: .awaitingUser
+        )
+        let next = SessionEntryStore.applyBootstrap(
+            previous: [entry], cards: []
+        )
+        XCTAssertEqual(next, [])
+    }
+
+    func test_applyBootstrap_replacesAwaitingUserCardContent() {
+        // Same session, but Mac re-classified the card. New title /
+        // summary, same stage.
+        let prior = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            stage: .awaitingUser
+        )
+        let refreshed = makeCard(
+            sessionId: "S1", cardId: "A", updatedAtMs: 1500
+        )
+        let next = SessionEntryStore.applyBootstrap(
+            previous: [prior], cards: [refreshed]
+        )
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(next[0].card.updatedAt, 1500)
+        XCTAssertEqual(next[0].stage, .awaitingUser)
+    }
+
+    // MARK: - Multi-session independence
+
+    func test_multipleSessions_independentStages() {
+        let a = SessionEntry(
+            sessionId: "A",
+            card: makeCard(sessionId: "A", cardId: "ca"),
+            stage: .awaitingUser
+        )
+        let b = SessionEntry(
+            sessionId: "B",
+            card: makeCard(sessionId: "B", cardId: "cb"),
+            stage: .awaitingResponse,
+            lastReplyText: "x",
+            lastInstructionId: "i2"
+        )
+        let c = SessionEntry(
+            sessionId: "C",
+            card: makeCard(sessionId: "C", cardId: "cc"),
+            stage: .failed("net"),
+            lastReplyText: "y",
+            lastInstructionId: "i3"
+        )
+        let all = [a, b, c]
+        XCTAssertEqual(SessionEntryStore.awaitingUserEntries(in: all).count, 1)
+        XCTAssertEqual(SessionEntryStore.awaitingResponseEntries(in: all).count, 1)
+        XCTAssertEqual(SessionEntryStore.failedEntries(in: all).count, 1)
+    }
+
+    // MARK: - The exact bug we kept hitting
+
+    func test_chipAndCard_neverDisagree_acrossReplyAndResponse() {
+        // Step 1: card lands at t=1000.
+        var entries: [SessionEntry] = []
+        entries = SessionEntryStore.onCardUpsert(
+            previous: entries,
+            card: makeCard(
+                sessionId: "S1", cardId: "A",
+                updatedAtMs: 1000, revision: 1
+            )
+        )
+        XCTAssertEqual(
+            SessionEntryStore.awaitingUserEntries(in: entries).count, 1
+        )
+
+        // Step 2: user replies. Stamp = current responseRevision=1.
+        entries = SessionEntryStore.markUserReplied(
+            previous: entries, cardId: "A", text: "go",
+            instructionId: "i1"
+        )
+        XCTAssertEqual(entries[0].instructedRevision, 1)
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: entries).count, 1
+        )
+
+        // Step 3: Mac's 2s reload tick re-upserts. Revision is still 1
+        // (no new response yet). Stage must NOT flicker.
+        entries = SessionEntryStore.onCardUpsert(
+            previous: entries,
+            card: makeCard(
+                sessionId: "S1", cardId: "A",
+                updatedAtMs: 2200, revision: 1
+            )
+        )
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: entries).count, 1
+        )
+
+        // Step 4: Mac resolves the card before publishing the
+        // response. We accept the brief chip flicker: the entry is
+        // dropped here, the chip momentarily clears, and Step 5's
+        // upsert reinstates the entry as .awaitingUser. The previous
+        // "hold .awaitingResponse until upsert" version of this
+        // function caused stuck "N running" chips when the upsert
+        // never came (wrapper death, sign-out, paste-submit
+        // regression, etc.) — that bug was a launch blocker; the
+        // flicker is a second-long visual jitter.
+        entries = SessionEntryStore.onCardResolved(
+            previous: entries, cardId: "A"
+        )
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: entries).count, 0
+        )
+
+        // Step 5: 10s later, terminal answers. Mac bumps revision to
+        // 2 and upserts the new card. Fresh entry lands as
+        // .awaitingUser.
+        entries = SessionEntryStore.onCardUpsert(
+            previous: entries,
+            card: makeCard(
+                sessionId: "S1", cardId: "A",
+                updatedAtMs: 12000, revision: 2
+            )
+        )
+        XCTAssertEqual(
+            SessionEntryStore.awaitingUserEntries(in: entries).count, 1
+        )
+        XCTAssertEqual(
+            SessionEntryStore.awaitingResponseEntries(in: entries).count, 0
+        )
+        XCTAssertEqual(entries[0].card.responseRevision, 2)
+    }
+}

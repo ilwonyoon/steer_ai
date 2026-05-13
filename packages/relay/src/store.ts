@@ -80,11 +80,20 @@ export class Store {
 
   /// Upsert a card.
   ///
-  /// Returns `inserted` (true when this card_id is new for the user)
-  /// and `changed` (true when the row is new OR any meaningful column
-  /// differs from what we previously stored). Callers gate on
-  /// `inserted` for APNS (one push per new card) and on `changed`
-  /// for the WebSocket broadcast (no-op upserts must not fan out).
+  /// Returns `inserted` (true when this card_id is new for the user),
+  /// `changed` (true when the row is new OR any meaningful column
+  /// differs from what we previously stored), and `becameActive`
+  /// (true when the row was either inserted with state="active" OR
+  /// transitioned from a non-active state to active — this is the
+  /// signal the APNS fanout needs to push every NEW user-actionable
+  /// card, not just the first one of a session's lifetime).
+  ///
+  /// Why becameActive matters: SteerAgent reuses `card-${sessionId}`
+  /// as the card_id for every card on that session, so after the
+  /// first card is resolved, every subsequent stop/blocker/etc on
+  /// the same session is an UPDATE not an INSERT. Pre-fix, only the
+  /// very first card of a session ever produced a push; users
+  /// reported "first card alerts, every reply after that silent."
   ///
   /// "Meaningful" here = everything except `updated_at`. Mac
   /// re-publishes on its reload tick, bumping updated_at every time
@@ -94,7 +103,7 @@ export class Store {
   async upsertCard(
     userId: string,
     card: CardPayload
-  ): Promise<{ inserted: boolean; changed: boolean }> {
+  ): Promise<{ inserted: boolean; changed: boolean; becameActive: boolean }> {
     const existing = await this.env.DB.prepare(
       `SELECT session_id, category, priority, title, summary,
               action_prompt, payload_json, state
@@ -123,6 +132,14 @@ export class Store {
       (existing.action_prompt ?? null) !== (card.actionPrompt ?? null) ||
       existing.payload_json !== incomingPayload ||
       existing.state !== card.state;
+    // True when the card is reaching state="active" for the first
+    // time in this upsert: either it's a brand-new row OR the
+    // previous stored state was something else (typically "done"
+    // after the user replied to the previous turn). This is the
+    // event that should trigger a fresh push notification.
+    const becameActive =
+      card.state === "active" &&
+      (inserted || existing.state !== "active");
 
     await this.env.DB.prepare(
       `INSERT INTO cards (
@@ -155,7 +172,7 @@ export class Store {
         card.updatedAt
       )
       .run();
-    return { inserted, changed };
+    return { inserted, changed, becameActive };
   }
 
   async listActiveCards(userId: string, sinceUpdatedAt = 0): Promise<CardPayload[]> {
