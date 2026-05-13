@@ -46,32 +46,49 @@ struct RoutingFieldView: View {
         for w in 0..<walkerCount {
             var path: [GridPoint] = []
             path.reserveCapacity(walkLength)
-            // Start at a random cell.
+            // Start near the bottom edge so the upward drift has
+            // somewhere to come *from*.
             var current = GridPoint(
                 col: Int.random(in: 0..<cols, using: &rng),
-                row: Int.random(in: 0..<rows, using: &rng)
+                row: rows - 1 - Int.random(in: 0..<3, using: &rng)
             )
             path.append(current)
-            // Last direction so we don't go back the way we came
-            // every step (would just hop between two dots).
             var lastDir: (dx: Int, dy: Int)? = nil
             for _ in 1..<walkLength {
-                let directions: [(dx: Int, dy: Int)] = [
-                    (1, 0), (-1, 0), (0, 1), (0, -1)
+                // Weighted direction choice: strong bias upward
+                // (row-decreasing) with occasional sideways
+                // detours so the walk doesn't read as a straight
+                // line. No downward steps. The result is a
+                // mostly-upward drift with little zig-zags.
+                let weighted: [(dx: Int, dy: Int, weight: Int)] = [
+                    (0, -1, 7),   // up
+                    (1, 0, 2),    // right
+                    (-1, 0, 2),   // left
                 ]
-                var candidates = directions
-                if let last = lastDir {
-                    candidates.removeAll { $0.dx == -last.dx && $0.dy == -last.dy }
+                var pool: [(dx: Int, dy: Int)] = []
+                for entry in weighted {
+                    let nc = current.col + entry.dx
+                    let nr = current.row + entry.dy
+                    if nc < 0 || nc >= cols { continue }
+                    if nr < 0 { continue }
+                    if let last = lastDir,
+                       entry.dx == -last.dx && entry.dy == -last.dy {
+                        continue
+                    }
+                    for _ in 0..<entry.weight { pool.append((entry.dx, entry.dy)) }
                 }
-                // Stay in bounds (don't walk off the virtual grid).
-                candidates.removeAll { dir in
-                    let nc = current.col + dir.dx
-                    let nr = current.row + dir.dy
-                    return nc < 0 || nc >= cols || nr < 0 || nr >= rows
+                if pool.isEmpty {
+                    // Reached the top edge — wrap the walker back
+                    // down so it can start the climb again.
+                    current = GridPoint(
+                        col: Int.random(in: 0..<cols, using: &rng),
+                        row: rows - 1
+                    )
+                    path.append(current)
+                    lastDir = nil
+                    continue
                 }
-                // Pick randomly. Skip-empty fallback covers
-                // pathological corner cases.
-                let dir = candidates.randomElement(using: &rng) ?? (1, 0)
+                let dir = pool.randomElement(using: &rng)!
                 current = GridPoint(
                     col: current.col + dir.dx,
                     row: current.row + dir.dy
@@ -79,8 +96,6 @@ struct RoutingFieldView: View {
                 path.append(current)
                 lastDir = dir
             }
-            // Stagger walkers' start phases so they don't all
-            // hit cells at the same instant.
             let phase = Double(w) / Double(walkerCount) * stepDuration
             roster.append(Walker(path: path, phaseOffset: phase))
         }
