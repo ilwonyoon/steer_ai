@@ -7,15 +7,14 @@
 # What it does:
 #   1. Clean any prior archive.
 #   2. xcodebuild archive Release/iOS, sign with the default account.
-#   3. xcodebuild -exportArchive with ExportOptions-AppStore.plist.
+#   3. xcodebuild -exportArchive with ExportOptions-AppStore.plist,
+#      allowing Xcode to fetch cloud-managed App Store signing assets.
 #
 # What it does NOT do (you do these yourself, one time):
-#   - Create the App Store Distribution profile in Apple Developer
-#     Portal. The export step asks Xcode to find a profile named
-#     'iOS Team Provisioning Profile: ai.steer.ios' — it must
-#     exist with method=app-store. Until then export fails with
-#     "No profiles for 'ai.steer.ios' were found", which is the
-#     signal to go to:
+#   - Make sure the signed-in Xcode account can manage signing for
+#     Team LG7667PAS6. The export step uses -allowProvisioningUpdates,
+#     so Xcode can fetch a cloud-managed App Store distribution
+#     certificate/profile. If that fails, go to:
 #       https://developer.apple.com/account/resources/profiles
 #     and add an App Store Distribution profile for ai.steer.ios.
 #
@@ -55,7 +54,8 @@ set +e
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_PATH" \
-  -exportOptionsPlist "$EXPORT_OPTIONS" 2>&1 | tee /tmp/steer-export.log
+  -exportOptionsPlist "$EXPORT_OPTIONS" \
+  -allowProvisioningUpdates 2>&1 | tee /tmp/steer-export.log
 export_status=${PIPESTATUS[0]}
 set -e
 

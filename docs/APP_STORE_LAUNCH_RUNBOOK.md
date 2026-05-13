@@ -23,8 +23,8 @@ script can take.
 | 6 | Privacy Policy + Terms reachable from signed-out screen | code | open |
 | 7 | App Store Connect privacy labels filled out | **user** | **draft ready** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
 | 8 | App Review Notes finalized + demo flow described | code ✅ | **done** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
-| 9 | Apple Distribution provisioning profile for `ai.steer.ios` | **user (Apple Portal)** | open (automatic signing in ExportOptions) |
-| 10 | iOS bundle version bump (0.0.1 → 1.0.0) + Archive | user + code | version bump done in code; archive still needs distribution profile |
+| 9 | Apple Distribution provisioning profile for `ai.steer.ios` | code ✅ | **done via Xcode cloud-managed signing** |
+| 10 | iOS bundle version bump (0.0.1 → 1.0.0) + Archive | code ✅ | **done** — `.ipa` at `apps/ios/build/Steer-AppStore/Steer.ipa` |
 | 11 | Upload to App Store Connect via Xcode / Transporter | **user** | open |
 | 12 | Screenshots (6.7" 1290×2796 required, 6.5" 1284×2778 recommended) | **user** | open |
 | 13 | App Store description, keywords, what's new | code ✅ | **done** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
@@ -97,8 +97,8 @@ Hour 2–4:  user: NSE in Xcode (item #3)
            user: fill operator name/email in legal docs (#4, #5)
 Hour 4–5:  user: publish Privacy/Terms URLs (#4)
            code: app links them (already done; verify)
-Hour 5–6:  user: Apple Distribution profile (#9)
-           code: build script for App Store distribution (#10)
+Hour 5–6:  code: build script for App Store distribution (#10)
+           code: archive/export App Store .ipa (#9/#10)
 Hour 6–8:  user: take screenshots in Xcode simulator (#12)
            user: App Store Connect listing copy (#13)
 Hour 8–9:  user: privacy labels (#7)

@@ -12,7 +12,7 @@
 
 작업 시작 전 깨끗한 baseline 확보.
 
-- [ ] 🤖 모든 dirty 파일 commit + push (PR #40 상태) — current origin head `5a624b7`, local launch-prep fixes pending
+- [x] 🤖 모든 dirty 파일 commit + push (PR #40 상태) — current origin head `2e785dd`
 - [x] 🤖 회귀 게이트 그린 — `STEER_INTEGRATION=1 npm test` (130/130)
 - [x] 🤖 dogfood Mac.app + iPhone 빌드 install (오늘 변경 반영)
 - [ ] 🙋 PR #40 head commit (`5a624b7` + pending local launch-prep commit) squash-merge 또는 cherry-pick으로 main 으로 가져오기. 머지 후 fix branch 정리.
@@ -144,19 +144,20 @@
 
 ## Phase 5 — 빌드 + 업로드
 
-### 5A. Mac에서 빌드 — **driver 준비됨, archive 단계 smoke-passed**
+### 5A. Mac에서 빌드 — **App Store .ipa 생성 완료**
 
 - [x] 🤖 `apps/ios/ExportOptions-AppStore.plist` 작성 (method=app-store-connect, automatic signing)
 - [x] 🤖 `scripts/release-ios.sh` 작성 — archive + export + 다음 단계 안내까지 한 명령에 묶음
-- [x] 🤖 archive 단계 smoke run 통과 (`xcodebuild archive` ARCHIVE SUCCEEDED)
-- [ ] 🙋 Apple Developer Portal에서 App Store Distribution profile 생성 (Phase 2 마지막 항목)
+- [x] 🤖 archive 단계 통과 (`xcodebuild archive` ARCHIVE SUCCEEDED)
+- [x] 🤖 export 단계 통과 (`xcodebuild -exportArchive -allowProvisioningUpdates` EXPORT SUCCEEDED)
+- [x] 🤖 Cloud-managed App Store signing 확인 — certificate `Cloud Managed Apple Distribution`, profile `iOS Team Store Provisioning Profile: ai.steer.ios`, APNS `production`
 - [x] 🤖 iOS `MARKETING_VERSION` 1.0.0 설정
-- [ ] 🙋 profile 깔린 후 `bash scripts/release-ios.sh` 한 줄 실행 → `apps/ios/build/Steer-AppStore/Steer.ipa` 생성
+- [x] 🤖 `bash scripts/release-ios.sh` → `apps/ios/build/Steer-AppStore/Steer.ipa` 생성
 
 ### 5B. App Store Connect로 업로드
 
 - [ ] 🙋 App Store Connect API Key 발급 (Users and Access → Keys → +)
-- [ ] 🙋 환경 변수 export — `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, key file `.p8` 위치
+- [ ] 🙋 환경 변수 export — `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, key file `.p8` 위치 (`~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8`)
 - [ ] 🤖 upload 명령:
   ```sh
   xcrun altool --upload-app \
@@ -273,7 +274,8 @@
 
 이 섹션은 진행하면서 한 줄씩 갱신. 마지막 갱신 시점 = 마지막 작업 끝났을 때.
 
-- 2026-05-13 (latest): origin head `5a624b7`; local launch-prep fixes pending commit. G14 integration gate 130/130, iOS simulator build green, GoldenFlowUITests 4/4.
+- 2026-05-13 (latest): App Store `.ipa` created at `apps/ios/build/Steer-AppStore/Steer.ipa`; upload blocked only on App Store Connect API key env/file.
+- 2026-05-13: origin head `2e785dd`. G14 integration gate 130/130, iOS simulator build green, GoldenFlowUITests 4/4.
 - 2026-05-13: Phase 1A 코드 정상 (시각 검증만 대기), 1B 코드 fix 완료 + dogfood 대기, 1C-1F 코드 fix 완료 + 시각 검증 대기.
 - 2026-05-13: Phase 5A archive 단계 smoke-passed. ExportOptions plist + `scripts/release-ios.sh` 준비됨. Distribution profile 만들어지면 export 자동 진행.
 - 2026-05-13: Phase 6 `scripts/capture-app-store-screenshots.sh` 작성. iPhone 17 Pro Max / iPhone 17 부팅 + 빌드 + 인스톨까지 smoke-passed. 인터랙티브 캡처 루프 6장.
