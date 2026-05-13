@@ -194,8 +194,14 @@ final class DevicePresenceObserver: ObservableObject {
         }
 
         // Resolved. Drop the polling cadence back to steady-state
-        // to honor the request-budget commitment.
-        connectingStartedAt = nil
+        // to honor the request-budget commitment. We deliberately
+        // do NOT reset connectingStartedAt here — once we've left
+        // the connecting window for this sign-in session, the
+        // chip should never bounce back to "Connecting" just
+        // because the Mac heartbeat slipped into stale territory.
+        // The only thing that re-arms the connecting window is a
+        // sign-out + sign-in cycle (handled by `signOut()` which
+        // clears the observer and reseats it).
         if state != derived { state = derived }
         if pollTimer != nil {
             installTimer(interval: 15)
