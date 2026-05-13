@@ -217,11 +217,15 @@ final class SessionEntryStoreTests: XCTestCase {
 
     // MARK: - Bootstrap preserves in-flight stages
 
-    func test_applyBootstrap_preservesAwaitingResponseEvenIfMissingFromGET() {
-        // User replied to S1/A. Mac resolved A right after our POST,
-        // so the next GET doesn't include it — Mac hasn't published
-        // the response card yet. The entry must survive so the chip
-        // stays lit.
+    func test_applyBootstrap_dropsAwaitingResponseWhenServerHasNone() {
+        // Previously we held .awaitingResponse entries through an
+        // empty GET on the theory that Mac would publish the
+        // response card on its own. In practice the response card
+        // sometimes never showed up (Mac process died, wrapper
+        // paste-submit failure, sign-out mid-flight, etc.) and the
+        // entry stuck at .awaitingResponse forever. The relay GET
+        // is now treated as authoritative: if the server has no
+        // card for this session, drop the entry.
         let entry = SessionEntry(
             sessionId: "S1",
             card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
@@ -232,11 +236,13 @@ final class SessionEntryStoreTests: XCTestCase {
         let next = SessionEntryStore.applyBootstrap(
             previous: [entry], cards: []
         )
-        XCTAssertEqual(next.count, 1)
-        XCTAssertEqual(next[0].stage, .awaitingResponse)
+        XCTAssertEqual(next, [])
     }
 
-    func test_applyBootstrap_preservesFailedEvenIfMissingFromGET() {
+    func test_applyBootstrap_dropsFailedWhenServerHasNone() {
+        // Same authority rule applies to .failed entries: if the
+        // relay doesn't have the card any more, there's nothing for
+        // the user to retry against.
         let entry = SessionEntry(
             sessionId: "S1",
             card: makeCard(sessionId: "S1", cardId: "A"),
@@ -247,8 +253,7 @@ final class SessionEntryStoreTests: XCTestCase {
         let next = SessionEntryStore.applyBootstrap(
             previous: [entry], cards: []
         )
-        XCTAssertEqual(next.count, 1)
-        XCTAssertEqual(next[0].stage, .failed("x"))
+        XCTAssertEqual(next, [])
     }
 
     func test_applyBootstrap_dropsAwaitingUserCardsMacResolved() {

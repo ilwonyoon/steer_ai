@@ -529,11 +529,18 @@ public final class SyncClient: ObservableObject {
     private var pingTask: Task<Void, Never>?
 
     private func pingLoop(task: URLSessionWebSocketTask) async {
+        // 20 s keepalive — comfortably inside Cloudflare's DO idle
+        // timeout. We send both the application-level WSMessage.ping
+        // (so the relay's handler sees it as activity) AND a
+        // TCP-level control-frame ping via sendPing(pongReceiveHandler:).
+        // The latter's pong handler is the fastest health signal Apple's
+        // SDK exposes — when the server is gone, send throws or the
+        // handler reports an error, and we force-cancel so receiveLoop
+        // unblocks and the exponential-backoff reconnect takes over.
+        // Same logic as iOS SyncInbox's pingLoop.
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 20 * 1_000_000_000)
             guard !Task.isCancelled else { return }
-            // If the receive loop already moved on to a new socket,
-            // stop pinging the old one.
             guard task === webSocketTask else { return }
             let ping = WSMessage.ping
             guard let data = try? JSONEncoder().encode(ping),
@@ -541,10 +548,16 @@ public final class SyncClient: ObservableObject {
             do {
                 try await task.send(.string(s))
             } catch {
-                // Send failure means the socket is already dead;
-                // the receive loop will surface the same error and
-                // trigger reconnect. Just exit the ping loop.
+                task.cancel(with: .goingAway, reason: nil)
                 return
+            }
+            task.sendPing { error in
+                if error != nil {
+                    Task { @MainActor in
+                        guard task === self.webSocketTask else { return }
+                        task.cancel(with: .goingAway, reason: nil)
+                    }
+                }
             }
         }
     }

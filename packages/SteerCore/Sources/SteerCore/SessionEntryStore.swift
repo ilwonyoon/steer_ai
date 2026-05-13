@@ -106,16 +106,21 @@ public enum SessionEntryStore {
                 )
             }
         }
-        // Drop entries whose card no longer appears in the GET AND
-        // are currently `.awaitingUser` — Mac resolved them server-
-        // side. Entries in awaitingResponse / failed survive (the
-        // user's reply still owns them; a future WS upsert with a
-        // new cardId will replace them).
+        // Drop entries whose card no longer appears in the GET.
+        // Earlier this branch preserved `.awaitingResponse` and
+        // `.failed` indefinitely, on the theory that the user's
+        // reply still owned them and a future WS upsert would
+        // replace them. Empirically that "future upsert" sometimes
+        // never came (Mac process died between resolve and reply
+        // response, wrapper-disconnect-after-reply, etc.) and the
+        // entry stuck at `.awaitingResponse` forever — chip pinned
+        // to a dead session. The full GET is authoritative: if the
+        // relay has no card for this session, the session is
+        // truly gone.
         let observedSessions = Set(cards.map(\.sessionId))
         var next: [SessionEntry] = []
         for entry in bySession.values {
-            if !observedSessions.contains(entry.sessionId),
-               case .awaitingUser = entry.stage {
+            if !observedSessions.contains(entry.sessionId) {
                 continue
             }
             next.append(entry)

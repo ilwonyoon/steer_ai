@@ -819,8 +819,18 @@ public final class SyncInbox: ObservableObject {
     private var pingTask: Task<Void, Never>?
 
     private func pingLoop(task: URLSessionWebSocketTask) async {
+        // Cloudflare Workers' Durable Objects close WebSockets after
+        // ~5-10 minutes of inactivity. 20 s keeps us comfortably
+        // inside that window without burning bandwidth. We send BOTH
+        //   (a) the application-level WSMessage.ping that the relay's
+        //       handler responds to, and
+        //   (b) URLSessionWebSocketTask.sendPing, which is a
+        //       TCP-level control frame whose pong-handler also fires
+        //       when the socket is half-closed. Doubling them means a
+        //       dead socket throws within one ping cycle instead of
+        //       waiting for the next outbound payload to fail.
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 20 * 1_000_000_000)
             guard !Task.isCancelled else { return }
             guard task === webSocketTask else { return }
             let ping = WSMessage.ping
@@ -829,14 +839,23 @@ public final class SyncInbox: ObservableObject {
             do {
                 try await task.send(.string(s))
             } catch {
-                // Cloudflare DO half-closed the socket. The send fails
-                // but `task.receive()` in receiveLoop won't fire until
-                // it tries to drain the next frame — which could take
-                // until the next card publish. Force-cancel the task so
-                // the receive loop throws immediately and backs off
-                // into a reconnect.
+                // Application send failed: Cloudflare DO has
+                // half-closed the socket. The receive loop is still
+                // blocked in task.receive(); force-cancel so it
+                // throws and the reconnect backoff takes over.
                 task.cancel(with: .goingAway, reason: nil)
                 return
+            }
+            // Drop a control-frame ping right after. If the pong never
+            // arrives (server is gone), Apple's framework eventually
+            // invalidates the task and receiveLoop throws on its own.
+            task.sendPing { error in
+                if error != nil {
+                    Task { @MainActor in
+                        guard task === self.webSocketTask else { return }
+                        task.cancel(with: .goingAway, reason: nil)
+                    }
+                }
             }
         }
     }
