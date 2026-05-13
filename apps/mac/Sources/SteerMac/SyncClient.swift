@@ -168,18 +168,28 @@ public final class SyncClient: ObservableObject {
         } catch {
             self.pendingSignIn = nil
             SignInDebugLog.write("[apple-signin] failed: \(error)")
-            // Same canceled-suppression rationale as
-            // handleAppleSignInResult above — keep silent on user
-            // cancel + macOS 26 transient retry-cancel, surface
-            // everything else.
-            let ns = error as NSError
-            let isCanceled =
-                ns.domain == ASAuthorizationError.errorDomain
-                && ns.code == ASAuthorizationError.canceled.rawValue
-            if !isCanceled {
+            // Suppress any user-side abort, including the .unknown code
+            // macOS 26 raises when the sheet is dismissed without an
+            // explicit cancel button press. The user is just going to
+            // tap the Apple button again; a red banner makes the app
+            // look broken.
+            if !isAppleSignInAbort(error) {
                 lastError = "Apple sign-in failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// True if the error represents the user closing or backing out of
+    /// the system Apple Sign In sheet (any reason). Surface only
+    /// real failures that need an explanation.
+    private func isAppleSignInAbort(_ error: Error) -> Bool {
+        let ns = error as NSError
+        guard ns.domain == ASAuthorizationError.errorDomain else { return false }
+        // .canceled — user hit Cancel or dismissed the sheet.
+        // .unknown  — macOS 26 sheet dismiss path; we observed this
+        //   when the user clicks outside the sheet on real hardware.
+        return ns.code == ASAuthorizationError.canceled.rawValue
+            || ns.code == ASAuthorizationError.unknown.rawValue
     }
 
     private struct PendingSignIn {
@@ -200,21 +210,10 @@ public final class SyncClient: ObservableObject {
             await handleAppleCredential(credential)
         case .failure(let error):
             SignInDebugLog.write("[apple-signin] onCompletion failure: \(error)")
-            // ASAuthorizationError.canceled fires when the user
-            // dismisses the system sheet OR — more often than you'd
-            // expect — when macOS 26's SignInWithAppleButton emits a
-            // transient cancellation before re-presenting the sheet
-            // and succeeding on the next pass. Either way it's not
-            // something the user wants to read in red right above
-            // the button they just clicked.
-            //
-            // Other failure modes (network, missing entitlement)
-            // SHOULD surface, so we only silence the canceled code.
-            let ns = error as NSError
-            let isCanceled =
-                ns.domain == ASAuthorizationError.errorDomain
-                && ns.code == ASAuthorizationError.canceled.rawValue
-            if !isCanceled {
+            // Suppress any user-side abort (cancel or sheet dismiss).
+            // Other failure modes (network, missing entitlement) keep
+            // surfacing because the user needs an explanation.
+            if !isAppleSignInAbort(error) {
                 lastError = "Apple sign-in failed: \(error.localizedDescription)"
             }
             status = .signedOut

@@ -244,15 +244,17 @@ public final class SyncInbox: ObservableObject {
         }
     }
 
-    /// True if the underlying error is `ASAuthorizationError.canceled`
-    /// — either the user explicitly cancelled or the OS reported a
-    /// transient cancel (macOS 26 SignInWithAppleButton occasionally
-    /// emits one before retrying internally). Either way the user just
-    /// needs the button to stay tappable, not an explanation.
+    /// True if the error represents the user closing or backing out
+    /// of the system Apple Sign In sheet (any reason). Surface only
+    /// real failures that need an explanation.
     private func isAppleSignInCanceled(_ error: Error) -> Bool {
         let ns = error as NSError
-        return ns.domain == ASAuthorizationError.errorDomain
-            && ns.code == ASAuthorizationError.canceled.rawValue
+        guard ns.domain == ASAuthorizationError.errorDomain else { return false }
+        // .canceled — explicit Cancel tap or backswipe.
+        // .unknown  — iOS/macOS 26 dismiss path observed in practice
+        //   when the user closes the sheet without pressing Cancel.
+        return ns.code == ASAuthorizationError.canceled.rawValue
+            || ns.code == ASAuthorizationError.unknown.rawValue
     }
 
     private func handleAppleCredential(_ credential: ASAuthorizationAppleIDCredential) async {
