@@ -1,6 +1,7 @@
 import SwiftUI
 import SteerCore
 import AuthenticationServices
+import UserNotifications
 import os.log
 
 private let diagLog = Logger(subsystem: "ai.steer.ios", category: "diag")
@@ -173,6 +174,12 @@ struct InboxView: View {
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             inbox.reconnectWebSocketIfNeeded()
+            // The relay's APNS fanout sets `aps.badge = 1` on every
+            // push so the app icon carries a red dot when the user
+            // has unread cards. They're considered "read" the moment
+            // the app reaches the foreground — anything still
+            // pending is visible in the carousel itself.
+            UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
             Task {
                 await inbox.reload()
                 await devicePresence.refresh()

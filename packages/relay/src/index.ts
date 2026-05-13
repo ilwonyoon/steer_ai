@@ -311,6 +311,12 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
             body: bodyText,
             cardIcon,
             apsEnvironment: d.apsEnvironment,
+            // Bump the app-icon badge so users see the unread dot
+            // even when their Focus filter mutes the banner. The
+            // iPhone app clears the badge to 0 the next time the
+            // app reaches the foreground (setBadgeCount(0) in
+            // SteerIOSApp's scenePhase observer).
+            badge: 1,
             customPayload: { cardId: card.cardId, sessionId: card.sessionId },
           });
           console.log(

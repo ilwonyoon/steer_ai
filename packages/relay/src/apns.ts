@@ -78,6 +78,12 @@ interface PushRequest {
   /// configured globally. Phase B2 of
   /// docs/SYNC_STABILITY_AND_COST_PLAN.md.
   apsEnvironment?: string;
+  /// Optional badge count. When set, APNS asks iOS to draw the
+  /// number on the app icon. We send 1 on every card landing so the
+  /// user sees a red dot even when banners are muted by a Focus
+  /// filter or Do Not Disturb. Setting `badge: 0` clears the badge
+  /// (resolve fanout uses this).
+  badge?: number;
 }
 
 export interface PushResult {
@@ -116,6 +122,9 @@ export async function sendAPNSPush(env: Env, req: PushRequest): Promise<PushResu
     alert: { title: req.title, body: req.body },
     sound: "default",
   };
+  if (typeof req.badge === "number") {
+    aps.badge = req.badge;
+  }
   if (req.cardIcon) {
     // Tells APNS to hand the payload to the iOS NSE so it can swap in
     // the provider icon before display. Harmless when the NSE doesn't
