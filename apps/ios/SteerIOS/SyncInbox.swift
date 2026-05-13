@@ -89,18 +89,19 @@ public final class SyncInbox: ObservableObject {
             // await returns.
             loadPhase = .bootstrapping
             Task { await refreshMe() }
-        } else if !UserDefaults.standard.bool(forKey: Self.hasSeenOnboardingKey) {
-            // First launch ever (no keychain token + haven't dropped
-            // the onboarding flag yet): load demo cards as an inline
-            // onboarding tour. The last card has a "Sign in with
-            // Apple" chip that exits demo mode. We set the flag on
-            // first enterDemoMode so a relaunch goes straight to the
-            // sign-in prompt instead of looping the tour.
-            enterDemoMode()
         }
+        // First-launch demo-auto-enter is deliberately removed:
+        // onboarding is now its own flow (OnboardingFlowView) that
+        // runs *after* sign-in. Signed-out users always land on
+        // SignInPrompt; demo mode is opt-in from the Inbox empty
+        // state's "Preview without Mac" secondary link only.
     }
 
     /// UserDefaults key for the first-launch demo gate.
+    /// Deprecated — the gate now lives on InboxView's
+    /// `@AppStorage("ai.steer.onboardingCompleted")`. Kept here so
+    /// older installs that already set this key don't carry stale
+    /// state across an upgrade.
     private static let hasSeenOnboardingKey = "ai.steer.ios.hasSeenOnboarding"
 
     static var fixtureModeEnabled: Bool {
