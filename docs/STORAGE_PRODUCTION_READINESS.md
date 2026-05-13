@@ -1,6 +1,21 @@
 # Storage production-readiness
 
-Status: design draft, **deepened audit** 2026-05-12. Blocks v3 PR 2.
+Status: **shipped through Phase 4**, 2026-05-12. Phase 5 (this
+doc itself) refresh below. v3 PR 2 unblocked.
+
+> **2026-05-12 update.** The originally-planned S2 → S7 sequence
+> (age-based prune + retention.config + ops surfaces) was
+> superseded mid-implementation by a simpler design: the DB
+> stores only data with a live consumer, period. Anything
+> derivable from "what's running right now" is built up; anything
+> historical is not stored at all. The actually-shipped phases
+> (S2 + Phases 1–4 below) take the dogfood DB from **2.0 GB to
+> 1.2 MB**, with no user-tunable retention knobs and no periodic
+> "log rotation" semantics. The S3 / S6 / S7 entries below are
+> kept for context; they're no longer needed in practice. The
+> remaining open items are S4 (corruption recovery), S5
+> (health.json — small, optional), and follow-up cleanup of dead
+> code from the old plan.
 
 > Note: an earlier draft of this document scoped only the `transcript_entries`
 > bloat. A deeper audit (see "Production-readiness audit" below) found
@@ -403,7 +418,96 @@ G14 is the gate. If it doesn't pass, the storage fix didn't
 actually resolve the wrapper-disconnect chain, and we haven't
 found the right root cause.
 
+## Actually-shipped design (supersedes S2–S7 below)
+
+The audit answered "what state should this DB hold?" and the
+honest answer was: just the state of currently-live and
+currently-actionable work. The user's mental model is right —
+*answering today's cards* is the entire purpose of the app.
+Nothing the user does requires us to keep yesterday's
+transcripts, last week's session metadata, or instrumentation
+events nobody reads.
+
+### Final data model
+
+| Table | Lifetime | Why it's kept |
+|-------|----------|---------------|
+| `sessions` | until 1 h after `ended` or 24 h after `disconnected` | wrapper metadata; pruned by Phase 4 |
+| `action_cards` (state='active') | until resolved by user | the inbox |
+| `action_cards` (state='done') | until parent session prunes | history kept short for debug; cascades on session prune |
+| `instructions` | until parent session prunes | retry path needs it; cascades |
+| `terminal_excerpts` | 1:1 with active card | dropped by Phase 1 trigger when card → done |
+| `transcript_entries` | per-session capped at 100 rows; full drop on `ended/disconnected` | Phase 2 trigger + ended-cascade |
+| `schema_version` | forever | migration bookkeeping |
+| ~~`messages`~~ | dropped in S2 | no consumer |
+| ~~`metric_events`~~ | dropped in Phase 3 | no consumer |
+
+### Why this beats the original S3 design
+
+The original S3 ("age-based prune + retention.config") would have
+kept a week's worth of transcript per session per day per Mac.
+The new design keeps roughly the *classifier's working window* —
+~100 rows per active session, period. Concretely:
+
+- Steady-state DB size: ~1–2 MB regardless of usage age.
+- No `retention.config` exposed to users; nothing to tune.
+- No periodic "log rotation" job; mutations are O(1) per write
+  via the cap trigger.
+- DB size as an SLO becomes trivial: anything over ~10 MB is a
+  bug.
+
+### Migrations actually shipped
+
+| Version | What | Live DB effect |
+|---------|------|----------------|
+| 0001 | initial schema | — (backstamp on pre-S0 DBs) |
+| 0002 | `responseRevision` column + bump trigger | enables iPhone atomic chip-clear |
+| 0003 | drop `messages` table + recreate FK-bearing tables without `source_message_id` | 1.28 M rows gone |
+| 0004 | `terminal_excerpts` cascade triggers (card state='done' / DELETE / excerpt swap) | excerpt count tracks active card count |
+| 0005 | `transcript_entries` per-session cap (100) + ended-cascade | 1.28 M → 200 rows |
+| 0006 | drop `metric_events` | ~6 KB; eliminates one write per state change |
+| 0007 | partial index on `sessions(run_state, ended_at)` | O(log n) prune predicate |
+
+### Live DB recovery (dogfood, 2026-05-12)
+
+A 2.0 GB DB compressed to 1.2 MB through this sequence:
+
+1. Migration 0003 dropped `messages` → 654 MB.
+2. Migration 0005 + the ended-cascade dropped 1.28 M transcript rows → 200 rows.
+3. One-off `VACUUM` → **1.2 MB**.
+
+`scripts/storage-recovery.sh` was no longer needed; the
+migrations are the recovery script.
+
+### Open items vs the original plan
+
+- **S4 (corruption / disk-full)** — still useful, not yet shipped.
+  The plan in §4 below still applies; the smaller DB makes it
+  more tractable.
+- **S5 (health.json)** — optional. With a 1.2 MB ceiling and no
+  growth pattern, ops visibility is less interesting than it was
+  in the 1.8 GB world. A one-shot diag command beats a recurring
+  health file.
+- **S6 (perf SLOs)** — implicit. Pre-S2 numbers (p95 < 10 ms,
+  500 writes/s sustained) hold without measurement on a 1.2 MB
+  DB.
+- **S7 (backup / export)** — pre-existing `cp ~/.steer/steer.sqlite`
+  is now a real backup option (small enough to copy in <1 s),
+  but nothing automatic.
+
+The remaining work is documentation cleanup (this section is the
+canonical spec; the §S2–§S7 below are kept for history) and one
+follow-up to drop `ChipReconciler` / `SessionSnapshot.runState`
+publish-side dead code once a few weeks of telemetry confirm no
+straggler client is hitting `/v1/sync/sessions`.
+
 ## PR sequencing (revised after audit)
+
+> **Superseded.** The S2–S7 descriptions below are the original
+> 2026-05-12 plan. Most of them did not ship as written — see
+> the "Actually-shipped design" section above for what made it
+> in. The headers stay so cross-references in older issues /
+> commits still resolve.
 
 Seven PRs, sequenced so each one independently unbreaks
 production. Each has its own validation gate; users can stop the
