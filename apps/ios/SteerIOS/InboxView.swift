@@ -695,20 +695,12 @@ private struct SignInPrompt: View {
             VStack(spacing: 14) {
                 Spacer()
 
-                // App icon sits above the wordmark so the screen
-                // reads as "this is Steer" the moment it appears.
-                // Without it, the SignIn page was just typography
-                // on a moving grid and the user couldn't tell which
-                // app it belonged to. The imageset is a copy of
-                // AppIcon's 1024 master, so the lock-screen icon
-                // and this in-app glyph stay in sync.
-                Image("steer-logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 84, height: 84)
-                    .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
-                    .shadow(color: Color.black.opacity(0.18), radius: 14, y: 6)
-                    .padding(.bottom, 6)
+                // App icon was previously rendered above the
+                // wordmark, but it competed with the routing field
+                // for attention and read as "logo applique" rather
+                // than identity. The wordmark + value prop carry
+                // enough identity on their own; the icon already
+                // lives on the lock screen / home screen.
 
                 // Mono wordmark + value prop. The routing field
                 // is the visual hero; the foreground stays
@@ -794,6 +786,13 @@ private struct SignInPrompt: View {
             }
             .padding(.horizontal, 24)
         }
+        // SignIn is a marketing hero — the routing field, the
+        // wordmark, and the Apple button all read crisper on a
+        // dark background. We force-pin dark here regardless of the
+        // user's system theme so the screen is consistent across
+        // devices. The rest of the app (Inbox, Settings, etc.)
+        // continues to honor the system setting.
+        .preferredColorScheme(.dark)
     }
 
 }

@@ -25,14 +25,15 @@ struct RoutingFieldView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     /// Baseline dot color tuned per scheme. The shared
-    /// `SteerColors.softSeparator` is too light on the bright iOS
-    /// light-mode background — black at 7.5% alpha barely registers
-    /// against near-white. We darken it enough that the underlying
-    /// grid reads as a real surface, not a shy hint.
+    /// `SteerColors.softSeparator` (black @ 7.5% / white @ 10%) read
+    /// as ~3.4% effective alpha in light mode after the per-dot
+    /// opacity multiplier — invisible. Bumping it too far the other
+    /// way (light 22% / dark 18%) drowned the orange highlight.
+    /// Halfway point: grid is legible, blob still pops.
     private var baselineDotColor: Color {
         colorScheme == .dark
-            ? Color(red: 1, green: 1, blue: 1).opacity(0.18)
-            : Color(red: 0, green: 0, blue: 0).opacity(0.22)
+            ? Color(red: 1, green: 1, blue: 1).opacity(0.13)
+            : Color(red: 0, green: 0, blue: 0).opacity(0.13)
     }
 
     private let epoch: Date = Date()
