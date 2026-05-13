@@ -41,9 +41,11 @@
 
 **상태**: 코드 fix + invariant gate 통과. 남은 것은 실제 codex/claude dogfood.
 
-- [x] 🤖 `submitPtyInstruction` atomic write 유지 + send retry가 SIGKILL stale-lock restart window까지 커버
+- [x] 🤖 `submitPtyInstruction`: 50 ms gap 사이에 bracketed-paste 와 `\r` 를 분리해 보냄 (atomic write 실험은 TUI 가 `\r` 를 paste payload 끝부분으로 흡수하는 회귀를 만들었음 — `b832acc` 에서 revert)
+- [x] 🤖 `sendInstruction` 측 `SEND_RECONNECT_RETRY_MS` retry — SIGKILL stale-lock restart window 까지 커버 (TDZ fix `05f5d9f` 함수 안 inline 으로 유지)
 - [x] 🤖 `packages/cli/test/instruction_delivery_invariant.test.js` 2 케이스 그린
 - [x] 🤖 `STEER_INTEGRATION=1 npm test` 130/130 통과
+- [ ] 🙋 **wrap 세션 재시작**: 살아있는 `steer codex` / `steer claude` 는 옛 코드로 spawn 돼 있어 새 paste fix 안 받음. 한 번 exit + 새 wrap 세션 띄우기.
 - [ ] 🙋 dogfood: 진짜 codex 세션 → 긴 turn → iPhone reply → 답 도착 확인 (10s 이내)
 - [ ] 🙋 dogfood: iPhone reply 5회 연속 → 모두 도착
 
@@ -277,7 +279,8 @@
 
 이 섹션은 진행하면서 한 줄씩 갱신. 마지막 갱신 시점 = 마지막 작업 끝났을 때.
 
-- 2026-05-13 (latest): App Store `.ipa` created at `apps/ios/build/Steer-AppStore/Steer.ipa`; upload blocked only on App Store Connect API key env/file.
+- 2026-05-13 (latest): G14 paste-submit 회귀 fix (`b832acc`) — atomic write 실험 revert, 50 ms gap 복원. 살아있는 wrap 세션 한 번 재시작 필요. 130/130 게이트 그대로.
+- 2026-05-13: App Store `.ipa` created at `apps/ios/build/Steer-AppStore/Steer.ipa`; upload blocked only on App Store Connect API key env/file.
 - 2026-05-13: origin head `2e785dd`. G14 integration gate 130/130, iOS simulator build green, GoldenFlowUITests 4/4.
 - 2026-05-13: Phase 1A 코드 정상 (시각 검증만 대기), 1B 코드 fix 완료 + dogfood 대기, 1C-1F 코드 fix 완료 + 시각 검증 대기.
 - 2026-05-13: Phase 5A archive 단계 smoke-passed. ExportOptions plist + `scripts/release-ios.sh` 준비됨. Distribution profile 만들어지면 export 자동 진행.
