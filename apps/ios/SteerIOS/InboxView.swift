@@ -651,78 +651,127 @@ private struct SignInPrompt: View {
     @State private var isSigningIn = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "rectangle.stack.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(SteerColors.tertiaryInk)
-            Text("Steer")
-                .font(.title3.weight(.semibold))
-            Text("Approve your Mac AI from your phone.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-            if let err = inbox.lastError {
-                Text(err)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+        ZStack {
+            // Animated dot grid + bezier "attention" routing. Pure
+            // background — every interactive element sits in the
+            // VStack above it.
+            RoutingFieldView()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            // Subtle vignette so the foreground content stays
+            // readable over the animated traces.
+            LinearGradient(
+                colors: [
+                    SteerColors.appBackground.opacity(0.0),
+                    SteerColors.appBackground.opacity(0.75)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+            .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Spacer()
+
+                // Logo + name. The app icon's orange is what the
+                // routing animation pulls from; rendering the icon
+                // here ties the two together visually.
+                Image(uiImage: appIcon())
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 84, height: 84)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+
+                Text("Steer")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
+                    .padding(.top, 4)
+
+                Text("Approve your Mac AI from your phone.")
+                    .font(.system(size: 16))
+                    .foregroundStyle(SteerColors.secondaryInk)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
-            }
-            VStack(spacing: 12) {
-                Button {
-                    inbox.enterDemoMode()
-                } label: {
-                    Text("Try Demo")
-                        .font(.callout.weight(.semibold))
-                        .frame(width: 240, height: 44)
-                        .background(Color.accentColor.opacity(0.12))
-                        .foregroundStyle(Color.accentColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("try-demo-button")
 
-                // Apple's native button is required by App Store
-                // guideline 4.8 (custom black capsules get flagged).
-                // XCUITest can't drive the system Apple ID sheet, so
-                // we hide the button under `--uitest-signed-out` and
-                // surface a stand-in placeholder identifier instead.
-                if SyncInbox.uitestSignedOutMode {
-                    Text("Sign in with Apple (disabled in UI tests)")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 240, height: 44)
-                        .accessibilityIdentifier("apple-signin-stub")
-                } else {
-                    SignInWithAppleButton(.signIn) { request in
-                        request.requestedScopes = [.fullName, .email]
-                    } onCompletion: { result in
-                        Task {
-                            isSigningIn = true
-                            await inbox.handleAppleSignInResult(result)
-                            isSigningIn = false
+                if let err = inbox.lastError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                Spacer()
+
+                VStack(spacing: 14) {
+                    // Apple's native button is required by App
+                    // Store guideline 4.8. XCUITest can't drive
+                    // the system Apple ID sheet, so under the
+                    // `--uitest-signed-out` mode we render a
+                    // placeholder.
+                    if SyncInbox.uitestSignedOutMode {
+                        Text("Sign in with Apple (disabled in UI tests)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: 320)
+                            .frame(height: 50)
+                            .accessibilityIdentifier("apple-signin-stub")
+                    } else {
+                        SignInWithAppleButton(.signIn) { request in
+                            request.requestedScopes = [.fullName, .email]
+                        } onCompletion: { result in
+                            Task {
+                                isSigningIn = true
+                                await inbox.handleAppleSignInResult(result)
+                                isSigningIn = false
+                            }
                         }
+                        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                        .frame(maxWidth: 320)
+                        .frame(height: 50)
+                        .disabled(isSigningIn)
+                        .accessibilityIdentifier("apple-signin-button")
                     }
-                    .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                    .frame(width: 240, height: 44)
-                    .disabled(isSigningIn)
-                    .accessibilityIdentifier("apple-signin-button")
+                    if isSigningIn {
+                        ProgressView().controlSize(.small)
+                    }
+
+                    HStack(spacing: 18) {
+                        Link("Privacy", destination: URL(string: "https://steer.ai/privacy")!)
+                        Text("·").foregroundStyle(SteerColors.tertiaryInk)
+                        Link("Terms", destination: URL(string: "https://steer.ai/terms")!)
+                        Text("·").foregroundStyle(SteerColors.tertiaryInk)
+                        Link("Support", destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .padding(.top, 4)
                 }
-                if isSigningIn {
-                    ProgressView().controlSize(.small)
-                }
+                .padding(.bottom, 36)
             }
-            HStack(spacing: 14) {
-                Link("Privacy", destination: URL(string: "https://steer.ai/privacy")!)
-                Link("Terms", destination: URL(string: "https://steer.ai/terms")!)
-                Link("Support", destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
-            }
-            .font(.footnote)
-            .padding(.top, 8)
-            Spacer()
+            .padding(.horizontal, 24)
         }
-        .padding()
+    }
+
+    /// App icon as a UIImage — used for the logo in this prompt.
+    /// Falls back to a generated placeholder if the asset is
+    /// missing (e.g. mid-rebuild).
+    private func appIcon() -> UIImage {
+        if let dict = Bundle.main.infoDictionary,
+           let icons = dict["CFBundleIcons"] as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String],
+           let lastName = files.last,
+           let img = UIImage(named: lastName) {
+            return img
+        }
+        // Direct asset name fallback. AppIcon images are usually
+        // not addressable by name on iOS; this almost never hits.
+        if let img = UIImage(named: "AppIcon") { return img }
+        let cfg = UIImage.SymbolConfiguration(pointSize: 64, weight: .bold)
+        return UIImage(systemName: "rectangle.stack.fill", withConfiguration: cfg)!
     }
 }

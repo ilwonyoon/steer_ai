@@ -11,6 +11,7 @@
 		0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0001A236298D657692E8531D /* DetailView.swift */; };
 		05285BD23BDD04888929B775 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18199CFE823CF880E1C94476 /* InboxView.swift */; };
 		1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */; };
+		25141EFD1F1AA6799143027A /* RoutingFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D3716EC47CCE9DC786899A2 /* RoutingFieldView.swift */; };
 		3CEF2917FE715ADC7EC23C2E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EAEF116995AC4FE59BB6135E /* Assets.xcassets */; };
 		4B186F5237BFAC367284F909 /* SyncInboxOptimisticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */; };
 		4BA436779E7D0E4E4D4F99F6 /* CardDisplayable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 888829F4938DF6D0E279FD0D /* CardDisplayable.swift */; };
@@ -69,6 +70,7 @@
 		400608C9A7F07651B1E30B67 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInbox.swift; sourceTree = "<group>"; };
 		55D0EC6D3D43C69749EB511E /* DeleteAccountTokenClearTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteAccountTokenClearTests.swift; sourceTree = "<group>"; };
+		5D3716EC47CCE9DC786899A2 /* RoutingFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingFieldView.swift; sourceTree = "<group>"; };
 		5E12334E020126CC7E82A44C /* SteerTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SteerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6775B843EBF5B82A78C73C8B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		7B6FCF8B8A7ABA7A683B8A8C /* CardFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardFlowUITests.swift; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 				9CF868AD7D9804924DD0B4D9 /* OnboardingCard.swift */,
 				C711B75104B514A149198858 /* OnboardingFlowView.swift */,
 				36B391F7B1C395484A445D38 /* ReplyDock.swift */,
+				5D3716EC47CCE9DC786899A2 /* RoutingFieldView.swift */,
 				6775B843EBF5B82A78C73C8B /* SettingsView.swift */,
 				D5C900DB8295384C9D855881 /* Steer.entitlements */,
 				3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */,
@@ -352,6 +355,7 @@
 				CF7CBD840AEC568258E54416 /* OnboardingCard.swift in Sources */,
 				84683E8F048853C173DBC13F /* OnboardingFlowView.swift in Sources */,
 				CA677DB22BB1B45BE3F4DDB3 /* ReplyDock.swift in Sources */,
+				25141EFD1F1AA6799143027A /* RoutingFieldView.swift in Sources */,
 				EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */,
 				B2AB16691E7FECD9A988EB55 /* SteerColors.swift in Sources */,
 				CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */,
