@@ -77,7 +77,7 @@ struct OnboardingFlowView: View {
     @ViewBuilder
     private var cardArea: some View {
         VStack(spacing: 12) {
-            OnboardingHeaderBar()
+            OnboardingHeaderBar(onSkip: { onComplete() })
 
             if cards.indices.contains(currentIndex) {
                 let raw = cards[currentIndex]
@@ -249,11 +249,13 @@ private struct RenderableOnboardingCard: CardDisplayable, Identifiable {
 }
 
 /// Dead-state copy of the real HeaderBar so the onboarding screen
-/// matches Inbox's exact vertical layout (the card height the
-/// user sees here is the card height they'll see on every real
-/// session). All buttons are inert — onboarding is a guided
-/// flow, not a control surface.
+/// matches Inbox's exact vertical layout. The trailing cog slot
+/// is replaced with a live "Skip" pill that ends onboarding
+/// immediately — useful during dev and as a normal escape hatch
+/// once shipped.
 private struct OnboardingHeaderBar: View {
+    let onSkip: () -> Void
+
     var body: some View {
         HStack(spacing: 8) {
             // Same capsule as MacConnectionChip's idle state.
@@ -273,14 +275,16 @@ private struct OnboardingHeaderBar: View {
 
             Spacer()
 
-            // Match the trailing settings cog so spacing is identical.
-            Image(systemName: "gearshape")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(SteerColors.ink)
-                .frame(width: 44, height: 44)
-                .steerGlass(shape: Circle())
-                .opacity(0.6)
-                .allowsHitTesting(false)
+            Button(action: onSkip) {
+                Text("Skip")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(SteerColors.ink)
+                    .padding(.horizontal, 16)
+                    .frame(height: 44)
+                    .steerGlass(shape: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("onboarding-skip")
         }
         .frame(height: 56)
     }

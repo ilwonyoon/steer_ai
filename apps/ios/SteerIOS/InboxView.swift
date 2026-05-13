@@ -675,32 +675,25 @@ private struct SignInPrompt: View {
             .allowsHitTesting(false)
             .ignoresSafeArea()
 
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
                 Spacer()
 
-                // Logo + name. The app icon's orange is what the
-                // routing animation pulls from; rendering the icon
-                // here ties the two together visually.
-                Image(uiImage: appIcon())
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 84, height: 84)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-
+                // Mono wordmark + value prop. The routing field
+                // is the visual hero; the foreground stays
+                // typographic. SF Mono is the closest built-in
+                // approximation of JetBrains Mono — same kind of
+                // even-rhythm geometric grotesque — so we don't
+                // need to ship a custom font binary.
                 Text("Steer")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
                     .foregroundStyle(SteerColors.ink)
-                    .padding(.top, 4)
 
-                // Value prop. Single line, declarative — "this is
-                // the rule you're buying into." The mechanism
-                // (replying from the phone) belongs to onboarding.
                 Text("Never let your AI sit idle.")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(SteerColors.ink)
+                    .font(.system(size: 16, weight: .regular, design: .monospaced))
+                    .foregroundStyle(SteerColors.secondaryInk)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
+                    .padding(.top, 2)
 
                 if let err = inbox.lastError {
                     Text(err)
@@ -754,14 +747,14 @@ private struct SignInPrompt: View {
                         ProgressView().controlSize(.small)
                     }
 
-                    HStack(spacing: 18) {
+                    HStack(spacing: 16) {
                         Link("Privacy", destination: URL(string: "https://steer.ai/privacy")!)
                         Text("·").foregroundStyle(SteerColors.tertiaryInk)
                         Link("Terms", destination: URL(string: "https://steer.ai/terms")!)
                         Text("·").foregroundStyle(SteerColors.tertiaryInk)
                         Link("Support", destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
                     }
-                    .font(.footnote)
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(SteerColors.secondaryInk)
                     .padding(.top, 4)
                 }
@@ -771,22 +764,4 @@ private struct SignInPrompt: View {
         }
     }
 
-    /// App icon as a UIImage — used for the logo in this prompt.
-    /// Falls back to a generated placeholder if the asset is
-    /// missing (e.g. mid-rebuild).
-    private func appIcon() -> UIImage {
-        if let dict = Bundle.main.infoDictionary,
-           let icons = dict["CFBundleIcons"] as? [String: Any],
-           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
-           let files = primary["CFBundleIconFiles"] as? [String],
-           let lastName = files.last,
-           let img = UIImage(named: lastName) {
-            return img
-        }
-        // Direct asset name fallback. AppIcon images are usually
-        // not addressable by name on iOS; this almost never hits.
-        if let img = UIImage(named: "AppIcon") { return img }
-        let cfg = UIImage.SymbolConfiguration(pointSize: 64, weight: .bold)
-        return UIImage(systemName: "rectangle.stack.fill", withConfiguration: cfg)!
-    }
 }
