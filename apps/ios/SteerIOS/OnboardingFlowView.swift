@@ -113,17 +113,21 @@ struct OnboardingFlowView: View {
         .padding(.bottom, 128)
     }
 
-    /// All three onboarding cards rendered into the carousel form,
-    /// with the active one carrying its current streaming state and
-    /// the others fully revealed so the user sees the upcoming
-    /// titles. Real Inbox does the same: every active card has a
-    /// CompactActionCardView at the bottom.
+    /// Cards still pending in the carousel: the current one + every
+    /// card after it. Cards the user has already sent (idx <
+    /// currentIndex) are dropped, mirroring the real Inbox where
+    /// sending a reply removes that card from the carousel strip
+    /// (the active card is resolved and the next pending one slides
+    /// into focus). On the final card, send → carousel goes empty →
+    /// the strip vanishes on its own via ActionCardCarousel's
+    /// cards.isEmpty branch.
     private var projectedDeck: [RenderableOnboardingCard] {
-        cards.enumerated().map { idx, card in
+        cards.enumerated().compactMap { idx, card in
+            if idx < currentIndex { return nil }
             if idx == currentIndex {
                 return projectedCard(card)
             }
-            // Other cards: title/summary only — terminal body
+            // Upcoming cards: title/summary only — terminal body
             // unused by CompactActionCardView.
             return RenderableOnboardingCard(
                 id: card.id,
