@@ -22,6 +22,18 @@ struct RoutingFieldView: View {
     private let dotSpacing: CGFloat = 16
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Baseline dot color tuned per scheme. The shared
+    /// `SteerColors.softSeparator` is too light on the bright iOS
+    /// light-mode background — black at 7.5% alpha barely registers
+    /// against near-white. We darken it enough that the underlying
+    /// grid reads as a real surface, not a shy hint.
+    private var baselineDotColor: Color {
+        colorScheme == .dark
+            ? Color(red: 1, green: 1, blue: 1).opacity(0.18)
+            : Color(red: 0, green: 0, blue: 0).opacity(0.22)
+    }
 
     private let epoch: Date = Date()
     private let blobs: [Blob]
@@ -96,7 +108,7 @@ struct RoutingFieldView: View {
         cols: Int,
         rows: Int
     ) {
-        let dotColor = SteerColors.softSeparator
+        let dotColor = baselineDotColor
         for r in 0..<rows {
             for c in 0..<cols {
                 let x = CGFloat(c) * dotSpacing + dotSpacing / 2
@@ -142,8 +154,16 @@ struct RoutingFieldView: View {
         // Color the active orange + the dim baseline. Each dot's
         // alpha + radius interpolates between the two based on the
         // strongest blob's local influence.
+        //
+        // `baselineDotColor` already encodes its own alpha (per
+        // scheme), so the per-dot multiplier below is left at 1.0
+        // for the baseline case — the underlying color already has
+        // enough opacity to render. Earlier code stacked a 0.45
+        // opacity multiplier on top of softSeparator's 0.075 black,
+        // collapsing the grid to ~3.4% effective alpha in light
+        // mode and making it invisible.
         let active = Color(red: 0.98, green: 0.42, blue: 0.18)
-        let baseline = SteerColors.softSeparator
+        let baseline = baselineDotColor
 
         for r in 0..<rows {
             for c in 0..<cols {
@@ -187,17 +207,16 @@ struct RoutingFieldView: View {
                 let radius: CGFloat = 1.2
                 let rect = CGRect(x: x - radius, y: y - radius,
                                   width: radius * 2, height: radius * 2)
-                let alpha: Double
                 let color: Color
                 if eased > 0.02 {
-                    alpha = 0.35 + eased * 0.55
-                    color = active
+                    let alpha = 0.35 + eased * 0.55
+                    color = active.opacity(alpha)
                 } else {
-                    alpha = 0.45
+                    // baseline already carries its scheme-tuned alpha
+                    // (see baselineDotColor); no further multiplier.
                     color = baseline
                 }
-                ctx.fill(Path(ellipseIn: rect),
-                         with: .color(color.opacity(alpha)))
+                ctx.fill(Path(ellipseIn: rect), with: .color(color))
             }
         }
     }
