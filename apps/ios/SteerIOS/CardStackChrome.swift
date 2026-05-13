@@ -116,8 +116,10 @@ struct LiveSessionChipPill: View {
     }
 }
 
-struct ActionCardCarousel: View {
-    let cards: [ActionCard]
+struct ActionCardCarousel<Card: CardDisplayable & Identifiable>: View
+    where Card.ID == String
+{
+    let cards: [Card]
     let currentIndex: Int
     let onSelect: (Int) -> Void
 
@@ -143,8 +145,8 @@ struct ActionCardCarousel: View {
     }
 }
 
-struct CompactActionCardView: View {
-    let card: ActionCard
+struct CompactActionCardView<Card: CardDisplayable>: View {
+    let card: Card
     let isCurrent: Bool
 
     private var headerTint: Color {

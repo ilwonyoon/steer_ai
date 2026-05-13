@@ -51,38 +51,80 @@ struct OnboardingFlowView: View {
         ZStack(alignment: .top) {
             SteerColors.appBackground.ignoresSafeArea()
 
-            content
-                .padding(.horizontal, 14)
-                .padding(.top, 36)
+            // Same layout as InboxView so the card height + the
+            // ride-along carousel sit exactly where they will once
+            // the user reaches the real inbox. The chrome is dead
+            // (no real Mac chip, no real settings); we just want
+            // the visual scaffolding to match.
+            ZStack(alignment: .bottom) {
+                cardArea
+                ActionCardCarousel(
+                    cards: projectedDeck,
+                    currentIndex: currentIndex,
+                    onSelect: { _ in /* read-only preview */ }
+                )
                 .padding(.bottom, 12)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 36)
+            .padding(.bottom, 12)
         }
         .onAppear { startStreaming(forIndex: 0) }
         .onDisappear { streamTask?.cancel() }
     }
 
+    /// Same vertical stack the real InboxView's `cardArea` uses:
+    /// fake HeaderBar (frozen state, disabled) + the in-progress
+    /// onboarding card. ActionCardView itself isn't `maxHeight:
+    /// .infinity`; the parent VStack flex makes the card take the
+    /// remaining height *after* the carousel reserves its strip
+    /// at the bottom.
     @ViewBuilder
-    private var content: some View {
-        if cards.indices.contains(currentIndex) {
-            let raw = cards[currentIndex]
-            let projected = projectedCard(raw)
-            ActionCardView(
-                card: projected,
-                reply: $replyText,
-                onSend: { _ in advance() },
-                replyFieldFocused: $replyFocused,
-                onBodyTap: { skipToEnd() },
-                replyPlaceholder: raw.replyPlaceholder
+    private var cardArea: some View {
+        VStack(spacing: 12) {
+            OnboardingHeaderBar()
+
+            if cards.indices.contains(currentIndex) {
+                let raw = cards[currentIndex]
+                let projected = projectedCard(raw)
+                ActionCardView(
+                    card: projected,
+                    reply: $replyText,
+                    onSend: { _ in advance() },
+                    replyFieldFocused: $replyFocused,
+                    onBodyTap: { skipToEnd() },
+                    replyPlaceholder: raw.replyPlaceholder
+                )
+                .environment(\.onboardingAllowEmptySend, promptVisible)
+                .id(raw.id)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .trailing)),
+                    removal: .opacity.combined(with: .move(edge: .leading))
+                ))
+            }
+        }
+    }
+
+    /// All three onboarding cards rendered into the carousel form,
+    /// with the active one carrying its current streaming state and
+    /// the others fully revealed so the user sees the upcoming
+    /// titles. Real Inbox does the same: every active card has a
+    /// CompactActionCardView at the bottom.
+    private var projectedDeck: [RenderableOnboardingCard] {
+        cards.enumerated().map { idx, card in
+            if idx == currentIndex {
+                return projectedCard(card)
+            }
+            // Other cards: title/summary only — terminal body
+            // unused by CompactActionCardView.
+            return RenderableOnboardingCard(
+                id: card.id,
+                project: card.project,
+                provider: card.provider,
+                terminalLines: card.terminalLines,
+                title: card.title,
+                summary: card.summary
             )
-            // The ReplyDock inside ActionCardView reads its
-            // canSend gate from allowEmptySend on the dock itself,
-            // not from this caller. We surface that flag by reaching
-            // through a wrapping environment value below.
-            .environment(\.onboardingAllowEmptySend, promptVisible)
-            .id(raw.id)  // forces a fresh subview on advance
-            .transition(.asymmetric(
-                insertion: .opacity.combined(with: .move(edge: .trailing)),
-                removal: .opacity.combined(with: .move(edge: .leading))
-            ))
         }
     }
 
@@ -115,7 +157,9 @@ struct OnboardingFlowView: View {
             id: raw.id,
             project: raw.project,
             provider: raw.provider,
-            terminalLines: out
+            terminalLines: out,
+            title: raw.title,
+            summary: raw.summary
         )
     }
 
@@ -191,11 +235,51 @@ private struct RenderableOnboardingCard: CardDisplayable, Identifiable {
     let project: String
     let provider: ProviderKind
     let terminalLines: [TerminalLine]
+    let title: String
+    let summary: String
     // Same defaults OnboardingCard's extension provides.
     var state: SessionState { .waiting }
     var age: String { "" }
     var branchLabel: String? { nil }
     var accentHue: Double { 28 }
+}
+
+/// Dead-state copy of the real HeaderBar so the onboarding screen
+/// matches Inbox's exact vertical layout (the card height the
+/// user sees here is the card height they'll see on every real
+/// session). All buttons are inert — onboarding is a guided
+/// flow, not a control surface.
+private struct OnboardingHeaderBar: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            // Same capsule as MacConnectionChip's idle state.
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(SteerColors.tertiaryInk)
+                    .frame(width: 8, height: 8)
+                Text("Mac")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(SteerColors.ink)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .steerGlass(shape: Capsule())
+            .opacity(0.6)
+            .allowsHitTesting(false)
+
+            Spacer()
+
+            // Match the trailing settings cog so spacing is identical.
+            Image(systemName: "gearshape")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(SteerColors.ink)
+                .frame(width: 44, height: 44)
+                .steerGlass(shape: Circle())
+                .opacity(0.6)
+                .allowsHitTesting(false)
+        }
+        .frame(height: 56)
+    }
 }
 
 /// Environment hook so ActionCardView's nested ReplyDock can pick

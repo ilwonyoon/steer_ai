@@ -112,15 +112,20 @@ struct InboxView: View {
                     .accessibilityHidden(true)
             }
 
-            if !onboardingCompleted {
+            // Order: SignIn → Onboarding → Inbox. The user
+            // ratifies their identity first (the standard "this is
+            // an account-bound app" mental model), then we teach
+            // them how the card flow works *as our authenticated
+            // user*, then we drop them in their real inbox.
+            if !inbox.isSignedIn {
+                SignInPrompt(inbox: inbox)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("sign-in-prompt")
+            } else if !onboardingCompleted {
                 OnboardingFlowView(onComplete: completeOnboarding)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("onboarding-flow")
                     .transition(.opacity)
-            } else if !inbox.isSignedIn {
-                SignInPrompt(inbox: inbox)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("sign-in-prompt")
             } else {
                 content
                     .accessibilityElement(children: .contain)

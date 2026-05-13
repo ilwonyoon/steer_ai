@@ -24,6 +24,14 @@ struct OnboardingCard: Identifiable {
     /// onboarding context makes it read as Steer-branded rather
     /// than provider-specific.
     let provider: ProviderKind
+    /// One-line title that goes into the compact carousel preview
+    /// alongside the project label. Real cards source this from
+    /// classifier output; onboarding cards write it manually.
+    let title: String
+    /// One-line subtitle for the carousel — the bit shown under
+    /// the title in the compact card. Should preview the body in
+    /// a single sentence so users skim-scroll the carousel.
+    let summary: String
     /// Card body lines, each rendered through TerminalLineKind so
     /// they pick up the same color treatment as real terminal
     /// excerpts. Mix kinds to emphasize key sentences. These lines
@@ -55,6 +63,8 @@ enum OnboardingScript {
             id: "ob-1-intro",
             project: "Steer",
             provider: .codex,
+            title: "Welcome",
+            summary: "What Steer does",
             terminalLines: [
                 TerminalLine("Welcome.", kind: .accent),
                 TerminalLine(""),
@@ -72,6 +82,8 @@ enum OnboardingScript {
             id: "ob-2-how",
             project: "Steer",
             provider: .codex,
+            title: "How it works",
+            summary: "Card lands, you reply, agent resumes",
             terminalLines: [
                 TerminalLine("Here's the flow:", kind: .accent),
                 TerminalLine(""),
@@ -89,6 +101,8 @@ enum OnboardingScript {
             id: "ob-3-mac",
             project: "Steer",
             provider: .codex,
+            title: "Install on Mac",
+            summary: "Mac companion is required",
             terminalLines: [
                 TerminalLine("One thing first.", kind: .accent),
                 TerminalLine(""),

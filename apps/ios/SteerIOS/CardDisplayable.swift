@@ -28,6 +28,10 @@ protocol CardDisplayable {
     /// inherit it from the Mac side so the same repo gets the same
     /// color across devices. Onboarding cards pick a neutral value.
     var accentHue: Double { get }
+    /// Title + summary feed the compact carousel cards along the
+    /// bottom strip. The full-card body uses `terminalLines`.
+    var title: String { get }
+    var summary: String { get }
 }
 
 extension ActionCard: CardDisplayable {}
