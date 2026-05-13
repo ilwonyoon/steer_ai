@@ -293,6 +293,72 @@ export function createStore(filePath = databasePath) {
       `);
       return stmt.run(now).changes ?? 0;
     },
+    /// Drop sessions in terminal states whose final state timestamp
+    /// is older than the supplied horizons. ended → 1h horizon
+    /// (most users want recent transcripts around for a short
+    /// debug window). disconnected → 24h horizon (allows a wake-
+    /// from-sleep wrapper to reattach within a day).
+    ///
+    /// Returns the number of sessions actually pruned. Order
+    /// matters: child rows in transcript_entries / terminal_excerpts
+    /// / action_cards / instructions must go before the session
+    /// row itself, otherwise SQLite's FK enforcement (which we
+    /// keep ON for safety) raises constraint failed. The whole
+    /// thing runs inside one transaction so a crash mid-prune
+    /// can't leave orphan rows.
+    pruneTerminalSessions({
+      endedHorizonMs = 60 * 60 * 1000,           // 1 h
+      disconnectedHorizonMs = 24 * 60 * 60 * 1000, // 24 h
+    } = {}) {
+      const nowMs = Date.now();
+      const endedBefore = new Date(nowMs - endedHorizonMs).toISOString();
+      const disconnectedBefore = new Date(nowMs - disconnectedHorizonMs).toISOString();
+
+      const pickup = db.prepare(`
+        SELECT id FROM sessions
+        WHERE (run_state = 'ended' AND COALESCE(ended_at, updated_at) < ?)
+           OR (run_state = 'disconnected' AND updated_at < ?)
+      `);
+      const ids = pickup.all(endedBefore, disconnectedBefore).map((r) => r.id);
+      if (ids.length === 0) return 0;
+
+      const placeholders = ids.map(() => "?").join(",");
+      const params = ids;
+      // node:sqlite has no `db.transaction(fn)` helper. Manual
+      // BEGIN/COMMIT around the cascade gives atomicity — a mid-
+      // cascade crash leaves everything intact.
+      //
+      // FK off during the cascade: even though we delete child
+      // rows before parents, the Phase 1 triggers on action_cards
+      // can move rows mid-statement and trip deferred FK checks.
+      // Turning FK off for the transaction body is the standard
+      // SQLite pattern; re-enabling at the end (createStore set
+      // it ON at connect time) keeps every subsequent statement
+      // back under enforcement.
+      db.exec("PRAGMA foreign_keys = OFF; BEGIN;");
+      try {
+        db.prepare(
+          `DELETE FROM transcript_entries WHERE session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM terminal_excerpts WHERE session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM action_cards WHERE session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM instructions WHERE target_session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM sessions WHERE id IN (${placeholders})`
+        ).run(...params);
+        db.exec("COMMIT; PRAGMA foreign_keys = ON;");
+      } catch (e) {
+        db.exec("ROLLBACK; PRAGMA foreign_keys = ON;");
+        throw e;
+      }
+      return ids.length;
+    },
     recordHookEvent(event) {
       const assistantMessage = normalizeHookText(event.lastAssistantMessage);
       if (assistantMessage) {

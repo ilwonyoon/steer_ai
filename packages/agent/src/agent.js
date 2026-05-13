@@ -35,6 +35,14 @@ await prepareSocketPath();
 const store = createStore();
 fs.mkdirSync(sessionsDir, { recursive: true });
 reapStartupSessions();
+// Phase 4 — opportunistic prune at startup. Picks up sessions
+// whose horizon passed while the agent was down.
+try {
+  const n = store.pruneTerminalSessions();
+  if (n > 0) console.log(`SteerAgent pruned ${n} terminal session(s) at startup`);
+} catch (e) {
+  console.error("SteerAgent startup prune failed:", e.message);
+}
 
 const server = net.createServer((socket) => {
   socket.setEncoding("utf8");
@@ -122,6 +130,26 @@ process.on("SIGTERM", shutdown);
 const REAPER_INTERVAL_MS = 30_000;
 const reaperTimer = setInterval(reapDeadSessions, REAPER_INTERVAL_MS);
 reaperTimer.unref?.();
+
+// Phase 4 — prune sessions in terminal states past their horizon.
+// Runs once at startup so a Mac that's been off all day catches
+// up the moment the agent comes back, then every hour. The hourly
+// cadence is far slower than the data churn (we add maybe one
+// ended session per session-close event), but the prune itself
+// is cheap (no rows in steady state, dozens at the high end).
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000; // 1 h
+function prunePass() {
+  try {
+    const n = store.pruneTerminalSessions();
+    if (n > 0) {
+      console.log(`SteerAgent pruned ${n} terminal session(s)`);
+    }
+  } catch (e) {
+    console.error("SteerAgent prune failed:", e.message);
+  }
+}
+const pruneTimer = setInterval(prunePass, PRUNE_INTERVAL_MS);
+pruneTimer.unref?.();
 
 function reapDeadSessions() {
   for (const [sessionId, session] of sessions) {
