@@ -255,18 +255,25 @@ struct InboxView: View {
                 detail: "Running sessions appear here when they stop."
             )
         case .stale, .offline:
+            // No CTA — there's nothing the user can do from the
+            // phone to bring the Mac back online; surfacing a "Mac
+            // Status" button just made them tap something that
+            // restated the same fact. The chip at the top already
+            // signals offline/stale, the detail line tells them
+            // replies queue.
             EmptyStateView(
                 icon: "wifi.slash",
                 message: "Mac offline",
-                detail: "Replies will queue until your Mac is back.",
-                primaryCTA: ("Mac Status", { showsMacSyncStatus = true })
+                detail: "Replies will queue until your Mac is back."
             )
         case .error:
+            // Same reasoning as .stale / .offline — opening the Mac
+            // Sync sheet doesn't fix a relay outage. Keep the surface
+            // honest: the line tells them what's wrong, and that's it.
             EmptyStateView(
                 icon: "exclamationmark.triangle",
                 message: "Sync issue",
-                detail: "Can't reach the relay.",
-                primaryCTA: ("Mac Status", { showsMacSyncStatus = true })
+                detail: "Can't reach the relay."
             )
         }
     }
