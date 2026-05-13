@@ -41,10 +41,6 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        # Allow http://127.0.0.1 during local wrangler dev. Drop before
-        # App Store submission once the relay is on https.
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.steer.ios
