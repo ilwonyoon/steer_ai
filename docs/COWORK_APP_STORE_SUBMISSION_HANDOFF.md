@@ -92,8 +92,8 @@ PR #40 commit `afcab30`. `.offline` / `.error` 분기에서 hollow "Mac Status" 
 
 ### 2.1 앱 이름 / 부제
 
-- **App Name (30자 한도)**: `Steer — AI Action Queue`
-- **Subtitle (30자 한도)**: `Never let your AI sit idle`
+- **App Name (30자 한도)**: `Steer - Agent Inbox`
+- **Subtitle (30자 한도)**: `Never let AI sit idle`
 - **Category (Primary)**: `Developer Tools`
 - **Category (Secondary)**: `Productivity`
 

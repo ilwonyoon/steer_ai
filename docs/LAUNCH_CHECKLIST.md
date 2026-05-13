@@ -99,7 +99,7 @@
 
 ### 4A. App Information
 
-- [ ] 🙋 App Name (30자): `Steer - AI Action Queue`
+- [ ] 🙋 App Name (30자): `Steer - Agent Inbox`
 - [ ] 🙋 Subtitle (30자): `Never let AI sit idle`
 - [ ] 🙋 Primary Category: `Developer Tools`
 - [ ] 🙋 Secondary Category: `Productivity`

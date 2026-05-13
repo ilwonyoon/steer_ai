@@ -47,7 +47,7 @@ Never let a coding agent sit idle because you missed the moment it needed you.
 
 | Field | Value |
 |---|---|
-| App Name | `Steer - AI Action Queue` |
+| App Name | `Steer - Agent Inbox` |
 | Subtitle | `Never let AI sit idle` |
 | Bundle ID | `ai.steer.ios` |
 | SKU | `STEER_IOS_001` |
@@ -60,7 +60,7 @@ Never let a coding agent sit idle because you missed the moment it needed you.
 
 Notes:
 
-- Use the hyphenated App Name if App Store Connect rejects the typographic dash. Both fit the 30-character name limit.
+- Use `Steer - Agent Inbox` consistently across App Store Connect and launch materials.
 - Keep the subtitle generic. The app name already carries the product name, and Apple advises not duplicating searchable app/company names in keywords.
 
 ### URLs

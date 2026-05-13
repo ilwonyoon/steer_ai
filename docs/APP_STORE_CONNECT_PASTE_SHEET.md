@@ -12,7 +12,7 @@
 
 | 필드 | 값 |
 |---|---|
-| **App Name** | `Steer - AI Action Queue` |
+| **App Name** | `Steer - Agent Inbox` |
 | **Subtitle** | `Never let AI sit idle` |
 | **Bundle ID** | `ai.steer.ios` |
 | **SKU** | `ai.steer.ios` |
