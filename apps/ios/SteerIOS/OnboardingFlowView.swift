@@ -28,17 +28,24 @@ struct OnboardingFlowView: View {
     private let cards = OnboardingScript.cards
 
     @State private var currentIndex = 0
-    @State private var visibleLineCount = 0
+    /// Index of the line currently being typed, plus how many of
+    /// its characters are visible. Lines before `streamLine` are
+    /// fully revealed; lines after are hidden.
+    @State private var streamLine = 0
+    @State private var streamChar = 0
     @State private var promptVisible = false
     @State private var replyText = ""
     @FocusState private var replyFocused: Bool
     @State private var streamTask: Task<Void, Never>?
 
-    // Tunables. 150 ms / line reads as a steady arrival without
-    // dragging; 600 ms pause before the prompt mirrors the rhythm
-    // of someone finishing a thought before asking what's next.
-    private let lineIntervalMs: UInt64 = 150
-    private let promptDelayMs: UInt64 = 600
+    // Tunables. Character-level typing speed. 32 ms / char reads
+    // as natural typing without being slow enough to drag. Empty
+    // lines (blank rows) get a quick fixed pause rather than zero
+    // so the rhythm doesn't snap. 700 ms pause before the prompt
+    // is the "okay, your turn" beat.
+    private let charIntervalMs: UInt64 = 32
+    private let blankLinePauseMs: UInt64 = 120
+    private let promptDelayMs: UInt64 = 700
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -80,36 +87,67 @@ struct OnboardingFlowView: View {
     }
 
     /// Build a `RenderableOnboardingCard` whose terminalLines are
-    /// the slice currently revealed (plus the prompt line once
-    /// `promptVisible` flips). The view layer treats this exactly
-    /// like a real card with a shorter excerpt.
+    /// the current typewriter state: every line before `streamLine`
+    /// fully revealed, line `streamLine` truncated to `streamChar`
+    /// characters, lines after hidden. Once `promptVisible` flips,
+    /// the action-prompt line appends as its own fully-revealed row.
     private func projectedCard(_ raw: OnboardingCard) -> RenderableOnboardingCard {
-        let revealed = Array(raw.terminalLines.prefix(visibleLineCount))
-        let withPrompt = promptVisible
-            ? revealed + [TerminalLine(""), raw.actionPromptLine]
-            : revealed
+        var out: [TerminalLine] = []
+        for (idx, line) in raw.terminalLines.enumerated() {
+            if idx < streamLine {
+                out.append(line)
+            } else if idx == streamLine {
+                // Always emit the in-progress line so its height
+                // is reserved (otherwise the card shifts up as
+                // each line lands). When `streamChar == 0` we
+                // still emit a blank line of the same kind so the
+                // SF font picks the same baseline.
+                let typed = String(line.text.prefix(streamChar))
+                out.append(TerminalLine(typed.isEmpty ? " " : typed, kind: line.kind, id: line.id))
+                break
+            }
+        }
+        if promptVisible {
+            out.append(TerminalLine(""))
+            out.append(raw.actionPromptLine)
+        }
         return RenderableOnboardingCard(
             id: raw.id,
             project: raw.project,
             provider: raw.provider,
-            terminalLines: withPrompt
+            terminalLines: out
         )
     }
 
     private func startStreaming(forIndex idx: Int) {
         streamTask?.cancel()
-        visibleLineCount = 0
+        streamLine = 0
+        streamChar = 0
         promptVisible = false
         guard cards.indices.contains(idx) else { return }
-        let total = cards[idx].terminalLines.count
+        let lines = cards[idx].terminalLines
         let task = Task { @MainActor in
-            for i in 1...max(total, 1) {
-                try? await Task.sleep(nanoseconds: lineIntervalMs * 1_000_000)
+            for (lineIdx, line) in lines.enumerated() {
                 if Task.isCancelled { return }
-                withAnimation(.easeOut(duration: 0.22)) {
-                    visibleLineCount = i
+                streamLine = lineIdx
+                streamChar = 0
+                if line.text.isEmpty {
+                    // Blank line — just a small pause so the
+                    // cadence breathes.
+                    try? await Task.sleep(nanoseconds: blankLinePauseMs * 1_000_000)
+                    continue
+                }
+                let chars = Array(line.text)
+                for c in 0..<chars.count {
+                    try? await Task.sleep(nanoseconds: charIntervalMs * 1_000_000)
+                    if Task.isCancelled { return }
+                    streamChar = c + 1
                 }
             }
+            // Advance one past the last line so projectedCard
+            // doesn't keep emitting the in-progress placeholder.
+            streamLine = lines.count
+            streamChar = 0
             try? await Task.sleep(nanoseconds: promptDelayMs * 1_000_000)
             if Task.isCancelled { return }
             withAnimation(.easeOut(duration: 0.28)) {
@@ -121,9 +159,10 @@ struct OnboardingFlowView: View {
 
     private func skipToEnd() {
         streamTask?.cancel()
-        let total = cards[currentIndex].terminalLines.count
+        let lines = cards[currentIndex].terminalLines
         withAnimation(.easeOut(duration: 0.18)) {
-            visibleLineCount = total
+            streamLine = lines.count
+            streamChar = 0
             promptVisible = true
         }
     }
