@@ -77,7 +77,11 @@ struct OnboardingFlowView: View {
     @ViewBuilder
     private var cardArea: some View {
         VStack(spacing: 12) {
-            OnboardingHeaderBar(onSkip: { onComplete() })
+            OnboardingHeaderBar(
+                currentIndex: currentIndex,
+                cardCount: cards.count,
+                onSkip: { onComplete() }
+            )
 
             if cards.indices.contains(currentIndex) {
                 let raw = cards[currentIndex]
@@ -249,29 +253,44 @@ private struct RenderableOnboardingCard: CardDisplayable, Identifiable {
 }
 
 /// Dead-state copy of the real HeaderBar so the onboarding screen
-/// matches Inbox's exact vertical layout. The trailing cog slot
-/// is replaced with a live "Skip" pill that ends onboarding
-/// immediately — useful during dev and as a normal escape hatch
-/// once shipped.
+/// matches Inbox's exact vertical layout. Left pill labels the
+/// flow ("Tutorial"), center shows progress dots, right is the
+/// live "Skip" pill that ends onboarding immediately.
+///
+/// The dead-state Mac chip that used to sit on the left was
+/// misleading — readers thought they were on a real Mac
+/// connection screen with a broken chip. Replacing it with the
+/// explicit "Tutorial" label tells them where they are.
 private struct OnboardingHeaderBar: View {
+    let currentIndex: Int
+    let cardCount: Int
     let onSkip: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            // Same capsule as MacConnectionChip's idle state.
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(SteerColors.tertiaryInk)
-                    .frame(width: 8, height: 8)
-                Text("Mac")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(SteerColors.ink)
+            // Left: explicit "Tutorial" label so the user knows
+            // this screen is a walkthrough, not the real Inbox.
+            Text("Tutorial")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(SteerColors.ink)
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .steerGlass(shape: Capsule())
+
+            Spacer()
+
+            // Center: progress dots — one per onboarding card,
+            // current card highlighted. Sits on its own so it's
+            // visually centered between left + right pills.
+            HStack(spacing: 6) {
+                ForEach(0..<cardCount, id: \.self) { idx in
+                    Circle()
+                        .fill(idx == currentIndex
+                              ? SteerColors.ink
+                              : SteerColors.softSeparator)
+                        .frame(width: 6, height: 6)
+                }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 44)
-            .steerGlass(shape: Capsule())
-            .opacity(0.6)
-            .allowsHitTesting(false)
 
             Spacer()
 
