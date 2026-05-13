@@ -144,10 +144,12 @@ final class DevicePresenceObserver: ObservableObject {
             return
         }
         guard inbox.isSignedIn else {
-            // Signed out: clear connecting state, drop to
-            // neverConnected so the next sign-in transition is
-            // detectable.
-            if state != .neverConnected { state = .neverConnected }
+            // Signed out: chip isn't on screen (SignInPrompt
+            // covers it), so the state value doesn't matter for
+            // UI. We deliberately leave `state` as `.connecting`
+            // (the init default) so the very first frame after
+            // sign-in still reads as "Connecting" — no
+            // `.neverConnected` flash in between.
             connectingStartedAt = nil
             return
         }
