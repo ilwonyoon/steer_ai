@@ -23,6 +23,15 @@ struct InboxView: View {
     /// running on every keystroke / focus tick and stalling input
     /// response on the device.
     @State private var cards: [ActionCard] = []
+    /// Tracks the OS lifecycle phase (active / inactive / background)
+    /// so we can force a WebSocket reconnect + cards reload the moment
+    /// the user returns to the foreground. iOS suspends URLSession
+    /// sockets in the background and Cloudflare DOs close idle sockets
+    /// after ~5–10 min, so a phone that was locked for a while will
+    /// have a dead WS the next time the user opens the app. The
+    /// existing 30s ping is enough to keep a foreground socket warm,
+    /// not enough to revive one that was killed in suspend.
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var replyFieldFocused: Bool
     /// Tracks the actual keyboard phase (will-show / did-hide). The
     /// compact carousel renders only when this is false, so it never
@@ -156,6 +165,18 @@ struct InboxView: View {
             devicePresence.start()
             cards = inbox.cards.map { CardPayloadMapping.actionCard(from: $0) }
             await inbox.refreshNotificationPermission()
+        }
+        // Force a WebSocket re-establish + cards refresh whenever the
+        // app comes back to the foreground. Background suspend kills
+        // the socket; without this the user opens Steer to a stale
+        // inbox until the next presence-poll tick (~15s) catches up.
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            inbox.reconnectWebSocketIfNeeded()
+            Task {
+                await inbox.reload()
+                await devicePresence.refresh()
+            }
         }
         .onReceive(inbox.$cards) { newCards in
             cards = newCards.map { CardPayloadMapping.actionCard(from: $0) }

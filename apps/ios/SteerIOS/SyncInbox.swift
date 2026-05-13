@@ -429,7 +429,16 @@ public final class SyncInbox: ObservableObject {
             Task { _ = try? await urlSession.data(for: req) }
         }
         tokenStore.clear()
-        cards = []
+        // setSessions(...) is the single mutation funnel: clearing
+        // through it also clears cards + pendingReplies +
+        // activeSessionIds. Sign-out used to only zero `cards`,
+        // which left `.awaitingResponse` entries (and therefore
+        // the "N running" chip) alive across sign-in cycles —
+        // including for sessions whose Mac process was killed
+        // long ago. The chip can never recover on its own because
+        // the cardUpsert that would clear those entries is never
+        // going to arrive.
+        setSessions([])
         status = .signedOut
         loadPhase = .idle
         webSocketTask?.cancel()
@@ -483,6 +492,22 @@ public final class SyncInbox: ObservableObject {
             tokenStore.clear()
             status = .signedOut
         }
+    }
+
+    /// Re-establish the WebSocket if the receive loop has died.
+    /// Called by the InboxView lifecycle observer whenever the app
+    /// returns to the foreground — iOS suspends URLSession sockets
+    /// in the background and Cloudflare DOs close idle sockets after
+    /// ~5–10 min, so a phone that was locked for a while will have
+    /// a dead WS even though the in-memory `webSocketTask` still
+    /// looks set. Forcing reconnect drains the relay's queued
+    /// broadcasts in one shot.
+    ///
+    /// Cheap when the socket is healthy: the existing task is
+    /// cancelled and a new one is opened.
+    public func reconnectWebSocketIfNeeded() {
+        guard isSignedIn else { return }
+        connectWebSocket()
     }
 
     public func reload() async {

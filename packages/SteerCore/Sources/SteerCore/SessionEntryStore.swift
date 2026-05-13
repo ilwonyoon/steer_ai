@@ -201,32 +201,30 @@ public enum SessionEntryStore {
         return next
     }
 
-    /// WebSocket pushed `card.resolved` for `cardId`. Three cases:
+    /// WebSocket pushed `card.resolved` for `cardId`. Drop the
+    /// matching entry regardless of its stage.
     ///
-    ///   - matching entry is `.awaitingUser` or `.failed`: drop it.
-    ///     The card the user was looking at (or had failed to reply
-    ///     to) is gone server-side; nothing to keep.
+    /// History: an earlier version (commit 86f87a3) held
+    /// `.awaitingResponse` entries through the gap between
+    /// `card.resolved` and the next `card.upsert`, on the theory
+    /// that the chip would otherwise flicker 1 → 0 → 1 across the
+    /// short window. That hold was load-bearing only when the next
+    /// upsert was actually coming. In practice, when the wrapper
+    /// died, the user signed out, the terminal didn't answer, or
+    /// the response card raced through a different code path,
+    /// the entry stuck at `.awaitingResponse` forever and the
+    /// chip stayed lit. "N running" got pinned to dead sessions
+    /// that the user couldn't dismiss.
     ///
-    ///   - matching entry is `.awaitingResponse`: KEEP it. This is
-    ///     the load-bearing case. After the user sends a reply, Mac
-    ///     resolves the original card on its end — that resolve
-    ///     event races the next cardUpsert that carries the
-    ///     terminal's response. If we drop the entry here, the
-    ///     chip clears before the new card arrives, and the user
-    ///     sees "chip → 0, card → ?, card lands seconds later."
-    ///     Holding the entry until the next cardUpsert (which
-    ///     replaces the card atomically) keeps the chip lit through
-    ///     the gap.
+    /// We accept the brief chip flicker. It's a 1-second visual
+    /// jitter; the stuck-forever alternative was a launch
+    /// blocker.
     public static func onCardResolved(
         previous: [SessionEntry],
         cardId: String
     ) -> [SessionEntry] {
         previous.compactMap { entry in
-            guard entry.card.cardId == cardId else { return entry }
-            switch entry.stage {
-            case .awaitingResponse: return entry  // hold for upsert
-            case .awaitingUser, .failed: return nil
-            }
+            entry.card.cardId == cardId ? nil : entry
         }
     }
 

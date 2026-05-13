@@ -172,12 +172,16 @@ final class SessionEntryStoreTests: XCTestCase {
         XCTAssertEqual(next, [])
     }
 
-    func test_cardResolved_holdsAwaitingResponseUntilUpsert() {
-        // The bug we kept hitting: after user replies, Mac
-        // resolves the original card before publishing the
-        // response's new card. If we drop the entry on resolve,
-        // the chip clears too early. Hold it until the
-        // cardUpsert with the new cardId arrives.
+    func test_cardResolved_dropsAwaitingResponseEntry() {
+        // Earlier we tried to hold .awaitingResponse entries through
+        // the gap between card.resolved and the next card.upsert, on
+        // the theory that the chip would otherwise flicker 1 → 0 → 1.
+        // In practice the hold was unbounded — if the wrapper died,
+        // the user signed out, or the response card raced through a
+        // different code path, the entry stuck at .awaitingResponse
+        // forever and the chip stayed lit on dead sessions the user
+        // could not dismiss. We now drop on resolve regardless of
+        // stage and accept the brief flicker.
         let entry = SessionEntry(
             sessionId: "S1",
             card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
@@ -185,25 +189,14 @@ final class SessionEntryStoreTests: XCTestCase {
             lastReplyText: "go",
             lastInstructionId: "i1"
         )
-        // resolve fires first.
         let afterResolve = SessionEntryStore.onCardResolved(
             previous: [entry], cardId: "A"
         )
-        XCTAssertEqual(afterResolve.count, 1)
-        XCTAssertEqual(afterResolve[0].stage, .awaitingResponse)
-        // Chip count must still be 1.
+        XCTAssertEqual(afterResolve, [])
         XCTAssertEqual(
             SessionEntryStore.awaitingResponseEntries(in: afterResolve).count,
-            1
+            0
         )
-        // Then the new cardUpsert lands.
-        let cardB = makeCard(sessionId: "S1", cardId: "B", updatedAtMs: 2000)
-        let afterUpsert = SessionEntryStore.onCardUpsert(
-            previous: afterResolve, card: cardB
-        )
-        XCTAssertEqual(afterUpsert.count, 1)
-        XCTAssertEqual(afterUpsert[0].card.cardId, "B")
-        XCTAssertEqual(afterUpsert[0].stage, .awaitingUser)
     }
 
     func test_cardResolved_dropsFailedEntry() {
@@ -359,17 +352,25 @@ final class SessionEntryStoreTests: XCTestCase {
             SessionEntryStore.awaitingResponseEntries(in: entries).count, 1
         )
 
-        // Step 4: Mac resolves the card before publishing the response.
-        // Entry must survive (otherwise chip drops too early).
+        // Step 4: Mac resolves the card before publishing the
+        // response. We accept the brief chip flicker: the entry is
+        // dropped here, the chip momentarily clears, and Step 5's
+        // upsert reinstates the entry as .awaitingUser. The previous
+        // "hold .awaitingResponse until upsert" version of this
+        // function caused stuck "N running" chips when the upsert
+        // never came (wrapper death, sign-out, paste-submit
+        // regression, etc.) — that bug was a launch blocker; the
+        // flicker is a second-long visual jitter.
         entries = SessionEntryStore.onCardResolved(
             previous: entries, cardId: "A"
         )
         XCTAssertEqual(
-            SessionEntryStore.awaitingResponseEntries(in: entries).count, 1
+            SessionEntryStore.awaitingResponseEntries(in: entries).count, 0
         )
 
         // Step 5: 10s later, terminal answers. Mac bumps revision to
-        // 2 and re-upserts. Atomic transition: chip → 0, carousel ← 1.
+        // 2 and upserts the new card. Fresh entry lands as
+        // .awaitingUser.
         entries = SessionEntryStore.onCardUpsert(
             previous: entries,
             card: makeCard(
