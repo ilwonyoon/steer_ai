@@ -695,6 +695,21 @@ private struct SignInPrompt: View {
             VStack(spacing: 14) {
                 Spacer()
 
+                // App icon sits above the wordmark so the screen
+                // reads as "this is Steer" the moment it appears.
+                // Without it, the SignIn page was just typography
+                // on a moving grid and the user couldn't tell which
+                // app it belonged to. The imageset is a copy of
+                // AppIcon's 1024 master, so the lock-screen icon
+                // and this in-app glyph stay in sync.
+                Image("steer-logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 84, height: 84)
+                    .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+                    .shadow(color: Color.black.opacity(0.18), radius: 14, y: 6)
+                    .padding(.bottom, 6)
+
                 // Mono wordmark + value prop. The routing field
                 // is the visual hero; the foreground stays
                 // typographic. SF Mono is the closest built-in
