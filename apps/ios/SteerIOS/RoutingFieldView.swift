@@ -31,13 +31,19 @@ struct RoutingFieldView: View {
         var roster: [Blob] = []
         roster.reserveCapacity(3)
         for i in 0..<3 {
-            let phase = Double(i) / 3.0  // 0, 0.33, 0.67 of the loop
-            let cycleSeconds = 7.0 + Double.random(in: -0.4...0.4, using: &rng)
-            let xCenter = 0.20 + Double(i) * 0.30   // 0.2, 0.5, 0.8 across
+            let phase = Double(i) / 3.0
+            // Halved speed: 7s → 14s per traversal. Reads as a
+            // slow, ambient wave rather than a fast cycle.
+            let cycleSeconds = 14.0 + Double.random(in: -0.8...0.8, using: &rng)
+            let xCenter = 0.20 + Double(i) * 0.30
             let xWobbleAmp = 0.10 + Double.random(in: -0.03...0.03, using: &rng)
-            let xWobbleSpeed = 0.6 + Double.random(in: -0.1...0.1, using: &rng)
-            let radius = 90.0 + (i == 0 ? 20.0 : -25.0)
-            let strength = (i == 0 ? 1.0 : 0.55)
+            // Lateral wobble also slower — proportional to cycle.
+            let xWobbleSpeed = 0.3 + Double.random(in: -0.05...0.05, using: &rng)
+            // Wider blobs so the highlight gradient covers more
+            // grid cells before falling off. Dots themselves stay
+            // a fixed size; only the gradient extent grows.
+            let radius = 150.0 + (i == 0 ? 30.0 : -20.0)
+            let strength = (i == 0 ? 1.0 : 0.6)
             roster.append(Blob(
                 cycleSeconds: cycleSeconds,
                 phase: phase,
@@ -147,22 +153,23 @@ struct RoutingFieldView: View {
                 // diffuse, not a circle.
                 let eased = pow(influence, 1.8)
 
-                // Mix color + size based on influence.
+                // Dot SIZE stays constant — the field's visual
+                // variety lives entirely in color + alpha. Growing
+                // dots read as "the grid is breathing"; constant
+                // dots with shifting tint read as "a wave is
+                // passing through."
+                let radius: CGFloat = 1.2
+                let rect = CGRect(x: x - radius, y: y - radius,
+                                  width: radius * 2, height: radius * 2)
                 let alpha: Double
-                let radius: CGFloat
                 let color: Color
                 if eased > 0.02 {
-                    alpha = 0.35 + eased * 0.55  // up to 0.90
-                    radius = 1.0 + CGFloat(eased) * 1.6
+                    alpha = 0.35 + eased * 0.55
                     color = active
                 } else {
                     alpha = 0.45
-                    radius = 1.0
                     color = baseline
                 }
-
-                let rect = CGRect(x: x - radius, y: y - radius,
-                                  width: radius * 2, height: radius * 2)
                 ctx.fill(Path(ellipseIn: rect),
                          with: .color(color.opacity(alpha)))
             }

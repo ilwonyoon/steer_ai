@@ -43,6 +43,15 @@ final class DevicePresenceObserver: ObservableObject {
 
     private weak var inbox: SyncInbox?
     private var pollTimer: Timer?
+    /// Wall-clock when we started trying to reach the Mac after
+    /// sign-in. Used to keep state = .connecting until either a
+    /// Mac device row shows up or the timeout elapses.
+    private var connectingStartedAt: Date?
+    /// How long to hold `.connecting` after sign-in before
+    /// surrendering to `.neverConnected`. 10s gives the relay
+    /// + iPhone poll cadence three full cycles (3 × 3s) to land
+    /// a Mac heartbeat before we tell the user "no Mac yet."
+    private let connectingTimeout: TimeInterval = 10
     /// Tracks whether the app is currently visible. We only run the
     /// poll timer when the user can actually see the chip — the WS
     /// stays open separately for instruction delivery and APNS still
@@ -75,22 +84,19 @@ final class DevicePresenceObserver: ObservableObject {
         pollTimer = nil
     }
 
-    /// Tear up + restart the 15s timer + kick a single immediate
-    /// refresh. Idempotent — safe to call from start() and from
-    /// the foreground-resume notification.
+    /// Tear up + restart the timer + kick a single immediate
+    /// refresh. Steady-state cadence is 15 s; while the chip is
+    /// `.connecting` we poll every 3 s so a paired Mac surfaces
+    /// within the connecting window. `refresh()` flips back to
+    /// the slow cadence as soon as the window resolves.
     private func beginPolling() {
         Task { await refresh() }
+        installTimer(interval: 3)
+    }
+
+    private func installTimer(interval: TimeInterval) {
         pollTimer?.invalidate()
-        // 15s poll. Was 5s, which made the chip flip Connected ↔
-        // Stale within ~10s of the Mac going offline but burned 12
-        // req/min × 2 endpoints per user — the dominant chunk of
-        // Cloudflare quota in practice. 15s × 1 consolidated
-        // endpoint = 4 req/min, an ~83% drop. With the Mac heartbeat
-        // bumped to 15s alongside (see SteerAppDelegate), the chip
-        // still flips Stale within ~30s of a real Mac quit — slower
-        // than before, but not noticeably so. Phase A1 of
-        // docs/SYNC_STABILITY_AND_COST_PLAN.md.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refresh() }
         }
     }
@@ -129,23 +135,62 @@ final class DevicePresenceObserver: ObservableObject {
         guard let inbox else { return }
         if inbox.isDemoMode {
             if state != .demo { state = .demo }
+            connectingStartedAt = nil
             return
         }
         guard inbox.isSignedIn else {
+            // Signed out — neither connecting nor connected;
+            // no Mac to look for. Sign-in transitions kick off
+            // a fresh connecting window.
             if state != .neverConnected { state = .neverConnected }
+            connectingStartedAt = nil
             return
         }
-        // Devices only — the session count side of /v1/sync/presence
-        // is unused now that the chip derives "N running" locally from
-        // SyncInbox.activeSessionIds. The endpoint still returns
-        // sessions for older clients; we just drop them on the floor.
+
+        // First refresh after sign-in (or back from background)
+        // arms the connecting window so the chip shows
+        // "Connecting" while the first poll round-trips.
+        if connectingStartedAt == nil, !isTerminalState(state) {
+            connectingStartedAt = Date()
+            if state != .connecting { state = .connecting }
+        }
+
         let fetchedDevices = await fetchPresenceDevices()
         if devices != fetchedDevices {
             devices = fetchedDevices
         }
+
         let nextState = derive(from: fetchedDevices)
-        if state != nextState {
-            state = nextState
+
+        // While the connecting window is open and the derived
+        // state would be `.neverConnected` (no Mac heartbeat
+        // yet), keep showing `.connecting` so the user reads
+        // the chip as "trying" instead of "no Mac." Real Mac
+        // results (connected / stale / offline) end the window
+        // immediately; the timeout ends it falling through to
+        // `.neverConnected`.
+        if case .neverConnected = nextState,
+           let started = connectingStartedAt,
+           Date().timeIntervalSince(started) < connectingTimeout {
+            if state != .connecting { state = .connecting }
+            return
+        }
+
+        connectingStartedAt = nil
+        if state != nextState { state = nextState }
+        // Connecting resolved (either to a real Mac or to
+        // .neverConnected after timeout). Drop the timer back
+        // to the steady-state 15 s cadence to honor the
+        // request-budget commitment from SYNC_STABILITY_AND_COST_PLAN.
+        if pollTimer != nil {
+            installTimer(interval: 15)
+        }
+    }
+
+    private func isTerminalState(_ s: State) -> Bool {
+        switch s {
+        case .connected, .stale, .offline, .error, .demo: return true
+        case .connecting, .neverConnected: return false
         }
     }
 

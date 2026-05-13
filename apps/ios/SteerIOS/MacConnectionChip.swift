@@ -21,12 +21,24 @@ struct MacConnectionChip: View {
     var failedCount: Int = 0
     let onTap: () -> Void
 
+    @State private var connectingPulse: Bool = false
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 7) {
                 Circle()
                     .fill(dotColor)
                     .frame(width: 8, height: 8)
+                    // Connecting state: gentle scale pulse so the
+                    // chip *itself* tells the user "we're trying."
+                    .scaleEffect(isConnecting && connectingPulse ? 1.3 : 1.0)
+                    .opacity(isConnecting && connectingPulse ? 0.55 : 1.0)
+                    .animation(
+                        isConnecting
+                            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                            : .default,
+                        value: connectingPulse
+                    )
                 Text(label)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(SteerColors.ink)
@@ -39,6 +51,12 @@ struct MacConnectionChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Mac connection: \(label).")
+        .onAppear { connectingPulse = true }
+    }
+
+    private var isConnecting: Bool {
+        if case .connecting = state { return true }
+        return false
     }
 
     /// "running" already counts sending + injected pending rows
