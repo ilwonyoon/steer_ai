@@ -1783,56 +1783,7 @@ calls on every state change). New 30 s timeout for
 
 Defer: golden-set check 7 from audit §6.
 
-### 9.4 v3 event log adoption
-
-`docs/SYNC_ARCHITECTURE_V3.md` describes the relay's eventual
-event-log model. This design intentionally does not couple to it.
-When v3's `POST /v1/sync/events` is consumer-ready, the iOS reducer
-can reduce *over events* directly (each event has a server-assigned
-monotonic id, which obsoletes the client-side eventSeq for cross-
-device ordering).
-
-Defer: §1.2's `Event` enum is shaped to allow a future migration
-to server events without a second reducer rewrite.
-
-### 9.5 The Mac WS handler's "I should do something with `card.upsert`"
-
-`SyncClient.handleWSText` (L597-610) currently only posts a
-NotificationCenter event. With the agent owning the SQLite DB,
-Mac doesn't *consume* its own broadcast — the reload loop sees the
-change in SQLite. But: if a future feature lets the iPhone
-publish a card (audit F-7), the Mac would need a real handler.
-
-Defer: out of scope until F-7 is on the roadmap.
-
-### 9.6 Wrapper-side instruction acknowledgement
-
-When `steer send` injects an instruction, the agent's `ack` handler
-calls `resolveActionCardsForSession` only on `injected` (not
-`failed`). The reducer doesn't see acks — iOS only sees
-`POST /v1/sync/instructions` HTTP status. A wrapper-side failure
-manifests as a card that doesn't resolve; the user is forced into
-the 10-min timeout path.
-
-Defer: an iOS-visible "your reply failed at the Mac wrapper" signal
-would require the relay to forward `instruction.status` events to
-iOS (today they stay server-side). Separate PR.
-
-### 9.7 Test-clock injection across the whole app
-
-The reducer takes `now: Date` injected. The host (`SyncInbox`,
-`SteerRootView`) reads `Date()` at call sites. A full
-test-clock abstraction would need a `Clock` protocol threaded
-through every layer. Deferred — for now, the reducer is testable
-because it's pure; the host's timer wakes are robust against
-inaccuracy (30 s tolerance on `.awaitingResponseTimeout` detection).
-
-### 9.8 Wire-shape evolution: `eventSeq` on the server
-
-§2.B uses a client-only `snapshotStartedAtSeq` to dedupe stale
-GETs against fresh user writes. A future server-side event id
-(per §9.4) would obsolete this. Until then, the client-only
-solution is sufficient.
+Post-launch follow-ups: see `docs/SYNC_LAYER_V11_FOLLOWUPS.md`.
 
 ---
 

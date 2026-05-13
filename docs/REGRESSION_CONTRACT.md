@@ -25,9 +25,29 @@ a reasonable window of its `injected_at` timestamp. Specifically:
   bounce / agent restart windows before failing hard. This budget intentionally
   exceeds the agent lock stale-reclaim window after SIGKILL.
 - The PTY instruction payload and its submit keystroke (`\r`) MUST be written
-  as a single atomic `ptyProcess.write` call. Splitting them across a
-  `setTimeout` creates a race window where providers that reject paste during
-  streaming (Codex, Claude) may silently discard the input.
+  as **two separate `ptyProcess.write` calls separated by at least 50 ms**.
+  Concretely: `ptyProcess.write(input)` first, then
+  `setTimeout(() => ptyProcess.write('\r'), 50)`. See
+  `packages/cli/src/index.js:253-268` (`submitPtyInstruction`).
+
+  Rationale. Commit `e0b25c0` introduced the atomic-write variant
+  (single `ptyProcess.write(input + '\r')`) on the theory that splitting
+  across a timeout could race against providers rejecting paste during
+  streaming. Commit `b832acc` reverted it after a dogfood regression:
+  codex / claude TUIs need a small gap between the bracketed-paste END
+  sequence (`\x1B[201~`) and the submit keystroke. When both arrive in
+  the same `ptyProcess.write` call, the TUI treats the carriage return
+  as part of the paste payload, so the line lands in the input box but
+  is never submitted. Symptom on iPhone: reply text appears in the
+  codex/claude prompt and just sits there with no submit.
+
+  DO NOT change this rule without verifying with a real codex AND a
+  real claude interactive session. The fake-PTY tests cannot catch the
+  TUI parser behaviour — only a live dogfood pass against the actual
+  provider TUIs proves the gap is doing its job. If you believe atomic
+  writes are correct again (e.g. provider parser changes), add a
+  fixture that mirrors the bracketed-paste END handling and verify
+  both providers submit before relaxing the rule.
 
 Regression tests: `packages/cli/test/instruction_delivery_invariant.test.js`
 (run with `STEER_INTEGRATION=1 npm test`).
