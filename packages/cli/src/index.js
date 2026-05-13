@@ -254,17 +254,20 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     agent.write({ type: "state", sessionId, runState: "running" });
     const merged = formatInstructionWithAttachments(message.text, message.attachments);
     const input = formatPtyInstructionInput(provider, merged);
-    ptyProcess.write(input);
-    setTimeout(() => {
-      ptyProcess.write("\r");
-      agent.write({
-        type: "ack",
-        sessionId,
-        instructionId: message.instructionId,
-        status: "injected"
-      });
-      done();
-    }, 50);
+    // Write the instruction payload and the submit keystroke (\r) as a
+    // single PTY write so they land in the same kernel buffer flush.
+    // The previous code split them across a 50 ms setTimeout; that gap
+    // allowed the PTY's write queue to deliver the paste content while the
+    // provider was still streaming, which some providers (Codex, Claude)
+    // silently discard. A single atomic write eliminates that race window.
+    ptyProcess.write(input + "\r");
+    agent.write({
+      type: "ack",
+      sessionId,
+      instructionId: message.instructionId,
+      status: "injected"
+    });
+    done();
   }
 
   function schedulePtyIdleReport(currentProvider) {
@@ -611,6 +614,13 @@ async function runCodexHeadlessAdapter(args) {
   }));
 }
 
+// How long steer send will retry when the agent returns a transient
+// "session not found" or "session is disconnected" error. The wrapper's
+// agent_link reconnects within ~250 ms on a normal socket bounce and up to
+// ~5 s after a SIGKILL restart; 2 s covers the common case without
+// blocking the caller for too long when the session genuinely ended.
+const SEND_RECONNECT_RETRY_MS = 2000;
+
 async function sendInstruction(args) {
   const { sessionId, text, attachments } = parseSendArgs(args);
 
@@ -618,12 +628,36 @@ async function sendInstruction(args) {
     throw new Error("usage: steer send <sessionId> <instruction> [--attach <path>]...");
   }
 
-  const response = await requestAgent({ type: "send", sessionId, text, attachments });
-  if (response.type === "error") {
-    console.error(response.error);
-    process.exit(1);
+  const deadline = Date.now() + SEND_RECONNECT_RETRY_MS;
+  let backoffMs = 150;
+  let lastError;
+
+  while (true) {
+    const response = await requestAgent({ type: "send", sessionId, text, attachments });
+
+    if (response.type !== "error") {
+      console.log(JSON.stringify(response, null, 2));
+      return;
+    }
+
+    // Retry only for transient "session not yet registered" or "socket
+    // bounce" errors. Any other error (bad sessionId format, unknown type,
+    // etc.) is permanent and should surface immediately.
+    const isTransient =
+      typeof response.error === "string" &&
+      (response.error.includes("session not found") ||
+        response.error.includes("session is disconnected"));
+
+    if (!isTransient || Date.now() >= deadline) {
+      console.error(response.error);
+      process.exit(1);
+    }
+
+    lastError = response.error;
+    const remaining = deadline - Date.now();
+    await delay(Math.min(backoffMs, remaining));
+    backoffMs = Math.min(backoffMs * 2, 500);
   }
-  console.log(JSON.stringify(response, null, 2));
 }
 
 function parseSendArgs(args) {
