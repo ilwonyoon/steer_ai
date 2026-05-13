@@ -210,7 +210,15 @@ public final class SyncInbox: ObservableObject {
             let credential = try await delegate.result
             await handleAppleCredential(credential)
         } catch {
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            // Tapping outside the system sheet, hitting Cancel, or the
+            // OS bailing on a transient error all surface as
+            // ASAuthorizationError.canceled. That's just "the user
+            // changed their mind" — re-rendering the Apple button is
+            // already the next-step UX. Surfacing a red error banner
+            // makes it look like something is wrong with the app.
+            if !isAppleSignInCanceled(error) {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -227,8 +235,24 @@ public final class SyncInbox: ObservableObject {
             }
             await handleAppleCredential(credential)
         case .failure(let error):
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            // Same canceled-suppression rationale as
+            // startSignInWithApple above — a cancel/dismiss isn't an
+            // error worth showing the user.
+            if !isAppleSignInCanceled(error) {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
         }
+    }
+
+    /// True if the underlying error is `ASAuthorizationError.canceled`
+    /// — either the user explicitly cancelled or the OS reported a
+    /// transient cancel (macOS 26 SignInWithAppleButton occasionally
+    /// emits one before retrying internally). Either way the user just
+    /// needs the button to stay tappable, not an explanation.
+    private func isAppleSignInCanceled(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == ASAuthorizationError.errorDomain
+            && ns.code == ASAuthorizationError.canceled.rawValue
     }
 
     private func handleAppleCredential(_ credential: ASAuthorizationAppleIDCredential) async {
