@@ -693,20 +693,14 @@ private struct SignInPrompt: View {
                     .foregroundStyle(SteerColors.ink)
                     .padding(.top, 4)
 
-                // Value prop. Lead with what the app does FOR the
-                // user (keeps the AI working) rather than the
-                // mechanism (approving from the phone). The
-                // mechanism shows up in onboarding.
-                VStack(spacing: 6) {
-                    Text("Your AI keeps coding,")
-                        .font(.system(size: 19, weight: .medium))
-                        .foregroundStyle(SteerColors.ink)
-                    Text("even while you're away.")
-                        .font(.system(size: 19, weight: .medium))
-                        .foregroundStyle(SteerColors.ink)
-                }
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+                // Value prop. Single line, declarative — "this is
+                // the rule you're buying into." The mechanism
+                // (replying from the phone) belongs to onboarding.
+                Text("Never let your AI sit idle.")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(SteerColors.ink)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
 
                 if let err = inbox.lastError {
                     Text(err)
