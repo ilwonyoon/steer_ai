@@ -5,6 +5,10 @@ struct SteerRootView: View {
     private let store = LocalSteerStore()
     private let notificationService = ActionNotificationService.shared
     @ObservedObject private var status = SteerAppDelegate.status
+    /// Drives the iPhone presence dot's visibility. Observing the
+    /// shared SyncClient means the dot appears/disappears the moment
+    /// sign-in lands instead of waiting for the next reload tick.
+    @ObservedObject private var sync = SyncClient.shared
 
     @State private var cards: [ActionCard] = []
     @State private var liveChips: [LiveSessionChip] = []
@@ -71,18 +75,39 @@ struct SteerRootView: View {
         instructedSessions.count
     }
 
+    /// Newest iOS device snapshot polled from /v1/sync/devices, or
+    /// nil if no iPhone has ever paired with this account. Drives
+    /// the menu-bar iPhone presence dot.
+    @State private var iPhoneDevice: DeviceSnapshot?
+    @State private var iPhonePopoverVisible: Bool = false
+
     var body: some View {
         ZStack(alignment: .top) {
             SteerColors.appBackground
                 .ignoresSafeArea()
 
-            Text("Steer")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(SteerColors.secondaryInk)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .frame(height: 28)
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
+            ZStack {
+                Text("Steer")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .allowsHitTesting(false)
+
+                if sync.isSignedIn {
+                    HStack {
+                        Spacer()
+                        IPhonePresenceDot(
+                            device: iPhoneDevice,
+                            isPopoverVisible: $iPhonePopoverVisible,
+                            hasFetchedOnce: lastDeviceRefreshAt != nil
+                        )
+                        .padding(.trailing, 10)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .ignoresSafeArea(edges: .top)
 
             VStack(spacing: 12) {
                 if let lastError {
@@ -446,7 +471,38 @@ struct SteerRootView: View {
         // only post when we cross the cooldown.
         if signedIn {
             await maybeHeartbeat(syncEnabled: toggleOn)
+            // Refresh the iPhone presence dot on the same cadence —
+            // GETting /v1/sync/devices on every 2s tick would be the
+            // same kind of Cloudflare spam the heartbeat was. The
+            // popover content is "last seen Ns ago" granularity, so a
+            // minute of staleness is fine.
+            await maybeRefreshIPhoneDevice()
+        } else if iPhoneDevice != nil {
+            // Drop stale presence the moment we sign out so the dot
+            // doesn't keep showing yesterday's iPhone.
+            iPhoneDevice = nil
         }
+    }
+
+    @State private var lastDeviceRefreshAt: Date? = nil
+    private func maybeRefreshIPhoneDevice() async {
+        let now = Date()
+        // 30 s cadence — iOS heartbeats every 60 s, so polling
+        // twice that gives us at most one stale window before the
+        // dot updates. Lower than the 60 s heartbeat cooldown and
+        // we'd waste relay GETs for no extra freshness.
+        if let last = lastDeviceRefreshAt, now.timeIntervalSince(last) < 30 {
+            return
+        }
+        lastDeviceRefreshAt = now
+        let devices = await SyncClient.shared.fetchDevices()
+        // Pick the most-recently-seen iOS device. Users typically
+        // pair one iPhone, but if they sign in on multiple, the one
+        // with the freshest heartbeat is the one they actually have
+        // in front of them.
+        iPhoneDevice = devices
+            .filter { $0.platform == "ios" }
+            .max(by: { $0.lastSeenAt < $1.lastSeenAt })
     }
 
     @State private var lastHeartbeatAt: Date? = nil
@@ -883,6 +939,179 @@ private struct EmptyStateView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(SteerColors.separator, lineWidth: 1)
+        }
+    }
+}
+
+/// Tiny iPhone-pairing indicator that lives in the top-right of the
+/// Mac window's header. Color encodes recency of the iPhone's last
+/// heartbeat:
+///   - green: heartbeat within 90s — phone is awake nearby
+///   - yellow: 90s–10min — phone may be locked or asleep
+///   - gray: > 10min, or no iOS device has ever paired
+///
+/// Tapping the dot opens a popover with the iPhone's device class,
+/// "last seen N ago" text, and an unpaired prompt if nothing has
+/// ever registered. Intentionally label-less in the header so it
+/// reads as a status light, not a button.
+private struct IPhonePresenceDot: View {
+    let device: DeviceSnapshot?
+    @Binding var isPopoverVisible: Bool
+
+    fileprivate enum Freshness { case connecting, fresh, stale, cold, none }
+
+    let hasFetchedOnce: Bool
+
+    fileprivate var freshness: Freshness {
+        // First fetch hasn't returned yet: we're still figuring out
+        // whether the user has an iPhone paired. Same "we're working
+        // on it" semantic as the iPhone's connecting chip.
+        if !hasFetchedOnce { return .connecting }
+        guard let device else { return .none }
+        let ageMs = Int64(Date().timeIntervalSince1970 * 1000) - device.lastSeenAt
+        let ageSeconds = Double(ageMs) / 1000
+        // Mirror the iPhone chip's tolerance window. iOS heartbeats
+        // every 60s while the app is in the foreground, so a 120s
+        // window covers one missed beat (jitter, brief background)
+        // without flipping the dot to yellow. 5 min of silence is
+        // a real "phone is asleep" signal.
+        if ageSeconds < 120 { return .fresh }
+        if ageSeconds < 300 { return .stale }
+        return .cold
+    }
+
+    private var dotColor: Color {
+        switch freshness {
+        case .connecting: return SteerColors.running
+        case .fresh: return SteerColors.running
+        case .stale: return SteerColors.waiting
+        case .cold, .none: return SteerColors.softSeparator
+        }
+    }
+
+    /// Drives the dot pulse during `.connecting`. Mirrors the
+    /// iPhone chip's behavior — only the in-flight state breathes;
+    /// fresh/stale/cold/none stay static so the dot doesn't become
+    /// a permanent attention-grabber.
+    @State private var breathe = false
+
+    var body: some View {
+        Button(action: { isPopoverVisible.toggle() }) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 6, height: 6)
+                    .opacity(freshness == .connecting && breathe ? 0.45 : 1.0)
+                    .animation(
+                        freshness == .connecting
+                            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                            : .default,
+                        value: breathe
+                    )
+                // SF Mono reads as "metadata / system" — feels like
+                // a status line rather than a label competing with
+                // the "Steer" wordmark. Kept at tertiaryInk + 50%
+                // alpha so it sinks into the chrome.
+                Text(labelText)
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(SteerColors.tertiaryInk.opacity(0.65))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .onAppear { breathe = true }
+        .popover(isPresented: $isPopoverVisible, arrowEdge: .top) {
+            IPhonePresencePopoverContent(device: device, freshness: freshness)
+        }
+    }
+
+    /// Prefer the actual device name (UIDevice.current.name on iOS,
+    /// e.g. "Ilwon's iPhone") because that's the line that makes
+    /// the user say "oh, that's my phone." `deviceClass` is the
+    /// generic UIDevice.model — usually just "iPhone" — so it's a
+    /// fallback, not the first choice. No iPhone paired = "iPhone"
+    /// alone, paired with a dimmed gray dot.
+    private var labelText: String {
+        if freshness == .connecting { return "Connecting" }
+        if let display = device?.displayName, !display.isEmpty {
+            return display
+        }
+        return device?.deviceClass ?? "iPhone"
+    }
+
+    private var accessibilityLabel: String {
+        switch freshness {
+        case .connecting: return "Looking for iPhone"
+        case .fresh: return "iPhone connected"
+        case .stale: return "iPhone idle"
+        case .cold: return "iPhone offline"
+        case .none: return "iPhone not paired"
+        }
+    }
+}
+
+private struct IPhonePresencePopoverContent: View {
+    let device: DeviceSnapshot?
+    let freshness: IPhonePresenceDot.Freshness
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if freshness == .connecting {
+                Text("Looking for iPhone…")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
+                Text("Checking the relay for a signed-in iPhone.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let device {
+                Text(device.displayName ?? device.deviceClass ?? "iPhone")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
+                Text(statusLine(for: device))
+                    .font(.system(size: 11))
+                    .foregroundStyle(SteerColors.secondaryInk)
+            } else {
+                Text("No iPhone paired")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
+                // Plain hint copy — the public TestFlight / App Store
+                // link isn't ready yet, so don't make a button that
+                // dead-ends. When the build is live, swap this for a
+                // real link.
+                Text("Install Steer on iPhone and sign in with the same Apple ID.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(width: 220, alignment: .leading)
+    }
+
+    private func statusLine(for device: DeviceSnapshot) -> String {
+        let ageMs = Int64(Date().timeIntervalSince1970 * 1000) - device.lastSeenAt
+        let ageSeconds = max(0, Double(ageMs) / 1000)
+        let agoText: String
+        if ageSeconds < 60 {
+            agoText = "just now"
+        } else if ageSeconds < 3600 {
+            agoText = "\(Int(ageSeconds / 60)) min ago"
+        } else if ageSeconds < 86400 {
+            agoText = "\(Int(ageSeconds / 3600))h ago"
+        } else {
+            agoText = "\(Int(ageSeconds / 86400))d ago"
+        }
+        switch freshness {
+        case .connecting: return "Looking for iPhone…"
+        case .fresh: return "Connected · last seen \(agoText)"
+        case .stale: return "Idle · last seen \(agoText)"
+        case .cold: return "Offline · last seen \(agoText)"
+        case .none: return "Not paired"
         }
     }
 }

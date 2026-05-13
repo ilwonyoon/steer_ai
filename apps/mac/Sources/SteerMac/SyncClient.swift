@@ -368,6 +368,25 @@ public final class SyncClient: ObservableObject {
         }
     }
 
+    /// List the user's registered devices. Mac chrome uses this
+    /// to read iPhone presence (lastSeenAt of any iOS device row)
+    /// so the menu bar can show whether the user's phone is
+    /// connected. Empty list on failure — UI treats that as
+    /// "unknown" and falls back to the not-paired state.
+    public func fetchDevices() async -> [DeviceSnapshot] {
+        guard isSignedIn else { return [] }
+        struct ListResponse: Decodable { let devices: [DeviceSnapshot] }
+        do {
+            let resp: ListResponse = try await getJSON("/v1/sync/devices")
+            return resp.devices
+        } catch {
+            if !isTransientError(error) {
+                SignInDebugLog.write("[fetchDevices] failed: \(error)")
+            }
+            return []
+        }
+    }
+
     public func publishCard(_ card: CardPayload) async {
         guard isSignedIn else {
             SignInDebugLog.write("[publish] skipped (not signed in) card=\(card.cardId)")
