@@ -13,17 +13,18 @@ import SwiftUI
 /// the static dot grid for accessibility.
 
 struct RoutingFieldView: View {
-    /// 24pt between dots reads as PCB-trace density without
-    /// becoming visual noise behind the sign-in card.
-    private let dotSpacing: CGFloat = 24
-    /// 5 simultaneous traces gives the impression of activity
-    /// without ever crowding the field.
-    private let maxActiveTraces = 5
-    /// One trace lifetime, in seconds.
-    private let traceLifetime: Double = 2.0
-    /// New trace cadence — one spawned roughly every 0.45s while
-    /// we're under the cap.
-    private let spawnIntervalMs: Int = 450
+    /// 22pt between dots — slightly denser so the grid reads as
+    /// the underlying field, not random sprinkles.
+    private let dotSpacing: CGFloat = 22
+    /// 8 simultaneous traces — denser activity. The vignette
+    /// fades the bottom third so the CTA stays readable.
+    private let maxActiveTraces = 8
+    /// 1.6 s trace lifetime — faster traces read as more
+    /// purposeful than slow drifting lines.
+    private let traceLifetime: Double = 1.6
+    /// New trace cadence — one every 220 ms under the cap. Keeps
+    /// the field perpetually full once warmed up.
+    private let spawnIntervalMs: Int = 220
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -73,12 +74,14 @@ struct RoutingFieldView: View {
         cols: Int,
         rows: Int
     ) {
-        let dotColor = SteerColors.softSeparator.opacity(0.7)
+        // Slightly darker, 2.5pt dots so the grid actually reads
+        // through whatever vignette sits on top.
+        let dotColor = SteerColors.softSeparator
         for r in 0..<rows {
             for c in 0..<cols {
                 let x = CGFloat(c) * dotSpacing + dotSpacing / 2
                 let y = CGFloat(r) * dotSpacing + dotSpacing / 2
-                let rect = CGRect(x: x - 1, y: y - 1, width: 2, height: 2)
+                let rect = CGRect(x: x - 1.25, y: y - 1.25, width: 2.5, height: 2.5)
                 ctx.fill(Path(ellipseIn: rect), with: .color(dotColor))
             }
         }
@@ -88,21 +91,27 @@ struct RoutingFieldView: View {
         for trace in traces {
             let t = trace.progress(now: now)
             guard t > 0 else { continue }
-            // Partial bezier path up to t. Two cubic segments for
-            // a more organic feel than a single curve.
             let path = trace.partialPath(progress: t)
-            // Orange gradient stroke. Core: #FB7139.
+            // Orange gradient stroke. Core: #FB7139. Increased
+            // saturation on both stops so the line is clearly
+            // visible against the dot grid + vignette.
             let shading = GraphicsContext.Shading.linearGradient(
                 Gradient(colors: [
-                    Color(red: 1.00, green: 0.55, blue: 0.35).opacity(0),
-                    Color(red: 0.98, green: 0.44, blue: 0.22)
+                    Color(red: 1.00, green: 0.55, blue: 0.30).opacity(0.15),
+                    Color(red: 0.98, green: 0.42, blue: 0.18).opacity(0.95)
                 ]),
                 startPoint: trace.start,
                 endPoint: trace.end
             )
             ctx.stroke(path, with: shading, style: StrokeStyle(
-                lineWidth: 1.5, lineCap: .round, lineJoin: .round
+                lineWidth: 2.2, lineCap: .round, lineJoin: .round
             ))
+            // A second pass with a wider, very transparent stroke
+            // gives the line a soft glow without a real blur.
+            ctx.stroke(path,
+                with: .color(Color(red: 0.98, green: 0.42, blue: 0.18).opacity(0.18)),
+                style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)
+            )
         }
     }
 
@@ -111,8 +120,8 @@ struct RoutingFieldView: View {
             let age = now.timeIntervalSince(pulse.bornAt)
             guard age >= 0, age <= pulse.duration else { continue }
             let t = age / pulse.duration
-            let radius: CGFloat = 6 + CGFloat(t) * 40
-            let alpha = (1 - t) * 0.45
+            let radius: CGFloat = 6 + CGFloat(t) * 56
+            let alpha = (1 - t) * 0.7
             let rect = CGRect(
                 x: hub.x - radius, y: hub.y - radius,
                 width: radius * 2, height: radius * 2
@@ -120,28 +129,35 @@ struct RoutingFieldView: View {
             ctx.stroke(
                 Path(ellipseIn: rect),
                 with: .color(Color(red: 0.98, green: 0.44, blue: 0.22).opacity(alpha)),
-                lineWidth: 1.5
+                lineWidth: 2.0
             )
         }
     }
 
     private func drawHubDot(in ctx: inout GraphicsContext, hub: CGPoint, now: Date) {
-        // The hub always glows faintly so the user reads it as
-        // "the destination," even between trace arrivals.
         let pulseGlow = pulses.reduce(0.0) { acc, p in
             let age = now.timeIntervalSince(p.bornAt)
             guard age >= 0, age <= p.duration else { return acc }
-            return acc + (1 - age / p.duration) * 0.7
+            return acc + (1 - age / p.duration) * 0.9
         }
-        let glow = min(1.0, 0.3 + pulseGlow)
-        let radius: CGFloat = 5
+        // Soft halo behind the hub for a constant ambient glow.
+        let haloRadius: CGFloat = 14
+        let haloRect = CGRect(
+            x: hub.x - haloRadius, y: hub.y - haloRadius,
+            width: haloRadius * 2, height: haloRadius * 2
+        )
+        ctx.fill(
+            Path(ellipseIn: haloRect),
+            with: .color(Color(red: 1.00, green: 0.44, blue: 0.22).opacity(0.18 + pulseGlow * 0.25))
+        )
+        let radius: CGFloat = 6
         let rect = CGRect(
             x: hub.x - radius, y: hub.y - radius,
             width: radius * 2, height: radius * 2
         )
         ctx.fill(
             Path(ellipseIn: rect),
-            with: .color(Color(red: 1.00, green: 0.44, blue: 0.22).opacity(glow))
+            with: .color(Color(red: 1.00, green: 0.42, blue: 0.20).opacity(min(1.0, 0.65 + pulseGlow)))
         )
     }
 

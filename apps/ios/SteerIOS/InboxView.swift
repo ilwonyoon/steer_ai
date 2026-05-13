@@ -659,12 +659,15 @@ private struct SignInPrompt: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
-            // Subtle vignette so the foreground content stays
-            // readable over the animated traces.
+            // Light bottom vignette so the CTA stays legible
+            // without washing out the whole field. Top stays
+            // open — the routing is the hero.
             LinearGradient(
                 colors: [
                     SteerColors.appBackground.opacity(0.0),
-                    SteerColors.appBackground.opacity(0.75)
+                    SteerColors.appBackground.opacity(0.0),
+                    SteerColors.appBackground.opacity(0.35),
+                    SteerColors.appBackground.opacity(0.55)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -690,11 +693,20 @@ private struct SignInPrompt: View {
                     .foregroundStyle(SteerColors.ink)
                     .padding(.top, 4)
 
-                Text("Approve your Mac AI from your phone.")
-                    .font(.system(size: 16))
-                    .foregroundStyle(SteerColors.secondaryInk)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                // Value prop. Lead with what the app does FOR the
+                // user (keeps the AI working) rather than the
+                // mechanism (approving from the phone). The
+                // mechanism shows up in onboarding.
+                VStack(spacing: 6) {
+                    Text("Your AI keeps coding,")
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(SteerColors.ink)
+                    Text("even while you're away.")
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(SteerColors.ink)
+                }
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
 
                 if let err = inbox.lastError {
                     Text(err)
@@ -717,9 +729,17 @@ private struct SignInPrompt: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: 320)
-                            .frame(height: 50)
+                            .frame(height: 56)
                             .accessibilityIdentifier("apple-signin-stub")
                     } else {
+                        // SignInWithAppleButton's Apple logo + label
+                        // are sized internally by the system as a
+                        // fixed ratio of the button's height — we
+                        // can't tune them independently. A taller
+                        // button gives a more prominent logo. 56pt
+                        // is the largest height Apple's HIG
+                        // examples use; combined with radius 20 it
+                        // reads as a primary CTA pill.
                         SignInWithAppleButton(.signIn) { request in
                             request.requestedScopes = [.fullName, .email]
                         } onCompletion: { result in
@@ -731,7 +751,8 @@ private struct SignInPrompt: View {
                         }
                         .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
                         .frame(maxWidth: 320)
-                        .frame(height: 50)
+                        .frame(height: 56)
+                        .cornerRadius(20)
                         .disabled(isSigningIn)
                         .accessibilityIdentifier("apple-signin-button")
                     }
