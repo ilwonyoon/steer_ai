@@ -239,6 +239,34 @@ final class SessionEntryStoreTests: XCTestCase {
         XCTAssertEqual(next, [])
     }
 
+    func test_applyBootstrap_promotesAwaitingResponseWhenServerHasNewCard() {
+        // The "iPhone reply landed while WS was idle-dropped" case.
+        // The user posted the instruction from background, the response
+        // notification fired, but the WS frame for the new card never
+        // reached the in-memory store because the socket was asleep.
+        // When the app comes back to the foreground and reloads the
+        // server's card list, the entry must transition out of
+        // .awaitingResponse — otherwise the chip pins at "1 running"
+        // and the carousel stays empty even though the relay has the
+        // response card sitting right there.
+        let entry = SessionEntry(
+            sessionId: "S1",
+            card: makeCard(sessionId: "S1", cardId: "A", updatedAtMs: 1000),
+            stage: .awaitingResponse,
+            lastReplyText: "go",
+            lastInstructionId: "i1"
+        )
+        let serverCard = makeCard(
+            sessionId: "S1", cardId: "B", updatedAtMs: 2000, revision: 2
+        )
+        let next = SessionEntryStore.applyBootstrap(
+            previous: [entry], cards: [serverCard]
+        )
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(next[0].card.cardId, "B")
+        XCTAssertEqual(next[0].stage, .awaitingUser)
+    }
+
     func test_applyBootstrap_dropsFailedWhenServerHasNone() {
         // Same authority rule applies to .failed entries: if the
         // relay doesn't have the card any more, there's nothing for

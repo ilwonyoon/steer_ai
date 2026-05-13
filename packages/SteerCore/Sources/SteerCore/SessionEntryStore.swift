@@ -83,12 +83,40 @@ public enum SessionEntryStore {
         for entry in previous { bySession[entry.sessionId] = entry }
         for card in cards {
             if let existing = bySession[card.sessionId] {
-                // Preserve in-flight or failed state. Even if the card
-                // id differs, the user's reply belongs to that session;
-                // we don't want a stale GET resurrecting the old card.
                 switch existing.stage {
-                case .awaitingResponse, .failed:
-                    continue
+                case .awaitingResponse:
+                    // The user replied while the WS was unavailable
+                    // (backgrounded, asleep, idle-dropped). When we
+                    // come back online and the relay has a card for
+                    // this session, that card IS the response — the
+                    // chip should transition `.awaitingResponse` →
+                    // `.awaitingUser`. Previously this branch did
+                    // `continue` (keep the in-flight entry, ignore
+                    // the GET), which left the chip pinned at "N
+                    // running" with no card visible on the carousel.
+                    //
+                    // We can't perfectly distinguish "this is the
+                    // response" from "Mac re-published the pre-reply
+                    // card before resolving" without the WS resolve
+                    // event. But the latter is a self-correcting
+                    // race (the next WS upsert refreshes us within
+                    // seconds), while the former locks the UI
+                    // indefinitely. Bias toward unsticking.
+                    bySession[card.sessionId] = SessionEntry(
+                        sessionId: card.sessionId,
+                        card: card,
+                        stage: .awaitingUser
+                    )
+                case .failed:
+                    // User saw a "reply failed" state and the relay
+                    // now has a card for this session. Surface the
+                    // card so the user can retry their reply against
+                    // it.
+                    bySession[card.sessionId] = SessionEntry(
+                        sessionId: card.sessionId,
+                        card: card,
+                        stage: .awaitingUser
+                    )
                 case .awaitingUser:
                     // Refresh card content (title, summary may have
                     // changed) but keep the stage.
