@@ -24,12 +24,14 @@
 
 ### 1A. App icon 누락 부분 복원 — task #277
 
-문제: `claude.imageset` / `codex-color.imageset`의 @2x/@3x PNG 없음, `ActionNotificationService.swift` attachment 안 채움. 진단: `docs/ICON_FIX_DIAGNOSIS_2026-05-13.md`.
+**진단 doc 재확인 결과: 코드는 이미 모두 정상.** 2026-05-13 새벽 작성한 `docs/ICON_FIX_DIAGNOSIS_2026-05-13.md` 는 stale 정보를 담고 있었다. 실제 상태:
+- `claude.imageset` / `codex-color.imageset` — 1x/2x/3x PNG + Contents.json 모두 박혀 있음. sim 빌드 Assets.car는 device-scale 기준으로 stripped (iPhone 17 sim → 1x + 3x 만), 이건 정상.
+- `ActionNotificationService.swift:37` — `content.attachments = [attachment]` 이미 호출하며 `providerIconAttachment` 가 NSTemporaryDirectory 복사 + memoize 패턴으로 구현됨.
+- AppIcon 1024 single — universal idiom + 1024 master는 Xcode 14+에서 합법적 modern pattern.
 
-- [ ] 🤖 `apps/ios/SteerIOS/Assets.xcassets/claude.imageset/claude@2x.png` / `claude@3x.png` 생성 (sips, ICON_FIX_PLAN.md line 60-72)
-- [ ] 🤖 `codex-color.imageset` 동일
-- [ ] 🤖 `apps/mac/Sources/SteerMac/ActionNotificationService.swift`에 provider icon attachment 추가
-- [ ] 🤖 `xcrun assetutil --info Assets.car | grep claude` — 1x/2x/3x 세 번 등장 확인
+남은 일은 시각 검증뿐:
+
+- [x] 🤖 `xcrun assetutil --info Assets.car` 검증 — claude@3x.png 들어가있음 확인
 - [ ] 🙋 iPhone 빌드 install 후 카드 헤더 ProviderMark 선명한지 시각 확인
 - [ ] 🙋 Mac에서 notification banner 떴을 때 provider icon 보이는지 시각 확인
 
