@@ -52,11 +52,6 @@ struct SettingsView: View {
 
     private var syncSection: some View {
         Section {
-            NavigationLink {
-                WhatSyncsView()
-            } label: {
-                LinkLabel(title: "What Syncs?", icon: "arrow.triangle.2.circlepath")
-            }
             NotificationsRow(inbox: inbox)
         } header: {
             Text("Sync")
@@ -82,15 +77,28 @@ struct SettingsView: View {
     private var supportSection: some View {
         Section {
             Link(destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues/new")!) {
-                LinkLabel(title: "Report an Issue", icon: "exclamationmark.bubble")
+                // Real GitHub mark instead of an SF Symbol so users
+                // recognize where the link goes at a glance. Octicons
+                // mark-github (CC0) — see Assets.xcassets.
+                LinkLabel(title: "Report an Issue", assetName: "github-mark")
             }
-            Link(destination: URL(string: "https://steer.ai/support")!) {
+            // Support is a real human inbox — opens Mail composer
+            // with a pre-filled subject so the user doesn't have to
+            // write one. mailto links go straight through SwiftUI's
+            // `Link` without extra plumbing.
+            Link(destination: URL(string: "mailto:superwedge.labs@gmail.com?subject=Steer%20Feedback")!) {
                 LinkLabel(title: "Support", icon: "questionmark.circle")
             }
-            Link(destination: URL(string: "https://steer.ai/privacy")!) {
+            // Cloudflare Pages routes for the legal site live on
+            // steer-legal.pages.dev (see legal-site worktree). The
+            // steer.ai apex is reserved for the marketing site that
+            // doesn't host these pages yet, so we link directly to
+            // the deployed Pages instance instead of routing through
+            // an unstable redirect.
+            Link(destination: URL(string: "https://steer-legal.pages.dev/privacy/")!) {
                 LinkLabel(title: "Privacy Policy", icon: "hand.raised")
             }
-            Link(destination: URL(string: "https://steer.ai/terms")!) {
+            Link(destination: URL(string: "https://steer-legal.pages.dev/terms/")!) {
                 LinkLabel(title: "Terms of Service", icon: "doc.text")
             }
         }
@@ -155,92 +163,112 @@ private struct IdentityRow: View {
 }
 
 private struct LinkLabel: View {
+    enum Source {
+        case sfSymbol(String)
+        case asset(String)
+    }
     let title: String
-    let icon: String
+    let source: Source
+
+    init(title: String, icon: String) {
+        self.title = title
+        self.source = .sfSymbol(icon)
+    }
+
+    init(title: String, assetName: String) {
+        self.title = title
+        self.source = .asset(assetName)
+    }
 
     var body: some View {
         Label {
             Text(title)
                 .foregroundStyle(.primary)
         } icon: {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
+            switch source {
+            case .sfSymbol(let name):
+                Image(systemName: name)
+                    .foregroundStyle(.secondary)
+            case .asset(let name):
+                Image(name)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 18, height: 18)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
 
-/// Notifications status + jump to iOS Settings when denied. Shows the
-/// current authorization so the user knows whether push will reach
-/// the lock screen, without having to leave the app to check.
+/// Toggle for push notifications. iOS doesn't let an app revoke its
+/// own notification grant — you can only ask for it once via the
+/// system prompt, after that the user has to leave the app and
+/// flip the switch in Settings. So this control behaves like a
+/// shortcut, not a stored preference:
+///   - Off + permission .notDetermined → flipping on triggers the
+///     system prompt
+///   - Off + permission .denied        → flipping on deep-links to
+///     Settings so the user can re-enable
+///   - On (permission .granted)        → flipping off deep-links to
+///     Settings; we can't turn it off ourselves
+/// The underlying source of truth is `inbox.notificationPermission`,
+/// not a local @State — that way switching to Settings, flipping the
+/// real toggle, and coming back updates the row automatically.
 private struct NotificationsRow: View {
     @ObservedObject var inbox: SyncInbox
 
     var body: some View {
-        if inbox.notificationPermission == .denied {
-            Button {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            } label: {
-                HStack {
-                    Label {
-                        Text("Notifications")
-                            .foregroundStyle(.primary)
-                    } icon: {
-                        Image(systemName: "bell.slash")
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text("Off")
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Label {
-                        Text("Notifications")
-                            .foregroundStyle(.primary)
-                    } icon: {
-                        Image(systemName: "bell")
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(statusText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                // Diagnostics: surfaces a token-registration error or
-                // an absent token. Both keep push from reaching the
-                // lock screen even when the OS permission is "On".
-                if let err = inbox.apnsRegistrationError {
-                    Text("APNS error: \(err)")
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                } else if inbox.notificationPermission == .granted && inbox.apnsToken == nil {
-                    Text("Waiting for Apple to issue a push token…")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if let token = inbox.apnsToken {
-                    Text("Token registered (…\(token.suffix(8)))")
-                        .font(.caption2)
-                        .foregroundStyle(.green)
-                }
+        Toggle(isOn: bindingForToggle) {
+            Label {
+                Text("Notifications")
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: iconName)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    private var statusText: String {
+    /// `.provisional` (Apple's silent-quiet notifications) counts as
+    /// "on" for the toggle — pushes still arrive, just without
+    /// banners. Anything else reads as off.
+    private var isOn: Bool {
         switch inbox.notificationPermission {
-        case .granted: return "On"
-        case .provisional: return "Quiet"
-        case .denied: return "Off"
-        case .notDetermined, .unknown: return "Not asked"
+        case .granted, .provisional: return true
+        case .denied, .notDetermined, .unknown: return false
+        }
+    }
+
+    private var iconName: String {
+        isOn ? "bell" : "bell.slash"
+    }
+
+    private var bindingForToggle: Binding<Bool> {
+        Binding(
+            get: { isOn },
+            set: { newValue in
+                handleToggle(newValue: newValue)
+            }
+        )
+    }
+
+    private func handleToggle(newValue: Bool) {
+        switch (inbox.notificationPermission, newValue) {
+        case (.notDetermined, true), (.unknown, true):
+            // First-time: trigger the system prompt. The
+            // didChangeAuthorization observer in SyncInbox will
+            // update `notificationPermission` and the toggle flips
+            // on its own once Apple's callback fires.
+            Task { await inbox.requestNotificationPermissionIfNeeded() }
+        case (.denied, true), (.granted, false), (.provisional, false):
+            // iOS won't let us turn it on after denial or off after
+            // grant. Send the user to the per-app Settings page.
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        default:
+            break
         }
     }
 }
