@@ -98,12 +98,44 @@ public final class SyncClient: ObservableObject {
     }
 
     public func signOut() {
+        // Fire-and-forget DELETE so the relay drops this device row
+        // immediately. Without it the other paired device (the
+        // iPhone) keeps seeing this Mac as "connected" until the
+        // freshness window expires several minutes later. We don't
+        // await the result — the user-visible side of sign-out
+        // (status flip, token clear) must be synchronous, and the
+        // relay-side cleanup is best-effort.
+        let deviceId = Self.deviceId
+        let token = tokenStore.read()
+        if token != nil {
+            Task { [weak self] in
+                await self?.deleteThisDevice(deviceId: deviceId, token: token!)
+            }
+        }
         tokenStore.clear()
         status = .signedOut
         webSocketTask?.cancel()
         webSocketTask = nil
         receiveTask?.cancel()
         receiveTask = nil
+    }
+
+    /// Best-effort DELETE /v1/sync/devices/:deviceId. We can't reuse
+    /// `deleteRequest()` because by the time the task body runs the
+    /// keychain has been cleared, so we capture the token at call
+    /// time and hand-build the request.
+    private func deleteThisDevice(deviceId: String, token: String) async {
+        var req = URLRequest(url: baseURL.appendingPathComponent("/v1/sync/devices/\(deviceId)"))
+        req.httpMethod = "DELETE"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
+        do {
+            let (_, response) = try await urlSession.data(for: req)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            SignInDebugLog.write("[signOut] device DELETE status=\(code)")
+        } catch {
+            SignInDebugLog.write("[signOut] device DELETE failed: \(error)")
+        }
     }
 
     /// Kicks off Sign in with Apple. The presenting window must be
