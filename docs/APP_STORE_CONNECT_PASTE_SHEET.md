@@ -2,6 +2,9 @@
 
 > **iOS App Store 제출 전용.** Steer Mac은 direct DMG 배포.
 > 각 섹션을 App Store Connect 해당 필드에 그대로 붙여넣기.
+>
+> Final launch source of truth: `docs/APP_STORE_SUBMISSION_MARKETING_PACK.md`.
+> 이 파일은 quick paste sheet이고, 스크린샷/포지셔닝/리뷰 방어 논리는 marketing pack을 우선한다.
 
 ---
 
@@ -9,8 +12,8 @@
 
 | 필드 | 값 |
 |---|---|
-| **App Name** | `Steer — AI Action Queue` |
-| **Subtitle** | `Never let your AI sit idle` |
+| **App Name** | `Steer - AI Action Queue` |
+| **Subtitle** | `Never let AI sit idle` |
 | **Bundle ID** | `ai.steer.ios` |
 | **SKU** | `ai.steer.ios` |
 | **Primary Category** | Developer Tools |
@@ -25,44 +28,51 @@
 
 ### Promotional Text (170자 이내, 언제든 수정 가능)
 ```
-Steer turns Claude Code, Codex, and Gemini CLI into background workers. When your AI stops, your phone alerts you with one swipe to reply.
+Steer turns waiting AI coding agents into iPhone action cards, so you can review context, send a reply, and keep work moving from anywhere.
 ```
 
 ### Description (4,000자 이내)
 ```
-Steer is an AI action queue for CLI coding agents. Run Claude Code, Codex, and Gemini CLI in the background; let Steer surface only the moments that need your attention.
+Steer is an action inbox for AI coding agents running on your Mac.
 
-When your AI agent stops to ask a question, hit a blocker, or finish a task, Steer shows it on your Mac and iPhone. Reply from anywhere — Steer delivers your message back to the right session.
+When a local coding agent stops to ask a question, hits a blocker, or finishes a task, Steer turns that moment into a focused iPhone card. Review the context, type a reply, and send it back to the right Mac session without returning to your desk.
 
-KEY FEATURES
+WHY STEER
 
-• Card stack, not chat — only stopped sessions appear, never live scrolling output.
-• iPhone companion — get a push notification when your AI is waiting; type a one-line reply and send.
-• Multi-provider — works with Claude Code (Stop/Notification hooks), Codex CLI (turn/completed events), and any command via `steer wrap`.
-• Local-first — your terminal stays on your Mac. Only small cards (provider name + project + last lines of output) sync to your iPhone.
-• Privacy by default — no third-party analytics. Your AI conversations never leave your Mac unless you turn on iPhone Sync.
+AI agents are most useful when they keep moving. Steer helps you catch the exact moments that need your input, so long-running coding sessions do not sit idle while you are away from the terminal.
 
-GETTING STARTED
+WHAT YOU CAN DO
 
-1. Install Steer for Mac (free, at steer.ai or GitHub).
-2. In a terminal, run `steer claude` or `steer codex` instead of the bare CLI.
-3. Sign in with Apple on both Mac and iPhone using the same Apple ID.
+• Get notified when a Mac coding session needs attention
+• Review action cards with provider, project, branch, summary, and short output excerpt
+• Send replies back to the matching Steer-managed session
+• Track queued, delivered, failed, and offline states
+• Use Try Demo to explore the full card workflow without setting up a Mac
+• Manage Sign in with Apple, notifications, support links, and account deletion from Settings
 
-This iPhone companion app is free. Steer for Mac is required and is also free during beta.
+HOW IT WORKS
+
+Steer for Mac wraps coding-agent sessions that you explicitly start. The iPhone app receives small action cards and sends replies through the Steer relay. Your Mac handles local session capture and local instruction delivery.
+
+Steer is not a remote terminal, remote desktop client, or screen mirror. It does not expose a live shell prompt, stream your Mac screen, or let your iPhone browse or launch arbitrary Mac commands.
 
 PRIVACY
 
-Steer never reads your screen and never requests Accessibility, Screen Recording, or Input Monitoring permissions. Sessions are wrapped only when you launch them with the `steer` command. Full details in Settings → Privacy Policy.
+Steer uses Sign in with Apple and has no third-party advertising or tracking SDKs. Full transcripts and files stay on your Mac. Only the action-card context needed for review and reply is synced when you enable iPhone Sync.
+
+Steer for Mac is required for live cards. The iPhone app includes Try Demo so you can understand the workflow before connecting your own Mac.
 ```
 
 ### Keywords (100자, 콤마 구분)
 ```
-claude code,codex,cli,ai coding,coding agent,terminal,inbox,notification,dev tools,llm
+ai coding,agent inbox,cli,dev tools,workflow,notifications,async coding,terminal,productivity
 ```
 
 ### What's New (첫 버전)
 ```
-Initial release. Steer delivers action-card notifications from Claude Code and Codex CLI to your iPhone so you can reply from anywhere and keep your coding sessions moving.
+Initial release.
+
+Steer brings iPhone action cards to local Mac coding agents, with push notifications, focused review context, reply delivery, Try Demo, Sign in with Apple, and account deletion.
 ```
 
 ---
@@ -129,7 +139,7 @@ Usage Data (except Device ID above), Diagnostics.
 ```
 HELLO REVIEWER,
 
-Steer is a companion to Steer for Mac, which wraps CLI coding agents (Claude Code, Codex CLI) on the user's Mac. The iPhone app is a remote inbox and reply surface — it is NOT a remote terminal, remote shell, or screen mirror.
+Steer is a companion to Steer for Mac, which wraps CLI coding agents on the user's Mac. The iPhone app is a mobile action inbox and reply surface — it is NOT a remote terminal, remote shell, or screen mirror.
 
 YOU DO NOT NEED A DEMO ACCOUNT OR A LIVE MAC.
 
@@ -141,7 +151,7 @@ FLOW TO REVIEW:
 5. Tap "Try Demo" to see mock action cards without any network or Mac setup.
 6. Open a card → see provider icon, summary, terminal excerpt, and reply composer.
 7. Type a reply and tap Send — it queues locally and shows queued status.
-8. Tap Settings (top-left) → verify Sign Out, Delete Account, Privacy Policy, Terms.
+8. Tap Settings (top-right) → verify Sign Out, Delete Account, Privacy Policy, Terms.
 
 WHAT THIS APP DOES NOT DO:
 - Does not mirror a live terminal or shell prompt.

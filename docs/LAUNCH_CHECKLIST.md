@@ -99,8 +99,8 @@
 
 ### 4A. App Information
 
-- [ ] 🙋 App Name (30자): `Steer — AI Action Queue`
-- [ ] 🙋 Subtitle (30자): `Never let your AI sit idle`
+- [ ] 🙋 App Name (30자): `Steer - AI Action Queue`
+- [ ] 🙋 Subtitle (30자): `Never let AI sit idle`
 - [ ] 🙋 Primary Category: `Developer Tools`
 - [ ] 🙋 Secondary Category: `Productivity`
 - [ ] 🙋 Content Rights — 모두 본인 소유 / 라이센스 동의
@@ -178,14 +178,14 @@
 
 핸드오프 §5.5의 6장 골든 셋. 사이즈:
 
-- [ ] 🤖 iPhone 6.7" (1290 × 2796) — 필수, 3-10장. 6장 권장.
-- [ ] 🤖 iPhone 6.5" (1284 × 2778 또는 1242 × 2688) — 필수, 3-10장.
+- [ ] 🤖 iPhone 6.9" (1260 × 2736, 1290 × 2796, 또는 1320 × 2868) — 필수, 3-10장. 6장 권장.
+- [ ] 🤖 iPhone 6.5" (1284 × 2778 또는 1242 × 2688) — 6.9" 세트 제공 시 선택. 미제공 시 App Store Connect가 6.9" 세트를 scale down.
 - [ ] 🙋 iPad 13" — Steer 미지원 시 skip 가능 (App Store가 자동으로 iPhone 스크린샷 사용)
 
 촬영 방법 (자동화 candidate):
 
 - [ ] 🤖 `xcrun simctl status_bar override` — status bar를 9:41 / 100% / WiFi full로 통일
-- [ ] 🤖 시뮬레이터 6.7" (`iPhone 17 Pro Max`) 부팅, golden state seed (demo mode + 카드 1장 prefab)
+- [ ] 🤖 시뮬레이터 6.9" (`iPhone 17 Pro Max`) 부팅, golden state seed (demo mode + 카드 1장 prefab)
 - [ ] 🤖 6장 화면 캡처 — XCUITest로 자동화 또는 `xcrun simctl io booted screenshot`
 - [ ] 🙋 캡처 결과 시각 검수 — 픽셀 깨짐, 텍스트 truncate, 알림 mockup 진짜 알림인지 확인 (App Store Review 2.3.3)
 
