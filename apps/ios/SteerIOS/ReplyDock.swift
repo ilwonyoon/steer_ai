@@ -22,7 +22,10 @@ struct ReplyDock: View {
     var externalFocus: FocusState<Bool>.Binding? = nil
     /// When true, the send button shows even with empty text. Used
     /// by the onboarding flow so "just hit send →" works literally.
+    /// The flow propagates this via the environment; this struct
+    /// reads the env value and ORs it in.
     var allowEmptySend: Bool = false
+    @Environment(\.onboardingAllowEmptySend) private var envAllowEmpty: Bool
     @FocusState private var fallbackFocus: Bool
 
     var body: some View {
@@ -43,16 +46,17 @@ struct ReplyDock: View {
     private var trimmedReply: String {
         reply.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    private var effectiveAllowEmpty: Bool { allowEmptySend || envAllowEmpty }
     private var canSend: Bool {
-        if allowEmptySend { return true }
+        if effectiveAllowEmpty { return true }
         return !trimmedReply.isEmpty
     }
 
     private func submit() {
-        // allowEmptySend lets the onboarding card advance on a
-        // blank send; real cards still require non-empty text.
+        // allowEmptySend (param or env) lets the onboarding card
+        // advance on a blank send; real cards still require text.
         let text = trimmedReply
-        if !allowEmptySend && text.isEmpty { return }
+        if !effectiveAllowEmpty && text.isEmpty { return }
         onSend(text)
         reply = ""
         // Drop the keyboard so the carousel reappears immediately

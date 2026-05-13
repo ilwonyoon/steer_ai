@@ -32,6 +32,18 @@ struct InboxView: View {
     @StateObject private var devicePresence: DevicePresenceObserver
     @State private var showsMacSyncStatus = false
     @State private var showsSettings = false
+    /// Sticks in UserDefaults so the onboarding flow runs exactly
+    /// once per install. `@AppStorage` keeps the state synced with
+    /// the persisted bool; setting it to `true` is what advances
+    /// the user out of OnboardingFlowView into SignInPrompt.
+    @AppStorage("ai.steer.onboardingCompleted")
+    private var onboardingCompleted: Bool = false
+
+    private func completeOnboarding() {
+        withAnimation(.easeInOut(duration: 0.28)) {
+            onboardingCompleted = true
+        }
+    }
 
     init(inbox: SyncInbox) {
         self.inbox = inbox
@@ -100,7 +112,12 @@ struct InboxView: View {
                     .accessibilityHidden(true)
             }
 
-            if !inbox.isSignedIn {
+            if !onboardingCompleted {
+                OnboardingFlowView(onComplete: completeOnboarding)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("onboarding-flow")
+                    .transition(.opacity)
+            } else if !inbox.isSignedIn {
                 SignInPrompt(inbox: inbox)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("sign-in-prompt")

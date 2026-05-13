@@ -20,6 +20,7 @@
 		6C64F9AC4A73935473AF49FB /* DevicePresenceObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B456FEC1FC4609F9410FDAB1 /* DevicePresenceObserverTests.swift */; };
 		74D5D52E1823197EF214A412 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = AB63FB2F0D6D4043252C1385 /* SteerCore */; };
 		81D04E76A2C0A0F68BBC47F0 /* CardPayloadMappingPerfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4579B87D0A851F8AEE59DC /* CardPayloadMappingPerfTests.swift */; };
+		84683E8F048853C173DBC13F /* OnboardingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C711B75104B514A149198858 /* OnboardingFlowView.swift */; };
 		99BAA46CD0A9C05FAE5E7028 /* CardStackChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */; };
 		A60108A154CB8ABD87D0876D /* ActionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */; };
 		B2AB16691E7FECD9A988EB55 /* SteerColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDFD9A5652DC9DDCEA24CB1 /* SteerColors.swift */; };
@@ -85,6 +86,7 @@
 		B456FEC1FC4609F9410FDAB1 /* DevicePresenceObserverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePresenceObserverTests.swift; sourceTree = "<group>"; };
 		B6C3148BDC452FF92D86EC7F /* SteerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SteerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C13C3B2BBACA702429D43DC3 /* SyncInboxFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxFixtures.swift; sourceTree = "<group>"; };
+		C711B75104B514A149198858 /* OnboardingFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowView.swift; sourceTree = "<group>"; };
 		CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardPayloadMapping.swift; sourceTree = "<group>"; };
 		CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncInboxOptimisticTests.swift; sourceTree = "<group>"; };
 		D5C900DB8295384C9D855881 /* Steer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Steer.entitlements; sourceTree = "<group>"; };
@@ -127,6 +129,7 @@
 				B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */,
 				057A2A9A71094A1E78867C5E /* Models.swift */,
 				9CF868AD7D9804924DD0B4D9 /* OnboardingCard.swift */,
+				C711B75104B514A149198858 /* OnboardingFlowView.swift */,
 				36B391F7B1C395484A445D38 /* ReplyDock.swift */,
 				6775B843EBF5B82A78C73C8B /* SettingsView.swift */,
 				D5C900DB8295384C9D855881 /* Steer.entitlements */,
@@ -347,6 +350,7 @@
 				4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */,
 				E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */,
 				CF7CBD840AEC568258E54416 /* OnboardingCard.swift in Sources */,
+				84683E8F048853C173DBC13F /* OnboardingFlowView.swift in Sources */,
 				CA677DB22BB1B45BE3F4DDB3 /* ReplyDock.swift in Sources */,
 				EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */,
 				B2AB16691E7FECD9A988EB55 /* SteerColors.swift in Sources */,
