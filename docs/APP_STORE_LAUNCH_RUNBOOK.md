@@ -18,16 +18,16 @@ script can take.
 | 1 | Decide on Demo mode: keep or remove | **user** | open |
 | 2 | SignInPrompt screen — app icon, copy, "Try Demo" button | **user + code** | open |
 | 3 | iOS Notification Service Extension (NSE) — needs Xcode UI | **user (Xcode)** | open (#279) |
-| 4 | Privacy Policy + Terms public URLs published, app links them | **user** | partly done |
-| 5 | Privacy Policy / Terms / support email fields filled in | **user** | open |
+| 4 | Privacy Policy + Terms public URLs published, app links them | **user** | **Enable GitHub Pages** (docs/ folder ready) |
+| 5 | Privacy Policy / Terms / support email fields filled in | code ✅ | **done** — "Ilwon Yoon" set in PRIVACY_POLICY.md + TERMS_OF_SERVICE.md |
 | 6 | Privacy Policy + Terms reachable from signed-out screen | code | open |
-| 7 | App Store Connect privacy labels filled out | **user** | open |
-| 8 | App Review Notes finalized + demo flow described | **user** | open |
-| 9 | Apple Distribution provisioning profile for `ai.steer.ios` | **user (Apple Portal)** | open |
-| 10 | iOS bundle version bump + build for App Store distribution | code + user | open |
+| 7 | App Store Connect privacy labels filled out | **user** | **draft ready** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
+| 8 | App Review Notes finalized + demo flow described | code ✅ | **done** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
+| 9 | Apple Distribution provisioning profile for `ai.steer.ios` | **user (Apple Portal)** | open (automatic signing in ExportOptions) |
+| 10 | iOS bundle version bump (0.0.1 → 1.0.0) + Archive | user | open — bump MARKETING_VERSION in Xcode |
 | 11 | Upload to App Store Connect via Xcode / Transporter | **user** | open |
-| 12 | Screenshots (5.5" + 6.5" + iPad if applicable) | **user** | open |
-| 13 | App Store description, keywords, what's new | **user + code** | open |
+| 12 | Screenshots (6.7" 1290×2796 required, 6.5" 1284×2778 recommended) | **user** | open |
+| 13 | App Store description, keywords, what's new | code ✅ | **done** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
 
 ## Strong recommendations — fix before review but not strict blockers
 

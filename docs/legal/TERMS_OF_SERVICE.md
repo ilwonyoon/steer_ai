@@ -6,7 +6,7 @@ These Terms govern your use of Steer for iPhone, Steer for Mac, and Steer's rela
 
 Pre-publication placeholders (must be filled before App Store submission):
 
-- Legal operator: `[PRE-LAUNCH] Developer legal name — to be set by repo owner before submission`
+- Legal operator: `Ilwon Yoon`
 - Contact email: `support@steer.ai`
 - Published URL: `https://steer.ai/terms` *(serve via GitHub Pages until the canonical site is live)*
 

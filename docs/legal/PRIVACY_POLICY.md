@@ -6,7 +6,7 @@ This Privacy Policy explains how Steer collects, uses, stores, and deletes infor
 
 Pre-publication placeholders (must be filled before App Store submission):
 
-- Legal operator: `[PRE-LAUNCH] Developer legal name — to be set by repo owner before submission`
+- Legal operator: `Ilwon Yoon`
 - Contact email: `privacy@steer.ai`
 - Published URL: `https://steer.ai/privacy` *(serve via GitHub Pages until the canonical site is live)*
 
