@@ -829,6 +829,13 @@ public final class SyncInbox: ObservableObject {
             do {
                 try await task.send(.string(s))
             } catch {
+                // Cloudflare DO half-closed the socket. The send fails
+                // but `task.receive()` in receiveLoop won't fire until
+                // it tries to drain the next frame — which could take
+                // until the next card publish. Force-cancel the task so
+                // the receive loop throws immediately and backs off
+                // into a reconnect.
+                task.cancel(with: .goingAway, reason: nil)
                 return
             }
         }
