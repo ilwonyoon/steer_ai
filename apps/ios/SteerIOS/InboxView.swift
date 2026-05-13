@@ -79,14 +79,26 @@ struct InboxView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Solid fill only. Putting onTapGesture on the background
-            // here intercepted the first tap on HeaderBar buttons —
-            // the buttons sit on top in z-order, but SwiftUI's
-            // gesture priority quirk meant the user had to tap
-            // Settings 2× before the sheet opened. Keyboard dismiss
-            // moved into ReplyDock's own contentShape + the system
-            // .scrollDismissesKeyboard behaviour on the carousel.
+            // Solid fill only — gestures live on a separate layer below.
             SteerColors.appBackground.ignoresSafeArea()
+
+            // Keyboard-dismiss layer. Active only while the keyboard
+            // is up (`keyboard.height > 0`), otherwise allows hit-test
+            // to pass straight through to whatever's underneath. This
+            // is what makes "tap any blank space → keyboard closes"
+            // work without stealing the first tap on HeaderBar's
+            // Settings or Mac chip buttons. Buttons sit higher in the
+            // ZStack and SwiftUI's hit-test consults them first; this
+            // layer only catches taps that hit empty background.
+            if keyboard.height > 0 {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        replyFieldFocused = false
+                    }
+                    .accessibilityHidden(true)
+            }
 
             if !inbox.isSignedIn {
                 SignInPrompt(inbox: inbox)
