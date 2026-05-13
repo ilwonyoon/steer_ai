@@ -47,11 +47,16 @@ final class DevicePresenceObserver: ObservableObject {
     /// sign-in. Used to keep state = .connecting until either a
     /// Mac device row shows up or the timeout elapses.
     private var connectingStartedAt: Date?
-    /// How long to hold `.connecting` after sign-in before
-    /// surrendering to `.neverConnected`. 10s gives the relay
-    /// + iPhone poll cadence three full cycles (3 × 3s) to land
-    /// a Mac heartbeat before we tell the user "no Mac yet."
+    /// Maximum time `.connecting` is shown after sign-in before
+    /// we fall through to `.neverConnected`. 10 s = ~3 of the
+    /// 3 s polls during the connecting window.
     private let connectingTimeout: TimeInterval = 10
+    /// Minimum time `.connecting` stays visible after sign-in,
+    /// even if a real Mac response arrives in 20 ms. Without
+    /// this floor, fast networks resolve the chip so quickly
+    /// the user never sees the "Connecting" state at all —
+    /// reads as if we never tried.
+    private let connectingMinimumVisibleSeconds: TimeInterval = 1.5
     /// Tracks whether the app is currently visible. We only run the
     /// poll timer when the user can actually see the chip — the WS
     /// stays open separately for instruction delivery and APNS still
@@ -139,49 +144,57 @@ final class DevicePresenceObserver: ObservableObject {
             return
         }
         guard inbox.isSignedIn else {
-            // Signed out — neither connecting nor connected;
-            // no Mac to look for. Sign-in transitions kick off
-            // a fresh connecting window.
+            // Signed out: clear connecting state, drop to
+            // neverConnected so the next sign-in transition is
+            // detectable.
             if state != .neverConnected { state = .neverConnected }
             connectingStartedAt = nil
             return
         }
 
-        // First refresh after sign-in (or back from background)
-        // arms the connecting window so the chip shows
-        // "Connecting" while the first poll round-trips.
-        if connectingStartedAt == nil, !isTerminalState(state) {
+        // Sign-in transition: arm the connecting window the
+        // first time we see isSignedIn = true after being
+        // signed-out. `connectingStartedAt == nil` is the marker.
+        if connectingStartedAt == nil {
             connectingStartedAt = Date()
             if state != .connecting { state = .connecting }
+            // Schedule a follow-up refresh once the minimum
+            // visible duration elapses, so a fast Mac discovery
+            // doesn't have to wait for the next 3 s poll tick
+            // to transition out of .connecting.
+            let deadline = connectingMinimumVisibleSeconds
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(deadline * 1_000_000_000))
+                await self?.refresh()
+            }
         }
 
         let fetchedDevices = await fetchPresenceDevices()
         if devices != fetchedDevices {
             devices = fetchedDevices
         }
+        let derived = derive(from: fetchedDevices)
+        let elapsed = Date().timeIntervalSince(connectingStartedAt ?? Date())
 
-        let nextState = derive(from: fetchedDevices)
-
-        // While the connecting window is open and the derived
-        // state would be `.neverConnected` (no Mac heartbeat
-        // yet), keep showing `.connecting` so the user reads
-        // the chip as "trying" instead of "no Mac." Real Mac
-        // results (connected / stale / offline) end the window
-        // immediately; the timeout ends it falling through to
-        // `.neverConnected`.
-        if case .neverConnected = nextState,
-           let started = connectingStartedAt,
-           Date().timeIntervalSince(started) < connectingTimeout {
+        // Two reasons to hold .connecting:
+        //   1. No Mac found yet AND timeout hasn't elapsed.
+        //   2. A real Mac WAS found but the connecting chip has
+        //      been on screen for less than the minimum visible
+        //      duration. Without this, very fast networks
+        //      resolve the chip in 20 ms and the user never
+        //      sees "Connecting" at all.
+        let noMacYet = (derived == .neverConnected)
+        let underTimeout = elapsed < connectingTimeout
+        let underMinVisible = elapsed < connectingMinimumVisibleSeconds
+        if (noMacYet && underTimeout) || underMinVisible {
             if state != .connecting { state = .connecting }
             return
         }
 
+        // Resolved. Drop the polling cadence back to steady-state
+        // to honor the request-budget commitment.
         connectingStartedAt = nil
-        if state != nextState { state = nextState }
-        // Connecting resolved (either to a real Mac or to
-        // .neverConnected after timeout). Drop the timer back
-        // to the steady-state 15 s cadence to honor the
-        // request-budget commitment from SYNC_STABILITY_AND_COST_PLAN.
+        if state != derived { state = derived }
         if pollTimer != nil {
             installTimer(interval: 15)
         }

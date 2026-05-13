@@ -16,7 +16,10 @@ import SwiftUI
 ///     lit*, not through drawn paths.
 
 struct RoutingFieldView: View {
-    private let dotSpacing: CGFloat = 24
+    /// 1.5× denser than the previous 24pt — each dot now sits
+    /// 16pt from its neighbor. Reads as a fine mesh that the
+    /// blob highlights can paint across smoothly.
+    private let dotSpacing: CGFloat = 16
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
