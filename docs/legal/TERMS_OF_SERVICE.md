@@ -4,10 +4,10 @@ Effective date: May 10, 2026
 
 These Terms govern your use of Steer for iPhone, Steer for Mac, and Steer's relay service.
 
-Pre-publication placeholders (must be filled before App Store submission):
+Publication details:
 
 - Legal operator: `Ilwon Yoon`
-- Contact email: `support@steer.ai`
+- Contact email: `superwedge.labs@gmail.com`
 - Published URL: `https://steer.ai/terms` *(serve via GitHub Pages until the canonical site is live)*
 
 ## The Service
@@ -93,4 +93,4 @@ We may update these Terms as Steer changes. The effective date above will be upd
 
 ## Contact
 
-For questions about these Terms, contact `support@steer.ai`.
+For questions about these Terms, contact `superwedge.labs@gmail.com`.

@@ -790,11 +790,11 @@ private struct SignInPrompt: View {
                     .accessibilityIdentifier("try-demo-button")
 
                     HStack(spacing: 16) {
-                        Link("Privacy", destination: URL(string: "https://steer-legal.pages.dev/privacy/")!)
+                        Link("Privacy", destination: URL(string: "https://ilwonyoon.github.io/steer_ai/privacy/")!)
                         Text("·").foregroundStyle(SteerColors.tertiaryInk)
-                        Link("Terms", destination: URL(string: "https://steer-legal.pages.dev/terms/")!)
+                        Link("Terms", destination: URL(string: "https://ilwonyoon.github.io/steer_ai/terms/")!)
                         Text("·").foregroundStyle(SteerColors.tertiaryInk)
-                        Link("Support", destination: URL(string: "mailto:superwedge.labs@gmail.com?subject=Steer%20Feedback")!)
+                        Link("Support", destination: URL(string: "https://ilwonyoon.github.io/steer_ai/support/")!)
                     }
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(SteerColors.secondaryInk)

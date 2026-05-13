@@ -82,23 +82,15 @@ struct SettingsView: View {
                 // mark-github (CC0) — see Assets.xcassets.
                 LinkLabel(title: "Report an Issue", assetName: "github-mark")
             }
-            // Support is a real human inbox — opens Mail composer
-            // with a pre-filled subject so the user doesn't have to
-            // write one. mailto links go straight through SwiftUI's
-            // `Link` without extra plumbing.
-            Link(destination: URL(string: "mailto:superwedge.labs@gmail.com?subject=Steer%20Feedback")!) {
+            // Support opens the public support page so App Review can
+            // verify a real URL without relying on Mail configuration.
+            Link(destination: URL(string: "https://ilwonyoon.github.io/steer_ai/support/")!) {
                 LinkLabel(title: "Support", icon: "questionmark.circle")
             }
-            // Cloudflare Pages routes for the legal site live on
-            // steer-legal.pages.dev (see legal-site worktree). The
-            // steer.ai apex is reserved for the marketing site that
-            // doesn't host these pages yet, so we link directly to
-            // the deployed Pages instance instead of routing through
-            // an unstable redirect.
-            Link(destination: URL(string: "https://steer-legal.pages.dev/privacy/")!) {
+            Link(destination: URL(string: "https://ilwonyoon.github.io/steer_ai/privacy/")!) {
                 LinkLabel(title: "Privacy Policy", icon: "hand.raised")
             }
-            Link(destination: URL(string: "https://steer-legal.pages.dev/terms/")!) {
+            Link(destination: URL(string: "https://ilwonyoon.github.io/steer_ai/terms/")!) {
                 LinkLabel(title: "Terms of Service", icon: "doc.text")
             }
         }

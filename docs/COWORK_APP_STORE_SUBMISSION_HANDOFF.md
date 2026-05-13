@@ -168,9 +168,9 @@ Welcome to Steer. This is the first public release.
 
 ### 2.6 Support URL / Marketing URL / Privacy Policy URL
 
-- Support URL: `mailto:superwedge.labs@gmail.com?subject=Steer%20Support` (Steer.ai 마케팅 페이지 부재 동안 임시)
-- Marketing URL: `https://steer.ai` (도메인 살아있으나 페이지 미배포 — 출시 전 최소 lander 필요)
-- Privacy Policy URL: `https://steer-legal.pages.dev/privacy/` (legal-site worktree에서 deploy 후 확인)
+- Support URL: `https://ilwonyoon.github.io/steer_ai/support/`
+- Marketing URL: `https://ilwonyoon.github.io/steer_ai/`
+- Privacy Policy URL: `https://ilwonyoon.github.io/steer_ai/privacy/`
 
 ### 2.7 Age Rating
 
@@ -365,7 +365,7 @@ xcrun altool --upload-app \
 - [ ] Settings → Identity 행에 `displayName` 표시 (재인증 dev 사용자는 nil인 게 정상; 신규 유저는 채워짐)
 - [ ] Settings → Notifications toggle 토글 가능, granted 상태에서 끄면 시스템 Settings deeplink
 - [ ] Settings → Report an Issue → GitHub Octicons 마크 보임
-- [ ] Settings → Privacy → `steer-legal.pages.dev/privacy/` 200 응답 (legal-site worktree deploy 후)
+- [ ] Settings → Privacy → `ilwonyoon.github.io/steer_ai/privacy/` 200 응답
 - [ ] Settings → Support → Mail composer 자동 채워짐
 - [ ] Sign out → Mac 측 iPhone presence dot 60s 안에 사라짐
 - [ ] 새 카드 만들기 (Mac에서 codex 세션 → stop) → iPhone lock screen에 banner + badge (PR #40 commit `664518c` deploy 후)
@@ -378,7 +378,7 @@ xcrun altool --upload-app \
 
 1. **Apple Sign In capability가 진짜 활성화됐는지** — dev 빌드에서 error 1000 났던 적 있음 (`docs/IOS_LAUNCH_PLAN.md` 5/11 entry). Distribution profile 새로 만들 때 같이 검증.
 2. **"Try Demo" CTA가 자동으로 들어간 게 아니라 manual entry** — 사용자 직접 enterDemoMode() 호출하므로 App Review 5.1.1(iii) "사용자 동의 없이 데이터 demo 흐름 진입" 우려 없음. 그래도 reviewer note에 "demo는 사용자가 명시적 탭 후 진입"이라고 적어둘 가치 있음.
-3. **`mailto:` Support URL** — Apple 가이드는 "support URL은 웹페이지여야 함" 권장. 마케팅 도메인 (steer.ai) 미배포 상태에서 임시 mailto만 쓰면 reviewer가 reject할 수 있음. 최소 lander 페이지 (`steer.ai` 또는 `steer-legal.pages.dev/support/`) 필요.
+3. **Support URL** — use the live GitHub Pages support page (`https://ilwonyoon.github.io/steer_ai/support/`) until `steer.ai` has a launch lander.
 4. **Push notification screenshot에 진짜 알림 떠 있어야** — 시뮬레이터에서 push 시뮬 가능 (`xcrun simctl push`). 사용자가 진짜 카드 만들고 캡처하든, 시뮬 알림 캡처하든 OK. 가짜 mockup은 reject 사유 (App Store Review 2.3.3).
 5. **위 1.3 (wrapper disconnect) 해결 안 되면 출시 후 사용자 review 별점 폭락** — 출시 차단이라기보다 출시 후 ROI 차단. 강력히 권장: 출시 전에 fix.
 

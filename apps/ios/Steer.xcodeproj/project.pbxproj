@@ -399,7 +399,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios.tests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+					TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Steer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Steer";
 			};
 			name = Debug;
@@ -544,7 +544,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios.tests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+					TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Steer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Steer";
 			};
 			name = Release;
@@ -562,7 +562,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios.uitests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+					TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Steer;
 			};
 			name = Release;
@@ -580,7 +580,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios.uitests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+					TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Steer;
 			};
 			name = Debug;
@@ -599,7 +599,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -617,7 +617,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.steer.ios;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};

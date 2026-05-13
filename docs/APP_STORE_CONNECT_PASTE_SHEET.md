@@ -152,7 +152,7 @@ WHAT THIS APP DOES NOT DO:
 SIGN IN WITH APPLE:
 Steer requests fullName and email scopes. Email is used only for account identification. No email is sent to the user.
 
-If you have questions, contact support@steer.ai.
+If you have questions, contact superwedge.labs@gmail.com.
 ```
 
 ---

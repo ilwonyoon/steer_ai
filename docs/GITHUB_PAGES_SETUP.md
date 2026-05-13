@@ -35,7 +35,7 @@ Do not add `docs/CNAME` until the domain is actually configured, because a bad C
 ## Pre-Submission Checks
 
 - Replace any remaining launch placeholders in `docs/legal/PRIVACY_POLICY.md` and `docs/legal/TERMS_OF_SERVICE.md`.
-- Confirm `support@steer.ai` and `privacy@steer.ai` receive email.
+- Confirm `superwedge.labs@gmail.com` receives support, privacy, and deletion requests.
 - Confirm the public pages load in an incognito browser.
 - In App Store Connect, use the live privacy URL and support URL.
 - If custom Terms are used, use the live Terms URL or paste the custom EULA where App Store Connect expects it.

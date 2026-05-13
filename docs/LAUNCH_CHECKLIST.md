@@ -131,8 +131,8 @@
 - [ ] 🙋 Description (4000자) — 핸드오프 §2.4
 - [ ] 🙋 Keywords (100자) — 핸드오프 §2.2
 - [ ] 🙋 Support URL — **결정 필요**: `mailto:` 단독은 Apple reject 가능. 임시 lander 페이지 deploy.
-- [ ] 🙋 Marketing URL — `https://steer.ai` (도메인 살아있으면 최소 lander)
-- [ ] 🙋 Privacy Policy URL: `https://steer-legal.pages.dev/privacy/` (legal-site PR 머지 + Pages deploy 확인 후)
+- [ ] 🙋 Marketing URL — `https://ilwonyoon.github.io/steer_ai/`
+- [x] 🤖 Privacy Policy URL live: `https://ilwonyoon.github.io/steer_ai/privacy/`
 - [ ] 🙋 Copyright: `© 2026 Superwedge Labs`
 
 ### 4F. Age Rating
@@ -152,6 +152,7 @@
 - [x] 🤖 export 단계 통과 (`xcodebuild -exportArchive -allowProvisioningUpdates` EXPORT SUCCEEDED)
 - [x] 🤖 Cloud-managed App Store signing 확인 — certificate `Cloud Managed Apple Distribution`, profile `iOS Team Store Provisioning Profile: ai.steer.ios`, APNS `production`
 - [x] 🤖 iOS `MARKETING_VERSION` 1.0.0 설정
+- [x] 🤖 iPhone-only target 설정 (`UIDeviceFamily = 1`)으로 iPad screenshot/orientation requirement 제거
 - [x] 🤖 `bash scripts/release-ios.sh` → `apps/ios/build/Steer-AppStore/Steer.ipa` 생성
 
 ### 5B. App Store Connect로 업로드
@@ -201,9 +202,11 @@
 ## Phase 7 — Legal pages
 
 - [ ] 🙋 `chore/legal-site-pages` worktree PR 머지 → Cloudflare Pages auto-deploy
-- [ ] 🙋 `https://steer-legal.pages.dev/privacy/` 200 응답 확인 (브라우저)
-- [ ] 🙋 `https://steer-legal.pages.dev/terms/` 200 응답 확인
-- [ ] 🙋 (선택) `steer.ai` 도메인에 minimal lander deploy — Support URL용 Apple 권장사항
+- [x] 🤖 GitHub Pages enabled from `fix/mac-chip-reconciliation` `/docs`
+- [x] 🤖 `https://ilwonyoon.github.io/steer_ai/privacy/` 200 응답 확인
+- [x] 🤖 `https://ilwonyoon.github.io/steer_ai/terms/` 200 응답 확인
+- [x] 🤖 `https://ilwonyoon.github.io/steer_ai/support/` 200 응답 확인
+- [ ] 🙋 (선택) `steer.ai` 도메인에 minimal lander deploy
 
 ---
 
@@ -229,8 +232,8 @@
 - [ ] 🙋 Settings → Identity 행에 displayName 표시
 - [ ] 🙋 Settings → Notifications toggle 가능, granted → deeplink
 - [ ] 🙋 Settings → Report an Issue → GitHub 마크
-- [ ] 🙋 Settings → Privacy → `steer-legal.pages.dev/privacy/` 200
-- [ ] 🙋 Settings → Support → Mail composer 자동 채워짐
+- [ ] 🙋 Settings → Privacy → `ilwonyoon.github.io/steer_ai/privacy/` 200
+- [ ] 🙋 Settings → Support → `ilwonyoon.github.io/steer_ai/support/` 200
 - [ ] 🙋 Sign out → Mac 측 iPhone dot 60s 안에 사라짐
 - [ ] 🙋 새 카드 (Mac codex stop) → iPhone lock screen banner + badge
 - [ ] 🙋 두번째 카드 동일 → 알림 다시 옴 (Phase 1C regression 검증)
@@ -266,7 +269,7 @@
 - [x] **Demo mode 진입 경로** — signed-out SignInPrompt에 `"Try Demo"` 복원. Mac 페어링 이후 replay/tutorial 진입은 v1.1 후보.
 - [ ] **NSE (Notification Service Extension)** — 카드 페이로드의 `cardIcon` 키를 진짜 lock screen 알림에 표시하려면 NSE 필요. 출시 차단은 아니나 polish. task #279. 출시 후 v1.1로?
 - [ ] **Custom Terms vs Apple standard EULA** — 현재 `docs/legal/TERMS_OF_SERVICE.md`가 자체 작성. 그대로 가도 OK이나 Apple standard EULA로 대체하면 polish 적게 든다. 결정 후 App Store Connect 폼.
-- [ ] **Support URL** — `mailto:` 단독은 Apple reject 위험. `steer-legal.pages.dev/support/` 같은 곳에 최소 lander 1장 deploy 가능?
+- [x] **Support URL** — `https://ilwonyoon.github.io/steer_ai/support/` 200 확인.
 
 ---
 
