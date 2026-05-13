@@ -39,12 +39,16 @@
 
 진단: `docs/WRAPPER_DISCONNECT_DIAGNOSIS_2026-05-13.md`. Root cause: `packages/cli/src/index.js:253-268` `submitPtyInstruction`이 backpressure / drain 무시 + 무조건 ack=injected.
 
-- [ ] 🤖 reproduction test 작성 — `packages/cli/test/wrapper_invariant.test.js` 옆에 새 file (`wrapper_inject_during_turn.test.js`). fake provider mid-turn에 instruction inject → ack 받기 전에 응답 도착 못 함 케이스 reproduce.
-- [ ] 🤖 reproduction test RED 확인
-- [ ] 🤖 fix: `ptyProcess.write` 반환 값 + `'drain'` event 대기. 50ms `setTimeout` 제거, `ptyProcess.onData`로 prompt re-presentation 감지 후 `\r` write.
-- [ ] 🤖 reproduction test GREEN 확인
-- [ ] 🤖 `bash scripts/verify-steer-regression.sh` 전부 그린
-- [ ] 🙋 골든 셋 G14 시각 확인: iPhone reply → Codex 답 → 새 카드 → iPhone chip clear (10s 이내)
+**상태**: 사용자와 함께 진행할 작업으로 분류. 이유:
+- `fake_provider.js`는 readline 기반이라 mid-turn paste를 자동 buffer 처리. 진짜 codex/claude는 raw mode TUI라 stream 중 stdin을 무시. 따라서 fake로는 의미 있는 reproduction이 안 됨.
+- 진짜 reproduction은 `codex app-server` 통합 환경에서 띄워야 하는데, 그 인프라 구축이 1-2일 작업이고 출시 타임라인 risk 큼.
+- 자기 룰 "test 먼저, fix 후"를 위배하지 않는 가장 보수적 옵션은: 사용자가 코드 fix 진단 doc의 §1 (drain await) 검토 + 깬 후 실제 codex 세션으로 manual verification.
+
+- [ ] 🙋 진단 doc `docs/WRAPPER_DISCONNECT_DIAGNOSIS_2026-05-13.md` 읽고 fix 접근법 confirm
+- [ ] 🤖 (사용자 confirm 후) `submitPtyInstruction`에서 `ptyProcess.write` 반환 값 + `'drain'` event 대기 + `\r` write 시점을 prompt re-presentation 감지로 변경
+- [ ] 🤖 기존 `packages/cli/test/wrapper_invariant.test.js` 5 케이스 그린 확인 (적어도 회귀 안 일으키는 것)
+- [ ] 🙋 dogfood: 진짜 codex 세션 → 긴 turn → iPhone reply → 답 도착 확인 (10s 이내)
+- [ ] 🙋 dogfood: iPhone reply 5회 연속 → 모두 도착
 
 ### 1C. Push fanout deploy — relay-side commit `664518c`
 
@@ -141,23 +145,13 @@
 
 ## Phase 5 — 빌드 + 업로드
 
-### 5A. Mac에서 빌드
+### 5A. Mac에서 빌드 — **driver 준비됨, archive 단계 smoke-passed**
 
-- [ ] 🤖 `ExportOptions-AppStore.plist` 생성 (`apps/ios/`에) — 핸드오프 §5.3 template
-- [ ] 🤖 archive 명령:
-  ```sh
-  xcodebuild -project apps/ios/Steer.xcodeproj \
-    -scheme Steer -configuration Release \
-    -destination 'generic/platform=iOS' \
-    -archivePath apps/ios/build/Steer.xcarchive archive
-  ```
-- [ ] 🤖 export:
-  ```sh
-  xcodebuild -exportArchive \
-    -archivePath apps/ios/build/Steer.xcarchive \
-    -exportPath apps/ios/build/Steer-AppStore \
-    -exportOptionsPlist apps/ios/ExportOptions-AppStore.plist
-  ```
+- [x] 🤖 `apps/ios/ExportOptions-AppStore.plist` 작성 (method=app-store-connect, automatic signing)
+- [x] 🤖 `scripts/release-ios.sh` 작성 — archive + export + 다음 단계 안내까지 한 명령에 묶음
+- [x] 🤖 archive 단계 smoke run 통과 (`xcodebuild archive` ARCHIVE SUCCEEDED)
+- [ ] 🙋 Apple Developer Portal에서 App Store Distribution profile 생성 (Phase 2 마지막 항목)
+- [ ] 🙋 profile 깔린 후 `bash scripts/release-ios.sh` 한 줄 실행 → `apps/ios/build/Steer-AppStore/Steer.ipa` 생성
 
 ### 5B. App Store Connect로 업로드
 
@@ -279,7 +273,9 @@
 
 이 섹션은 진행하면서 한 줄씩 갱신. 마지막 갱신 시점 = 마지막 작업 끝났을 때.
 
-- 2026-05-13 (현재): Phase 0 done. Phase 1A/1B 시작 대기. Phase 1C/1D/1E/1F는 코드 fix 완료, 사용자 시각 검증 + wrangler deploy 대기.
+- 2026-05-13 (latest): Phase 0 done. Phase 1A 코드 정상 (시각 검증만 대기), 1B 사용자와 함께 진행. 1C-1F 코드 fix 완료 + 시각 검증 대기.
+- 2026-05-13: Phase 5A archive 단계 smoke-passed. ExportOptions plist + `scripts/release-ios.sh` 준비됨. Distribution profile 만들어지면 export 자동 진행.
+- 2026-05-13: Phase 6 `scripts/capture-app-store-screenshots.sh` 작성. iPhone 17 Pro Max / iPhone 17 부팅 + 빌드 + 인스톨까지 smoke-passed. 인터랙티브 캡처 루프 6장.
 
 ---
 
