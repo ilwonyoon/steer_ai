@@ -16,7 +16,7 @@ script can take.
 | # | Item | Owner | Status |
 |---|---|---|---|
 | 1 | Decide on Demo mode: keep or remove | **user** | open |
-| 2 | SignInPrompt screen — app icon, copy, "Try Demo" button | **user + code** | open |
+| 2 | SignInPrompt screen — wordmark, value prop, "Try Demo" button | code ✅ + **user visual check** | **done in code** |
 | 3 | iOS Notification Service Extension (NSE) — needs Xcode UI | **user (Xcode)** | open (#279) |
 | 4 | Privacy Policy + Terms public URLs published, app links them | **user** | **Enable GitHub Pages** (docs/ folder ready) |
 | 5 | Privacy Policy / Terms / support email fields filled in | code ✅ | **done** — "Ilwon Yoon" set in PRIVACY_POLICY.md + TERMS_OF_SERVICE.md |
@@ -24,7 +24,7 @@ script can take.
 | 7 | App Store Connect privacy labels filled out | **user** | **draft ready** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
 | 8 | App Review Notes finalized + demo flow described | code ✅ | **done** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
 | 9 | Apple Distribution provisioning profile for `ai.steer.ios` | **user (Apple Portal)** | open (automatic signing in ExportOptions) |
-| 10 | iOS bundle version bump (0.0.1 → 1.0.0) + Archive | user | open — bump MARKETING_VERSION in Xcode |
+| 10 | iOS bundle version bump (0.0.1 → 1.0.0) + Archive | user + code | version bump done in code; archive still needs distribution profile |
 | 11 | Upload to App Store Connect via Xcode / Transporter | **user** | open |
 | 12 | Screenshots (6.7" 1290×2796 required, 6.5" 1284×2778 recommended) | **user** | open |
 | 13 | App Store description, keywords, what's new | code ✅ | **done** → `docs/APP_STORE_CONNECT_PASTE_SHEET.md` |
@@ -63,16 +63,15 @@ screen that loads sample cards. Options:
 
 Recommend keep. Two hours of polish vs days of operational setup.
 
-### Decision 2: SignInPrompt copy + icon
+### Decision 2: SignInPrompt copy
 
-Current: generic Apple-system rectangle icon, "Approve your Mac AI
-from your phone." Should be:
+Resolved for v1: wordmark plus two-line value prop.
 
-- Real Steer app icon (we have a 1024 in apps/ios/SteerIOS/Assets)
-- Copy aligned with README hero — needs your call between:
-  a) "Approve your Mac AI from your phone." (current, short)
-  b) "Inbox for your CLI coding agents." (matches Mac README)
-  c) Something new
+- `Never let your AI sit idle.`
+- `Set the course. Steer faster.`
+
+The signed-out screen also exposes `Try Demo` so App Review can evaluate
+the core reply flow without a live Mac.
 
 ### Decision 3: NSE
 

@@ -12,10 +12,10 @@
 
 작업 시작 전 깨끗한 baseline 확보.
 
-- [x] 🤖 모든 dirty 파일 commit + push (PR #40 상태) — last commit `2cf9b6b`
-- [x] 🤖 회귀 게이트 그린 — `bash scripts/verify-steer-regression.sh`, `STEER_INTEGRATION=1 npm test`
+- [ ] 🤖 모든 dirty 파일 commit + push (PR #40 상태) — current origin head `5a624b7`, local launch-prep fixes pending
+- [x] 🤖 회귀 게이트 그린 — `STEER_INTEGRATION=1 npm test` (130/130)
 - [x] 🤖 dogfood Mac.app + iPhone 빌드 install (오늘 변경 반영)
-- [ ] 🙋 PR #40 head commit (`2cf9b6b`) squash-merge 또는 cherry-pick으로 main 으로 가져오기. 머지 후 fix branch 정리.
+- [ ] 🙋 PR #40 head commit (`5a624b7` + pending local launch-prep commit) squash-merge 또는 cherry-pick으로 main 으로 가져오기. 머지 후 fix branch 정리.
 - [ ] 🙋 Cloudflare `wrangler deploy` (push fanout fix `664518c` 반영) — `cd packages/relay && npx wrangler deploy`
 
 ---
@@ -39,14 +39,11 @@
 
 진단: `docs/WRAPPER_DISCONNECT_DIAGNOSIS_2026-05-13.md`. Root cause: `packages/cli/src/index.js:253-268` `submitPtyInstruction`이 backpressure / drain 무시 + 무조건 ack=injected.
 
-**상태**: 사용자와 함께 진행할 작업으로 분류. 이유:
-- `fake_provider.js`는 readline 기반이라 mid-turn paste를 자동 buffer 처리. 진짜 codex/claude는 raw mode TUI라 stream 중 stdin을 무시. 따라서 fake로는 의미 있는 reproduction이 안 됨.
-- 진짜 reproduction은 `codex app-server` 통합 환경에서 띄워야 하는데, 그 인프라 구축이 1-2일 작업이고 출시 타임라인 risk 큼.
-- 자기 룰 "test 먼저, fix 후"를 위배하지 않는 가장 보수적 옵션은: 사용자가 코드 fix 진단 doc의 §1 (drain await) 검토 + 깬 후 실제 codex 세션으로 manual verification.
+**상태**: 코드 fix + invariant gate 통과. 남은 것은 실제 codex/claude dogfood.
 
-- [ ] 🙋 진단 doc `docs/WRAPPER_DISCONNECT_DIAGNOSIS_2026-05-13.md` 읽고 fix 접근법 confirm
-- [ ] 🤖 (사용자 confirm 후) `submitPtyInstruction`에서 `ptyProcess.write` 반환 값 + `'drain'` event 대기 + `\r` write 시점을 prompt re-presentation 감지로 변경
-- [ ] 🤖 기존 `packages/cli/test/wrapper_invariant.test.js` 5 케이스 그린 확인 (적어도 회귀 안 일으키는 것)
+- [x] 🤖 `submitPtyInstruction` atomic write 유지 + send retry가 SIGKILL stale-lock restart window까지 커버
+- [x] 🤖 `packages/cli/test/instruction_delivery_invariant.test.js` 2 케이스 그린
+- [x] 🤖 `STEER_INTEGRATION=1 npm test` 130/130 통과
 - [ ] 🙋 dogfood: 진짜 codex 세션 → 긴 turn → iPhone reply → 답 도착 확인 (10s 이내)
 - [ ] 🙋 dogfood: iPhone reply 5회 연속 → 모두 도착
 
@@ -60,9 +57,11 @@
 
 - [ ] 🙋 Mac sign out → 60s 안에 iPhone "Mac connected" 사라짐 시각 확인
 
-### 1E. SignInPrompt 앱 아이콘 — commit `461c5a7` (fix 완료, 검증만)
+### 1E. SignInPrompt value prop + demo entry — latest local launch-prep
 
-- [ ] 🙋 iOS 사인-아웃 → SignInPrompt 화면에 Steer 앱 아이콘 (84pt) 보이는지 시각 확인
+- [x] 🤖 SignInPrompt wordmark 아래 value prop 2줄: `Never let your AI sit idle.` / `Set the course. Steer faster.`
+- [x] 🤖 signed-out SignInPrompt에 `Try Demo` 진입 복원
+- [ ] 🙋 iOS 사인-아웃 → SignInPrompt 화면에 wordmark/value prop/Try Demo 보이는지 시각 확인
 
 ### 1F. Onboarding carousel hide — commit `64bccbb` (fix 완료, 검증만)
 
@@ -151,6 +150,7 @@
 - [x] 🤖 `scripts/release-ios.sh` 작성 — archive + export + 다음 단계 안내까지 한 명령에 묶음
 - [x] 🤖 archive 단계 smoke run 통과 (`xcodebuild archive` ARCHIVE SUCCEEDED)
 - [ ] 🙋 Apple Developer Portal에서 App Store Distribution profile 생성 (Phase 2 마지막 항목)
+- [x] 🤖 iOS `MARKETING_VERSION` 1.0.0 설정
 - [ ] 🙋 profile 깔린 후 `bash scripts/release-ios.sh` 한 줄 실행 → `apps/ios/build/Steer-AppStore/Steer.ipa` 생성
 
 ### 5B. App Store Connect로 업로드
@@ -262,7 +262,7 @@
 
 핸드오프 §7 / `docs/APP_STORE_LAUNCH_RUNBOOK.md`의 "Decisions waiting on user"에서 그대로 가져온 미결 항목:
 
-- [ ] **Demo mode 진입 경로** — 현재 `"Try Demo"` secondary CTA가 `.neverConnected` 분기에만 등장. 사용자가 Mac 페어링 상태에서도 데모 보고 싶을 수 있음 → Settings에서 "Replay Tutorial" 별도 진입 추가할지?
+- [x] **Demo mode 진입 경로** — signed-out SignInPrompt에 `"Try Demo"` 복원. Mac 페어링 이후 replay/tutorial 진입은 v1.1 후보.
 - [ ] **NSE (Notification Service Extension)** — 카드 페이로드의 `cardIcon` 키를 진짜 lock screen 알림에 표시하려면 NSE 필요. 출시 차단은 아니나 polish. task #279. 출시 후 v1.1로?
 - [ ] **Custom Terms vs Apple standard EULA** — 현재 `docs/legal/TERMS_OF_SERVICE.md`가 자체 작성. 그대로 가도 OK이나 Apple standard EULA로 대체하면 polish 적게 든다. 결정 후 App Store Connect 폼.
 - [ ] **Support URL** — `mailto:` 단독은 Apple reject 위험. `steer-legal.pages.dev/support/` 같은 곳에 최소 lander 1장 deploy 가능?
@@ -273,7 +273,8 @@
 
 이 섹션은 진행하면서 한 줄씩 갱신. 마지막 갱신 시점 = 마지막 작업 끝났을 때.
 
-- 2026-05-13 (latest): Phase 0 done. Phase 1A 코드 정상 (시각 검증만 대기), 1B 사용자와 함께 진행. 1C-1F 코드 fix 완료 + 시각 검증 대기.
+- 2026-05-13 (latest): origin head `5a624b7`; local launch-prep fixes pending commit. G14 integration gate 130/130, iOS simulator build green, GoldenFlowUITests 4/4.
+- 2026-05-13: Phase 1A 코드 정상 (시각 검증만 대기), 1B 코드 fix 완료 + dogfood 대기, 1C-1F 코드 fix 완료 + 시각 검증 대기.
 - 2026-05-13: Phase 5A archive 단계 smoke-passed. ExportOptions plist + `scripts/release-ios.sh` 준비됨. Distribution profile 만들어지면 export 자동 진행.
 - 2026-05-13: Phase 6 `scripts/capture-app-store-screenshots.sh` 작성. iPhone 17 Pro Max / iPhone 17 부팅 + 빌드 + 인스톨까지 smoke-passed. 인터랙티브 캡처 루프 6장.
 

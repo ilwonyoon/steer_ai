@@ -8,7 +8,7 @@ import { socketPath } from "../../agent/src/paths.js";
 
 const RECONNECT_INITIAL_MS = 250;
 const RECONNECT_MAX_MS = 5_000;
-const STARTUP_DEADLINE_MS = 3_000;
+const STARTUP_DEADLINE_MS = 7_000;
 
 export function createAgentLink({ agentEntryPath }) {
   let socket = null;

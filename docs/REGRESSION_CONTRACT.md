@@ -21,8 +21,9 @@ a reasonable window of its `injected_at` timestamp. Specifically:
   provider after `awaiting_response_since` MUST bump `last_response_revision`.
 - `steer send` MUST NOT silently discard an instruction when the agent returns
   a transient "session not found" or "session is disconnected" error. It must
-  retry for up to `SEND_RECONNECT_RETRY_MS` (2 s) to absorb wrapper socket
-  bounce / agent restart windows before failing hard.
+  retry for up to `SEND_RECONNECT_RETRY_MS` (8 s) to absorb wrapper socket
+  bounce / agent restart windows before failing hard. This budget intentionally
+  exceeds the agent lock stale-reclaim window after SIGKILL.
 - The PTY instruction payload and its submit keystroke (`\r`) MUST be written
   as a single atomic `ptyProcess.write` call. Splitting them across a
   `setTimeout` creates a race window where providers that reject paste during

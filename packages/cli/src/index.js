@@ -624,22 +624,35 @@ async function sendInstruction(args) {
   // How long we retry when the agent returns a transient
   // "session not found" / "session is disconnected" error.
   // The wrapper's agent_link reconnects within ~250 ms on a
-  // normal socket bounce and up to ~5 s after a SIGKILL restart;
-  // 2 s covers the common case without blocking the caller too
-  // long if the session genuinely ended.
+  // normal socket bounce and up to ~6 s after a SIGKILL restart
+  // while the OS-level agent lock reaches its stale threshold.
+  // 8 s keeps send alive across that restart window without
+  // blocking the caller too long if the session genuinely ended.
   //
   // Inlined here instead of a module-level const because the
   // CLI dispatcher at the top of this file awaits sendInstruction
   // before module evaluation reaches any const declared *after*
   // the dispatcher — running into a TDZ ReferenceError. Inline
   // const is fine; the value is set on every send call.
-  const SEND_RECONNECT_RETRY_MS = 2000;
+  const SEND_RECONNECT_RETRY_MS = 8000;
   const deadline = Date.now() + SEND_RECONNECT_RETRY_MS;
   let backoffMs = 150;
   let lastError;
 
   while (true) {
-    const response = await requestAgent({ type: "send", sessionId, text, attachments });
+    let response;
+    try {
+      response = await requestAgent({ type: "send", sessionId, text, attachments });
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      if (!isTransientAgentSendError(lastError) || Date.now() >= deadline) {
+        throw error;
+      }
+      const remaining = deadline - Date.now();
+      await delay(Math.min(backoffMs, remaining));
+      backoffMs = Math.min(backoffMs * 2, 500);
+      continue;
+    }
 
     if (response.type !== "error") {
       console.log(JSON.stringify(response, null, 2));
@@ -651,8 +664,7 @@ async function sendInstruction(args) {
     // etc.) is permanent and should surface immediately.
     const isTransient =
       typeof response.error === "string" &&
-      (response.error.includes("session not found") ||
-        response.error.includes("session is disconnected"));
+      isTransientAgentSendError(response.error);
 
     if (!isTransient || Date.now() >= deadline) {
       console.error(response.error);
@@ -664,6 +676,14 @@ async function sendInstruction(args) {
     await delay(Math.min(backoffMs, remaining));
     backoffMs = Math.min(backoffMs * 2, 500);
   }
+}
+
+function isTransientAgentSendError(message) {
+  return (
+    message.includes("session not found") ||
+    message.includes("session is disconnected") ||
+    message.includes("SteerAgent did not start within")
+  );
 }
 
 function parseSendArgs(args) {
@@ -847,13 +867,13 @@ async function startAgent() {
   });
   child.unref();
 
-  const deadline = Date.now() + 3000;
+  const deadline = Date.now() + 7000;
   while (Date.now() < deadline) {
     if (fs.existsSync(socketPath)) return;
     await delay(50);
   }
 
-  throw new Error("SteerAgent did not start within 3s");
+  throw new Error("SteerAgent did not start within 7s");
 }
 
 function printUsage() {
@@ -1022,4 +1042,3 @@ function handleClaudeStream(raw, agent, sessionId) {
     }
   }
 }
-

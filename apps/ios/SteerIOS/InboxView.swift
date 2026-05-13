@@ -121,7 +121,7 @@ struct InboxView: View {
                 SignInPrompt(inbox: inbox)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("sign-in-prompt")
-            } else if !onboardingCompleted {
+            } else if !onboardingCompleted && !inbox.isDemoMode && !SyncInbox.fixtureModeEnabled {
                 OnboardingFlowView(onComplete: completeOnboarding)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("onboarding-flow")
@@ -778,6 +778,16 @@ private struct SignInPrompt: View {
                     if isSigningIn {
                         ProgressView().controlSize(.small)
                     }
+
+                    Button("Try Demo") {
+                        inbox.enterDemoMode()
+                    }
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(maxWidth: 320)
+                    .frame(height: 44)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("try-demo-button")
 
                     HStack(spacing: 16) {
                         Link("Privacy", destination: URL(string: "https://steer-legal.pages.dev/privacy/")!)
