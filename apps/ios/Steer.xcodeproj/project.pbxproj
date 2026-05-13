@@ -31,6 +31,7 @@
 		CA677DB22BB1B45BE3F4DDB3 /* ReplyDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B391F7B1C395484A445D38 /* ReplyDock.swift */; };
 		CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D152B83142801A64439B96 /* SteerIOSApp.swift */; };
 		CF7CBD840AEC568258E54416 /* OnboardingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CF868AD7D9804924DD0B4D9 /* OnboardingCard.swift */; };
+		CF7CBD850AEC568258E54417 /* IOSDeviceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CF868AE7D9804924DD0B4DA /* IOSDeviceModel.swift */; };
 		D74DDAE84355EF3D7F6CC8DA /* TerminalExcerptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25011DE39A71D10907B4E14F /* TerminalExcerptView.swift */; };
 		D8E44FBB7220CE237D65388A /* DeleteAccountTokenClearTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55D0EC6D3D43C69749EB511E /* DeleteAccountTokenClearTests.swift */; };
 		E02279F2C4B075283907BF8B /* CardPayloadMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */; };
@@ -79,6 +80,7 @@
 		888829F4938DF6D0E279FD0D /* CardDisplayable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDisplayable.swift; sourceTree = "<group>"; };
 		968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCardView.swift; sourceTree = "<group>"; };
 		9CF868AD7D9804924DD0B4D9 /* OnboardingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCard.swift; sourceTree = "<group>"; };
+		9CF868AE7D9804924DD0B4DA /* IOSDeviceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSDeviceModel.swift; sourceTree = "<group>"; };
 		9E4E924D811C045FDF2306F2 /* WhatSyncsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatSyncsView.swift; sourceTree = "<group>"; };
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
 		A940AFD67B6E554CB8324B64 /* Steer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Steer.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -127,6 +129,7 @@
 				80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */,
 				18199CFE823CF880E1C94476 /* InboxView.swift */,
 				400608C9A7F07651B1E30B67 /* Info.plist */,
+				9CF868AE7D9804924DD0B4DA /* IOSDeviceModel.swift */,
 				14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */,
 				B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */,
 				057A2A9A71094A1E78867C5E /* Models.swift */,
@@ -349,6 +352,7 @@
 				0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */,
 				543EFCA3684DA845C2A274D9 /* DevicePresenceObserver.swift in Sources */,
 				05285BD23BDD04888929B775 /* InboxView.swift in Sources */,
+				CF7CBD850AEC568258E54417 /* IOSDeviceModel.swift in Sources */,
 				1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */,
 				4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */,
 				E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */,

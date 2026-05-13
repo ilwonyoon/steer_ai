@@ -526,11 +526,18 @@ public final class SyncInbox: ObservableObject {
         #else
         apsEnvironment = "production"
         #endif
+        // iOS 16+ returns the generic "iPhone" for UIDevice.current.name
+        // unless the app holds the user-assigned-device-name
+        // entitlement (not granted to general apps). The marketing
+        // model name ("iPhone 14 Pro") is derivable from the utsname
+        // machine identifier — that's what the Mac wants for its
+        // presence label, since "iPhone" alone is too generic.
+        let modelName = IOSDeviceModel.marketingName()
         let snapshot = DeviceSnapshot(
             deviceId: Self.deviceId,
             platform: "ios",
-            displayName: UIDevice.current.name,
-            deviceClass: UIDevice.current.model,
+            displayName: modelName,
+            deviceClass: modelName,
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
             syncEnabled: true,
             lastSeenAt: Int64(Date().timeIntervalSince1970 * 1000),
