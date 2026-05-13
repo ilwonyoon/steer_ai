@@ -290,7 +290,8 @@ struct InboxView: View {
                     card: card,
                     reply: replyBinding(for: card.sessionId),
                     onSend: { text in send(text, to: card.sessionId) },
-                    replyFieldFocused: $replyFieldFocused
+                    replyFieldFocused: $replyFieldFocused,
+                    onBodyTap: { replyFieldFocused = false }
                 )
                 .id(card.id)
                 .offset(x: cardDragOffset)

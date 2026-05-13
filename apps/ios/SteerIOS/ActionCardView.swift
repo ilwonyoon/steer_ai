@@ -8,6 +8,11 @@ struct ActionCardView: View {
     @Binding var reply: String
     let onSend: (String) -> Void
     var replyFieldFocused: FocusState<Bool>.Binding? = nil
+    /// Called when the user taps the card body (header or transcript)
+    /// while the keyboard is up. The parent dismisses focus.
+    /// simultaneousGesture is used so a vertical drag inside the
+    /// transcript starts a scroll instead of firing a tap.
+    var onBodyTap: (() -> Void)? = nil
 
     private var headerTint: Color {
         SteerColors.hueTint(hue: card.accentHue, intensity: 0.65)
@@ -20,6 +25,10 @@ struct ActionCardView: View {
                 .padding(.top, 20)
                 .padding(.bottom, 14)
                 .background(headerTint)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onBodyTap?()
+                }
 
             Divider()
 
@@ -29,6 +38,15 @@ struct ActionCardView: View {
                 .padding(.top, 14)
                 .padding(.bottom, 16)
                 .layoutPriority(1)
+                // simultaneousGesture coexists with the inner
+                // ScrollView's drag: a drag still scrolls, but a
+                // clean (no-drag) tap fires and dismisses the
+                // keyboard. Plain onTapGesture would either be
+                // swallowed by ScrollView's gesture priority or
+                // would fire mid-scroll.
+                .simultaneousGesture(
+                    TapGesture().onEnded { onBodyTap?() }
+                )
 
             Divider()
 
