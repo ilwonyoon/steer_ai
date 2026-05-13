@@ -13,6 +13,7 @@
 		1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */; };
 		3CEF2917FE715ADC7EC23C2E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EAEF116995AC4FE59BB6135E /* Assets.xcassets */; };
 		4B186F5237BFAC367284F909 /* SyncInboxOptimisticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF71BB96DD5535A4FC8F06AA /* SyncInboxOptimisticTests.swift */; };
+		4BA436779E7D0E4E4D4F99F6 /* CardDisplayable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 888829F4938DF6D0E279FD0D /* CardDisplayable.swift */; };
 		4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */; };
 		543EFCA3684DA845C2A274D9 /* DevicePresenceObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */; };
 		60A907D6E745CD578C1248C0 /* SteerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 37598AC73146CD126426965A /* SteerCore */; };
@@ -27,6 +28,7 @@
 		C5C400592957A4DFFCB08592 /* SyncInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEB8E98E99C557BF4D09C0 /* SyncInbox.swift */; };
 		CA677DB22BB1B45BE3F4DDB3 /* ReplyDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36B391F7B1C395484A445D38 /* ReplyDock.swift */; };
 		CBEDB8BEE5EE4EF20C9582B7 /* SteerIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D152B83142801A64439B96 /* SteerIOSApp.swift */; };
+		CF7CBD840AEC568258E54416 /* OnboardingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CF868AD7D9804924DD0B4D9 /* OnboardingCard.swift */; };
 		D74DDAE84355EF3D7F6CC8DA /* TerminalExcerptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25011DE39A71D10907B4E14F /* TerminalExcerptView.swift */; };
 		D8E44FBB7220CE237D65388A /* DeleteAccountTokenClearTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55D0EC6D3D43C69749EB511E /* DeleteAccountTokenClearTests.swift */; };
 		E02279F2C4B075283907BF8B /* CardPayloadMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */; };
@@ -71,7 +73,9 @@
 		7B6FCF8B8A7ABA7A683B8A8C /* CardFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardFlowUITests.swift; sourceTree = "<group>"; };
 		80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePresenceObserver.swift; sourceTree = "<group>"; };
 		84D152B83142801A64439B96 /* SteerIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteerIOSApp.swift; sourceTree = "<group>"; };
+		888829F4938DF6D0E279FD0D /* CardDisplayable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDisplayable.swift; sourceTree = "<group>"; };
 		968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCardView.swift; sourceTree = "<group>"; };
+		9CF868AD7D9804924DD0B4D9 /* OnboardingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCard.swift; sourceTree = "<group>"; };
 		9E4E924D811C045FDF2306F2 /* WhatSyncsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatSyncsView.swift; sourceTree = "<group>"; };
 		9EB9227ACEEBD747F2EFDF47 /* SteerCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SteerCore; path = ../../packages/SteerCore; sourceTree = SOURCE_ROOT; };
 		A940AFD67B6E554CB8324B64 /* Steer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Steer.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -112,6 +116,7 @@
 			children = (
 				968EC00ACB84B179B2CDD8F3 /* ActionCardView.swift */,
 				EAEF116995AC4FE59BB6135E /* Assets.xcassets */,
+				888829F4938DF6D0E279FD0D /* CardDisplayable.swift */,
 				CA7B7629C783B50A83604328 /* CardPayloadMapping.swift */,
 				A9BEA42E1B0087FD4C3F1488 /* CardStackChrome.swift */,
 				0001A236298D657692E8531D /* DetailView.swift */,
@@ -121,6 +126,7 @@
 				14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */,
 				B34D068527D99456CD4DE0E7 /* MacConnectionChip.swift */,
 				057A2A9A71094A1E78867C5E /* Models.swift */,
+				9CF868AD7D9804924DD0B4D9 /* OnboardingCard.swift */,
 				36B391F7B1C395484A445D38 /* ReplyDock.swift */,
 				6775B843EBF5B82A78C73C8B /* SettingsView.swift */,
 				D5C900DB8295384C9D855881 /* Steer.entitlements */,
@@ -331,6 +337,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A60108A154CB8ABD87D0876D /* ActionCardView.swift in Sources */,
+				4BA436779E7D0E4E4D4F99F6 /* CardDisplayable.swift in Sources */,
 				E02279F2C4B075283907BF8B /* CardPayloadMapping.swift in Sources */,
 				99BAA46CD0A9C05FAE5E7028 /* CardStackChrome.swift in Sources */,
 				0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */,
@@ -339,6 +346,7 @@
 				1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */,
 				4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */,
 				E0B551D28EF9D635FB0F64D8 /* Models.swift in Sources */,
+				CF7CBD840AEC568258E54416 /* OnboardingCard.swift in Sources */,
 				CA677DB22BB1B45BE3F4DDB3 /* ReplyDock.swift in Sources */,
 				EB0A37D0B830BBD0125A3D0C /* SettingsView.swift in Sources */,
 				B2AB16691E7FECD9A988EB55 /* SteerColors.swift in Sources */,

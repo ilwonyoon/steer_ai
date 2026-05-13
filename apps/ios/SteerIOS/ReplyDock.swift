@@ -11,10 +11,18 @@ struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
     var tint: Color = SteerColors.inputFill
+    /// Override for the TextField placeholder. Real cards leave this
+    /// nil and get the default ("reply to this session"); onboarding
+    /// cards pass the suggested next word ("next" / "done") so the
+    /// user sees inline what to type to advance.
+    var placeholder: String? = nil
     /// External @FocusState owned by the parent. We bind the TextField
     /// directly to it so the parent can both observe changes and
     /// programmatically dismiss the keyboard.
     var externalFocus: FocusState<Bool>.Binding? = nil
+    /// When true, the send button shows even with empty text. Used
+    /// by the onboarding flow so "just hit send →" works literally.
+    var allowEmptySend: Bool = false
     @FocusState private var fallbackFocus: Bool
 
     var body: some View {
@@ -35,11 +43,16 @@ struct ReplyDock: View {
     private var trimmedReply: String {
         reply.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    private var canSend: Bool { !trimmedReply.isEmpty }
+    private var canSend: Bool {
+        if allowEmptySend { return true }
+        return !trimmedReply.isEmpty
+    }
 
     private func submit() {
+        // allowEmptySend lets the onboarding card advance on a
+        // blank send; real cards still require non-empty text.
         let text = trimmedReply
-        guard canSend else { return }
+        if !allowEmptySend && text.isEmpty { return }
         onSend(text)
         reply = ""
         // Drop the keyboard so the carousel reappears immediately
@@ -52,7 +65,7 @@ struct ReplyDock: View {
     private var textInput: some View {
         // iOS body weight: 17pt SF Text. Reply input is a chat field
         // — keep it SF (was monospaced and read like a terminal).
-        let base = TextField("Reply to this session", text: $reply, axis: .vertical)
+        let base = TextField(placeholder ?? "Reply to this session", text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 17))
             .foregroundStyle(SteerColors.ink)
