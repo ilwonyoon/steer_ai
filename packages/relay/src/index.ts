@@ -196,7 +196,7 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
   }
   const userId = c.get("user").userId;
   const store = new Store(c.env);
-  const { inserted, changed } = await store.upsertCard(userId, body);
+  const { inserted, changed, becameActive } = await store.upsertCard(userId, body);
 
   // v3 dual-write — emit a card.upsert event for every meaningful
   // change. PR 1 only writes; no consumer yet. We dedupe on
@@ -228,16 +228,31 @@ app.put("/v1/sync/cards/:cardId", async (c) => {
     await broadcast(c.env, userId, { type: "card.upsert", card: body });
   }
 
-  // Fan out APNS push only on FIRST insert of a given cardId. Mac
-  // re-publishes every active card every reload tick (~2s); without
-  // this guard each tick would re-pump a notification and the user's
-  // lock screen fills up in seconds. WebSocket broadcast above is
-  // separately the live-state path and stays per-tick.
+  // Fan out APNS push on every NEW user-actionable card. SteerAgent
+  // reuses `card-${sessionId}` as the card_id for every card on a
+  // session, so after the first card is resolved (user replied),
+  // every subsequent stop/blocker/etc on the same session is an
+  // UPDATE not an INSERT. Gating on `inserted` alone meant only the
+  // very first card of a session's lifetime ever pushed; everything
+  // after was silent.
+  //
+  // `becameActive` covers both:
+  //   1. first INSERT with state="active" (same as the old gate)
+  //   2. UPDATE that flips state from "done" (resolved) back to
+  //      "active" (next turn after the user's reply)
+  //
+  // Mac still re-publishes every active card on its 2s reload tick,
+  // but those republishes are state-stable (active → active) so
+  // they never trip becameActive. No notification spam.
   if (
-    inserted &&
-    body.state === "active" &&
+    becameActive &&
     ["blocker", "decision", "question", "waiting"].includes(body.category)
   ) {
+    // Suppress the noisy "[apns] fanout" log line distinguishing
+    // first-insert from re-activation: the user's relay tail
+    // already sees `card.upsert ... inserted=true|false` from the
+    // event log, no need to repeat here.
+    void inserted;
     // c.executionCtx throws under the in-process test runtime; in
     // production it returns a real ExecutionContext. Use a try/catch
     // so the fanout still fires either way (just without
