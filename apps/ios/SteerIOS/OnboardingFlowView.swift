@@ -51,11 +51,12 @@ struct OnboardingFlowView: View {
         ZStack(alignment: .top) {
             SteerColors.appBackground.ignoresSafeArea()
 
-            // Same layout as InboxView so the card height + the
-            // ride-along carousel sit exactly where they will once
-            // the user reaches the real inbox. The chrome is dead
-            // (no real Mac chip, no real settings); we just want
-            // the visual scaffolding to match.
+            // Same skeleton as InboxView.content: cardArea fills
+            // the screen but reserves carousel footprint at the
+            // bottom, and the carousel sits in its own layer pinned
+            // to the bottom edge. They overlap in z-order but the
+            // reserved bottom padding stops the main card body from
+            // ever rendering under the strip.
             ZStack(alignment: .bottom) {
                 cardArea
                 ActionCardCarousel(
@@ -65,20 +66,14 @@ struct OnboardingFlowView: View {
                 )
                 .padding(.bottom, 12)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 36)
-            .padding(.bottom, 12)
         }
         .onAppear { startStreaming(forIndex: 0) }
         .onDisappear { streamTask?.cancel() }
     }
 
-    /// Same vertical stack the real InboxView's `cardArea` uses:
-    /// fake HeaderBar (frozen state, disabled) + the in-progress
-    /// onboarding card. ActionCardView itself isn't `maxHeight:
-    /// .infinity`; the parent VStack flex makes the card take the
-    /// remaining height *after* the carousel reserves its strip
-    /// at the bottom.
+    /// Mirrors `InboxView.cardArea` — header at top, card filling
+    /// the rest, plus reserved bottom padding for the carousel so
+    /// the card body never sits underneath the strip.
     @ViewBuilder
     private var cardArea: some View {
         VStack(spacing: 12) {
@@ -97,12 +92,21 @@ struct OnboardingFlowView: View {
                 )
                 .environment(\.onboardingAllowEmptySend, promptVisible)
                 .id(raw.id)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .move(edge: .trailing)),
                     removal: .opacity.combined(with: .move(edge: .leading))
                 ))
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.top, 18)
+        // Same number InboxView uses: 100 (carousel) + 16 (gap
+        // above) + 12 (gap below). Reserves the carousel's vertical
+        // footprint inside the card area so the main card and the
+        // bottom strip never overlap visually, even though they're
+        // siblings in the parent ZStack.
+        .padding(.bottom, 128)
     }
 
     /// All three onboarding cards rendered into the carousel form,
