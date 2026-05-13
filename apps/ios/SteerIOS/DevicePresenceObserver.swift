@@ -16,6 +16,11 @@ import UIKit
 final class DevicePresenceObserver: ObservableObject {
     enum State: Equatable {
         case demo
+        /// Initial state until the first presence response lands.
+        /// Reads as "Connecting" so a user who just installed the
+        /// app doesn't see "No Mac" before we've even attempted
+        /// a poll — that was misleading.
+        case connecting
         case neverConnected
         case connected(label: String)
         case stale(label: String)
@@ -25,6 +30,7 @@ final class DevicePresenceObserver: ObservableObject {
         var label: String {
             switch self {
             case .demo: return "Sample"
+            case .connecting: return "Connecting"
             case .neverConnected: return "No Mac"
             case .connected(let l), .stale(let l), .offline(let l): return l
             case .error: return "Sync issue"
@@ -32,7 +38,7 @@ final class DevicePresenceObserver: ObservableObject {
         }
     }
 
-    @Published private(set) var state: State = .neverConnected
+    @Published private(set) var state: State = .connecting
     @Published private(set) var devices: [DeviceSnapshot] = []
 
     private weak var inbox: SyncInbox?

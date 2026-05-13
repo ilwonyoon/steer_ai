@@ -63,6 +63,7 @@ struct MacConnectionChip: View {
         if runningCount > 0 { return SteerColors.running }
         switch state {
         case .demo: return SteerColors.tertiaryInk
+        case .connecting: return SteerColors.waiting
         case .neverConnected: return SteerColors.tertiaryInk
         case .connected: return SteerColors.running
         case .stale: return SteerColors.waiting
@@ -191,7 +192,7 @@ struct MacSyncStatusView: View {
     private var needsRecoverySection: Bool {
         switch observer.state {
         case .neverConnected, .stale, .offline, .error: return true
-        case .connected, .demo: return false
+        case .connecting, .connected, .demo: return false
         }
     }
 
@@ -203,6 +204,7 @@ struct MacSyncStatusView: View {
     private var stateColor: Color {
         switch observer.state {
         case .demo: return SteerColors.tertiaryInk
+        case .connecting: return SteerColors.waiting
         case .neverConnected: return SteerColors.tertiaryInk
         case .connected: return SteerColors.running
         case .stale: return SteerColors.waiting
@@ -214,6 +216,7 @@ struct MacSyncStatusView: View {
     private var stateTitle: String {
         switch observer.state {
         case .demo: return "Sample workspace"
+        case .connecting: return "Reaching your Mac"
         case .neverConnected: return "No Mac yet"
         case .connected: return "Connected"
         case .stale: return "Idle"
@@ -224,7 +227,7 @@ struct MacSyncStatusView: View {
 
     private var recoveryTitle: String {
         switch observer.state {
-        case .neverConnected: return "Set Up Mac First"
+        case .connecting, .neverConnected: return "Set Up Mac First"
         case .stale, .offline: return "Bring Your Mac Back Online"
         case .error: return "Try Again"
         case .connected, .demo: return "What Now"
@@ -233,6 +236,11 @@ struct MacSyncStatusView: View {
 
     private var recoverySteps: [String] {
         switch observer.state {
+        case .connecting:
+            // needsRecoverySection returns false for .connecting,
+            // so this branch is never read — but switches must
+            // be exhaustive.
+            return []
         case .neverConnected:
             return [
                 "1. Open Steer for Mac.",

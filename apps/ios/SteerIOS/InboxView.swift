@@ -225,9 +225,19 @@ struct InboxView: View {
                 message: "Demo cards",
                 detail: "Tap Use Live Sync to connect your Mac."
             )
+        case .connecting:
+            // First poll still in flight after sign-in. Reads as
+            // "we're trying" — not "no Mac" yet. Same shape as
+            // .neverConnected; just softer copy.
+            EmptyStateView(
+                icon: "antenna.radiowaves.left.and.right",
+                message: "Reaching your Mac",
+                detail: "Looking for a paired Steer for Mac…"
+            )
         case .neverConnected:
-            // First-run, never paired. CTAs only here so the user has
-            // an obvious path forward before any real session exists.
+            // First poll returned and confirmed no paired Mac.
+            // CTAs surface here so the user has an obvious path
+            // forward.
             EmptyStateView(
                 icon: "terminal",
                 message: "No Steer sessions yet",

@@ -97,13 +97,13 @@ struct ReplyDock: View {
             Image(systemName: "arrow.up")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 31, height: 31)
-                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .frame(width: 32, height: 32)
+                .background(Color.accentColor, in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("reply-send")
-        .padding(.trailing, 6)
-        .padding(.bottom, 5)
+        .padding(.trailing, 8)
+        .padding(.bottom, 8)
         .transition(.scale.combined(with: .opacity))
         .accessibilityLabel("Send reply")
     }
