@@ -254,20 +254,31 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     agent.write({ type: "state", sessionId, runState: "running" });
     const merged = formatInstructionWithAttachments(message.text, message.attachments);
     const input = formatPtyInstructionInput(provider, merged);
-    // Write the instruction payload and the submit keystroke (\r) as a
-    // single PTY write so they land in the same kernel buffer flush.
-    // The previous code split them across a 50 ms setTimeout; that gap
-    // allowed the PTY's write queue to deliver the paste content while the
-    // provider was still streaming, which some providers (Codex, Claude)
-    // silently discard. A single atomic write eliminates that race window.
-    ptyProcess.write(input + "\r");
-    agent.write({
-      type: "ack",
-      sessionId,
-      instructionId: message.instructionId,
-      status: "injected"
-    });
-    done();
+    // Codex / Claude TUI input requires a small gap between the
+    // bracketed-paste END sequence and the submit keystroke. When
+    // both arrive in the same PTY write, the TUI sees `\r` as part
+    // of the paste payload (not a separate "press enter") and the
+    // line stays unsubmitted in the input box — exactly the
+    // observed dogfood regression where reply text appears in the
+    // terminal but never executes.
+    //
+    // 50 ms is the empirically derived gap that previously worked
+    // before the atomic-write experiment. We send the bracketed
+    // payload, wait one frame, then send the carriage return. The
+    // ack still fires after both writes so the agent records the
+    // instruction as injected only once the submit keystroke is on
+    // the wire.
+    ptyProcess.write(input);
+    setTimeout(() => {
+      ptyProcess.write("\r");
+      agent.write({
+        type: "ack",
+        sessionId,
+        instructionId: message.instructionId,
+        status: "injected"
+      });
+      done();
+    }, 50);
   }
 
   function schedulePtyIdleReport(currentProvider) {
