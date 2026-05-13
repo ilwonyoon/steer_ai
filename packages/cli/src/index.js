@@ -614,13 +614,6 @@ async function runCodexHeadlessAdapter(args) {
   }));
 }
 
-// How long steer send will retry when the agent returns a transient
-// "session not found" or "session is disconnected" error. The wrapper's
-// agent_link reconnects within ~250 ms on a normal socket bounce and up to
-// ~5 s after a SIGKILL restart; 2 s covers the common case without
-// blocking the caller for too long when the session genuinely ended.
-const SEND_RECONNECT_RETRY_MS = 2000;
-
 async function sendInstruction(args) {
   const { sessionId, text, attachments } = parseSendArgs(args);
 
@@ -628,6 +621,19 @@ async function sendInstruction(args) {
     throw new Error("usage: steer send <sessionId> <instruction> [--attach <path>]...");
   }
 
+  // How long we retry when the agent returns a transient
+  // "session not found" / "session is disconnected" error.
+  // The wrapper's agent_link reconnects within ~250 ms on a
+  // normal socket bounce and up to ~5 s after a SIGKILL restart;
+  // 2 s covers the common case without blocking the caller too
+  // long if the session genuinely ended.
+  //
+  // Inlined here instead of a module-level const because the
+  // CLI dispatcher at the top of this file awaits sendInstruction
+  // before module evaluation reaches any const declared *after*
+  // the dispatcher — running into a TDZ ReferenceError. Inline
+  // const is fine; the value is set on every send call.
+  const SEND_RECONNECT_RETRY_MS = 2000;
   const deadline = Date.now() + SEND_RECONNECT_RETRY_MS;
   let backoffMs = 150;
   let lastError;
