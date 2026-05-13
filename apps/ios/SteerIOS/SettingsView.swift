@@ -84,8 +84,8 @@ struct SettingsView: View {
             Link(destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues/new")!) {
                 LinkLabel(title: "Report an Issue", icon: "exclamationmark.bubble")
             }
-            Link(destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!) {
-                LinkLabel(title: "Browse Known Issues", icon: "list.bullet.rectangle")
+            Link(destination: URL(string: "https://steer.ai/support")!) {
+                LinkLabel(title: "Support", icon: "questionmark.circle")
             }
             Link(destination: URL(string: "https://steer.ai/privacy")!) {
                 LinkLabel(title: "Privacy Policy", icon: "hand.raised")

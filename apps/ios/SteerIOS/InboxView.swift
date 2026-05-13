@@ -752,7 +752,7 @@ private struct SignInPrompt: View {
                         Text("·").foregroundStyle(SteerColors.tertiaryInk)
                         Link("Terms", destination: URL(string: "https://steer.ai/terms")!)
                         Text("·").foregroundStyle(SteerColors.tertiaryInk)
-                        Link("Support", destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
+                        Link("Support", destination: URL(string: "https://steer.ai/support")!)
                     }
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(SteerColors.secondaryInk)
