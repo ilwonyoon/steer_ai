@@ -102,17 +102,17 @@ suite("agent SIGKILL leaves a stale socket; wrapper auto-recovers", async (t) =>
 
   // Re-register should preserve the prior run_state. We can't easily
   // assert "preserved waiting" because the wrapper drove it back to
-  // running on respawn, but we can confirm there's a fresh metric
-  // event and the session still maps to the old session id.
+  // running on respawn. metric_events was dropped in Phase 3; the
+  // surviving-session invariant now checks that the session row
+  // still exists (the wrapper's reconnect path re-registers the
+  // same id, so finding the row is sufficient evidence).
   const db = harness.db();
   try {
-    const events = db
-      .prepare(
-        `SELECT type, metadata_json FROM metric_events WHERE session_id = ? ORDER BY timestamp ASC`
-      )
-      .all(sessionId);
+    const row = db
+      .prepare("SELECT id FROM sessions WHERE id = ?")
+      .get(sessionId);
     db.close();
-    assert.ok(events.length > 0, "expected metric events on the surviving session");
+    assert.ok(row, "expected surviving session row after reconnect");
   } catch (e) {
     db.close();
     throw e;

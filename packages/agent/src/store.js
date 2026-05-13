@@ -96,10 +96,6 @@ export function createStore(filePath = databasePath) {
     selectResponseRevision: db.prepare(`
       SELECT last_response_revision FROM sessions WHERE id = ?
     `),
-    insertMetricEvent: db.prepare(`
-      INSERT INTO metric_events (id, session_id, room_id, type, timestamp, metadata_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `),
     selectSession: db.prepare(`
       SELECT id, provider, adapter_kind, command, cwd, run_state
       FROM sessions
@@ -174,17 +170,6 @@ export function createStore(filePath = databasePath) {
   const now = new Date().toISOString();
   statements.insertDefaultRoom.run(DEFAULT_ROOM_ID, "Unified Queue", "default", now, now);
 
-  const recordMetric = ({ sessionId, type, metadata = {} }) => {
-    statements.insertMetricEvent.run(
-      randomUUID(),
-      sessionId ?? null,
-      DEFAULT_ROOM_ID,
-      type,
-      new Date().toISOString(),
-      JSON.stringify(metadata)
-    );
-  };
-
   const refreshTimers = new Map();
   const REFRESH_DEBOUNCE_MS = 200;
 
@@ -239,21 +224,11 @@ export function createStore(filePath = databasePath) {
         session.updatedAt,
         session.currentRoomId ?? DEFAULT_ROOM_ID
       );
-      recordMetric({
-        sessionId: session.id,
-        type: "session_registered",
-        metadata: { provider: session.provider, adapterKind: session.adapterKind }
-      });
     },
     updateSessionState(sessionId, runState, exitCode = null) {
       const now = new Date().toISOString();
       const endedAt = runState === "ended" ? now : null;
       statements.updateSessionState.run(runState, exitCode, endedAt, now, sessionId);
-      recordMetric({
-        sessionId,
-        type: "state_changed",
-        metadata: { runState, exitCode }
-      });
       flushRefresh(sessionId);
     },
     appendTranscript({ sessionId, stream, chunk }) {
@@ -296,11 +271,6 @@ export function createStore(filePath = databasePath) {
       // signal iPhone uses to atomically transition the chip from
       // `.awaitingResponse` to `.awaitingUser`.
       statements.markSessionAwaitingResponse.run(now, sessionId);
-      recordMetric({
-        sessionId,
-        type: "instruction_sent",
-        metadata: { instructionId: id }
-      });
     },
     updateInstructionStatus(id, status, failureReason = null) {
       statements.updateInstructionStatus.run(
@@ -309,11 +279,6 @@ export function createStore(filePath = databasePath) {
         failureReason,
         id
       );
-      recordMetric({
-        sessionId: null,
-        type: "instruction_status_changed",
-        metadata: { instructionId: id, status, failureReason }
-      });
     },
     resolveActionCardsForSession(sessionId) {
       statements.resolveActionCardsForSession.run(new Date().toISOString(), sessionId);
@@ -329,17 +294,6 @@ export function createStore(filePath = databasePath) {
       return stmt.run(now).changes ?? 0;
     },
     recordHookEvent(event) {
-      recordMetric({
-        sessionId: event.sessionId,
-        type: "hook_event",
-        metadata: {
-          provider: event.provider,
-          eventName: event.eventName,
-          providerSessionId: event.providerSessionId,
-          transcriptPath: event.transcriptPath
-        }
-      });
-
       const assistantMessage = normalizeHookText(event.lastAssistantMessage);
       if (assistantMessage) {
         this.appendTranscript({
