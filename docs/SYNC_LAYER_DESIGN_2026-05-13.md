@@ -1,5 +1,9 @@
 # Steer iOS ↔ Mac Sync Layer Design — 2026-05-13
 
+Last updated: 2026-05-13 (post-simulation-#3 patch — see §11.8;
+sim-#2 patches remain in §11.5 through §11.7; sim-#1 patches
+remain in §11.1 through §11.4).
+
 Companion to `docs/SYNC_LAYER_AUDIT_2026-05-13.md`. The audit
 diagnoses *what* broke (six regressions in six hours, two of which
 literally reverted each other) and prescribes five rules. This
@@ -97,9 +101,21 @@ public enum SessionEntryStore {
     /// for stamping `eventSeq` consumers. Never read `Date()`
     /// inside the reducer body.
     ///
-    /// `eventSeq` is a process-monotonic counter. The caller
-    /// increments it once per `apply` call. Within the reducer
-    /// it is used only for tie-breaking — see §2.
+    /// `eventSeq` is monotonic *within a single client process* —
+    /// it is NOT serialized to the wire and is NOT shared across
+    /// devices. Each device (iPhone A, iPhone B, Mac) maintains
+    /// its own counter starting from 0 at process launch. The
+    /// caller increments it once per `apply` call. Within the
+    /// reducer it is used only for client-local tie-breaking
+    /// (snapshot vs in-flight user write — see §2.B).
+    ///
+    /// **Cross-device contention** (e.g. S-7 in the golden-set
+    /// simulation: two iPhones replying to the same card) is
+    /// resolved by `updatedAt` from the server and
+    /// `responseRevision` (also server-bumped, monotonic per
+    /// session per §8.3), NEVER by `eventSeq`. A future server-
+    /// side event id (§9.4 / §9.8) would obsolete the client-only
+    /// counter; until then `eventSeq` is strictly local.
     public static func apply(
         previous: [SessionEntry],
         event: Event,
@@ -229,11 +245,84 @@ Each of these MUST produce identical state when applied twice:
 |-------|------------------|
 | `.snapshot` | Pure function of `previous` and `cards`. The same `cards` set yields the same result. `snapshotStartedAtSeq` is the *only* parameter that changes between retries of the same logical GET — and it only matters when a write happens between snapshot start and snapshot land (§2.B), so re-applying the same `.snapshot` with the same `snapshotStartedAtSeq` is a no-op. |
 | `.upsert` | Two identical upserts: if `responseRevision` is unchanged, the second upsert refreshes `card.updatedAt`/content but leaves stage untouched (current behaviour, preserved). If `responseRevision` is greater than `instructedRevision`, the first upsert already promoted to `.awaitingUser`; the second finds the entry already in `.awaitingUser` and just refreshes content. |
-| `.resolved` | Drops the entry. Second resolve finds no matching entry; no-op. |
+| `.resolved` | Drops `.awaitingUser` and `.failed` entries. **Preserves `.awaitingResponse` entries** — see §1.4.1 below. Second resolve against an already-dropped entry: no-op. Second resolve against a preserved `.awaitingResponse` entry: no-op (entry stays put). |
 | `.userReplied` | The entry's `lastReplyEventSeq` is stamped to the new `eventSeq` on every call. A double-tap of Send (UI shouldn't allow but defensive) re-stamps and re-generates a fresh `instructionId`. We accept that retrying the same `instructionId` is the caller's problem (`SyncInbox.sendReply` generates a fresh UUID per call). |
 | `.replyFailed` | Reducer only flips stage when the current stage is `.awaitingResponse` and `lastInstructionId == instructionId`. A duplicate failed-ack against `.failed` is a no-op (current behaviour). |
 | `.replyCancelled` | Reducer only acts when stage is `.failed`. Duplicate cancel is a no-op. |
 | `.awaitingResponseTimeout` | Reducer only acts when the entry exists, stage is `.awaitingResponse`, and the stamp is older than 10 min before `now`. Late delivery (entry already transitioned out) is a no-op. |
+
+#### 1.4.1 Why `.resolved` does NOT drop `.awaitingResponse`
+
+This is the post-simulation correction to the original rule (which
+dropped unconditionally). The golden-set walk-through S-4 surfaced
+the failure mode: when the user replies and the wrapper's PTY write
+succeeds but the codex child dies mid-output, the agent's ack handler
+fires `resolveActionCardsForSession` (audit §1a L75-89: `case "ack"`
+calls resolve only on `injected`). That triggers a `card.resolved`
+broadcast on the WS. If the reducer drops the entry, **the §5.1
+timeout watcher has no entry left to time out** — its
+`for entry in sessions` loop iterates over a list that no longer
+contains the awaiting session. The user's reply silently vanishes:
+chip drops to 0, no "response timeout" banner ever appears, no retry
+path is offered.
+
+Preserving `.awaitingResponse` across `.resolved` (a) lets §5.1's
+10-min watcher do its job — at T+10min it fires
+`.awaitingResponseTimeout(sessionId)`, the reducer transitions to
+`.failed("response timeout — your reply may not have been
+delivered")`, and the user sees an actionable retry banner; and (b)
+gives the response upsert (if one ever arrives) a stage to promote
+from via §1.6 rule 1. The R-4 vs R-5 trade-off the audit calls out
+(unbounded stick vs flicker) is no longer a trade-off: the timeout
+provides the upper bound R-4 was trying to give us, without R-4's
+"stuck forever" failure mode.
+
+`.awaitingUser` and `.failed` entries are still dropped on `.resolved`
+exactly as R-5 required — those cases are the user-signed-out / Mac-
+killed flows where the card genuinely is gone and there's no in-flight
+reply to protect.
+
+Concretely, the reducer's pseudocode for `.resolved` is:
+
+```swift
+case .resolved(let cardId):
+    guard let idx = previous.firstIndex(where: { $0.card.cardId == cardId })
+    else { return previous }  // no matching entry — no-op
+    let entry = previous[idx]
+    switch entry.stage {
+    case .awaitingResponse:
+        // PRESERVE — the §5.1 timeout watcher is the only thing
+        // standing between the user and silent reply loss. Do not
+        // drop. The next `.upsert` with RR > instructedRevision
+        // promotes via §1.6 rule 1; if no upsert ever lands, the
+        // 10-min timeout decays to `.failed("response timeout")`
+        // per §5.3.
+        return previous
+    case .awaitingUser, .failed:
+        // DROP — no in-flight reply to protect (R-5 behaviour).
+        var next = previous
+        next.remove(at: idx)
+        return next
+    }
+```
+
+**Example trace (S-4 Case B revisited).**
+
+```
+T0       state = [entry-S(.awaitingResponse(T0), instructedRevision=1)]
+T0+~3s   agent injects instruction; codex starts; agent acks injected
+T0+~3s   agent calls resolveActionCardsForSession → SQLite row → done
+T0+~5s   Mac funnel publishes DELETE; relay broadcasts card.resolved
+T0+~5.2s iOS WS receives .resolved(cardId)
+         Reducer: stage is .awaitingResponse → PRESERVE
+         state unchanged: [entry-S(.awaitingResponse(T0), ...)]
+         chip still shows "1 running"
+T0+10m   §5.1 watcher fires .awaitingResponseTimeout(sessionId: S)
+         Reducer: stage is .awaitingResponse, stamp is 10m old
+         transition to .failed("response timeout — your reply may not
+         have been delivered")
+         pendingReplies projection surfaces failed banner with retry
+```
 
 ### 1.5 The `.snapshot` expansion
 
@@ -243,12 +332,59 @@ In English:
 2. For every entry in `previous`:
    - If the session is in `cards`: apply the upsert rules to merge
      in the new payload.
-   - Else: if `entry.lastReplyEventSeq > snapshotStartedAtSeq`, the
-     user replied AFTER the GET went out — the server's "no card
-     for this session" is stale; keep the entry. Otherwise drop.
+   - Else (session NOT in `cards`): the entry is preserved if
+     **either** of these holds; otherwise drop:
+     - **(a) In-flight write race (the pre-existing rule).**
+       `entry.lastReplyEventSeq > snapshotStartedAtSeq` — the user
+       replied AFTER the GET went out; the server's "no card for
+       this session" is stale.
+     - **(b) Awaiting-response inside its timeout window (new).**
+       `entry.stage == .awaitingResponse(stampedAt:)` AND
+       `stampedAt + 10min > now`. This is the symmetric counterpart
+       to §1.4.1's `.resolved` preservation: once an
+       `.awaitingResponse` entry has been preserved across
+       `.resolved`, a subsequent `.snapshot` (from
+       `scenePhase.active`, the §6.5 auto-GET after WS reconnect,
+       or any manual pull-to-refresh) must NOT prematurely strip
+       it. The relay's server-truth GET returns `cards = []` for a
+       session whose `.resolved` was already broadcast, and the
+       relay does not carry the now-stripped card — so without
+       this clause the entry would silently disappear inside the
+       10-min window. The §5.1 timeout watcher is the *only*
+       sanctioned path that decays an `.awaitingResponse` entry;
+       snapshot application must not pre-empt it. See §1.4.1 for
+       the `.resolved` half of this rule and §5.1 for the watcher
+       that owns the decay.
 3. For every card in `cards` whose session was NOT in `previous`:
    - Insert as `.awaitingUser`.
 4. Sort by `card.updatedAt`.
+
+Pseudocode for step 2 (the load-bearing branch):
+
+```swift
+// §1.5 step 2 — session NOT in cards
+let stillInTimeoutWindow: Bool = {
+    guard case .awaitingResponse(let stampedAt) = entry.stage
+    else { return false }
+    return now.timeIntervalSince(stampedAt) < 600
+}()
+let writeRaceProtected =
+    (entry.lastReplyEventSeq ?? 0) > snapshotStartedAtSeq
+
+if writeRaceProtected || stillInTimeoutWindow {
+    keep(entry)            // preserve — §1.4.1 + §5.1 own the decay
+} else {
+    drop(entry)            // safe to remove (signed-out / stale / timed-out)
+}
+```
+
+A preserved entry whose `stampedAt + 10min ≤ now` is dropped here
+exactly because the §5.1 watcher (or a previous tick of it) was
+supposed to have already transitioned it to `.failed("response
+timeout")`; if for any reason the watcher missed its window, the
+snapshot's drop is the backstop and the user has lost no signal
+they hadn't already lost (the watcher is the user-visible safety
+net, not the snapshot).
 
 ### 1.6 The `.awaitingResponse → .awaitingUser` promotion
 
@@ -790,7 +926,58 @@ private func startTimeoutWatcher() {
 
 @MainActor
 private func checkAwaitingResponseTimeouts() {
+    // S-14 gate: short-circuit while either (a) the cold-start
+    // bootstrap GET is in flight (loadPhase != .ready) OR (b) any
+    // warm-foreground reload triggered by `scenePhase.active` /
+    // §6.5 auto-GET / manual pull-to-refresh is in flight
+    // (reloadInFlightCount > 0). If we fire
+    // .awaitingResponseTimeout before `reload()` lands, a phone
+    // that unlocks exactly when its 10-min entry expires will
+    // surface a 1-frame .failed("response timeout") banner that
+    // gets overwritten ~200 ms later when the snapshot promotes
+    // the entry via §1.6 rule 1. The banner flicker looks like a
+    // UI glitch, not a useful safety net.
+    //
+    // The reloadInFlightCount half of the gate is what closes
+    // the warm-foreground case (sim 2 S-14 sub-case 14.a/14.b):
+    // on a process that survived in jetsam, loadPhase stays
+    // `.ready` throughout `scenePhase.active`, so loadPhase alone
+    // never engages. reloadInFlightCount is incremented at the
+    // entry of `reload()` and decremented via `defer` so both do
+    // and catch tails clear exactly one in-flight slot. A
+    // counter (not a Bool) is required because reload() calls
+    // can overlap — bootstrap reload + §6.5 auto-GET, or
+    // scenePhase.active + §6.5 on the same wake — and a Bool
+    // would let the second call's tail clear the flag while the
+    // first is still mid-HTTP, opening the gate prematurely
+    // (sim 3 S-17 / S-20 / S-21). The watcher defers until every
+    // in-flight GET settles; if any GET returns the response
+    // card, §1.6 rule 1 promotes the entry to `.awaitingUser`
+    // and the watcher finds nothing to fire on. If the GET
+    // returns `cards = []` (the §1.5 step 2 + §1.4.1 preserved
+    // case), the entry is still `.awaitingResponse` and the
+    // watcher fires cleanly on the *next* 30 s tick.
+    //
+    // Captive-portal escape hatch: if loadPhase has been != .ready
+    // for more than 5 minutes consecutively (the GET is failing
+    // forever — captive portal, persistent network down), the
+    // gate is bypassed. We prefer a possibly-spurious `.failed`
+    // banner over a permanently silent stuck entry: the user can
+    // retry the reply manually, but they cannot recover from a
+    // chip stuck at "1 running" forever with no actionable
+    // signal. `loadPhaseEnteredNotReadyAt` is stamped whenever
+    // loadPhase transitions away from `.ready`, cleared back to
+    // nil on the next `.ready` transition.
     let now = Date()
+    let escapeHatch: Bool = {
+        guard loadPhase != .ready,
+              let enteredAt = loadPhaseEnteredNotReadyAt
+        else { return false }
+        return now.timeIntervalSince(enteredAt) > 300
+    }()
+    if !escapeHatch {
+        guard loadPhase == .ready && reloadInFlightCount == 0 else { return }
+    }
     for entry in sessions {
         guard case .awaitingResponse(let stamp) = entry.stage else { continue }
         guard now.timeIntervalSince(stamp) > 600 else { continue }
@@ -823,6 +1010,71 @@ exactly that we kept guessing the right tradeoff (flicker forever
 vs flicker briefly) when the user-visible cost was high. A failed
 banner is the *correct* user-visible signal — "we don't know if
 your reply arrived; here's the retry button."
+
+**Wall-clock latency note (S-14 corollary).** The §5.1
+`loadPhase == .ready && reloadInFlightCount == 0` gate means a
+phone that unlocks at exactly the moment its 10-min entry
+expired will see the decay fire 1-2 s *after* `reload()`
+settles, not on the first watcher tick. That delay is
+acceptable: the response-timeout signal is a wall-clock
+guarantee ("you've been waiting 10 minutes"), not a real-time
+one ("the watcher fires at exactly T+10:00.000"). The watcher's
+30-second polling cadence already builds in ±30 s slop (§5.2);
+adding "wait for cold-start to settle" — or, in the
+warm-foreground case, "wait for the `scenePhase.active`-
+triggered reload to settle" — on top is in the same order of
+magnitude and never less-correct. If the GET returns the
+response card before the watcher fires, §1.6 rule 1 promotes
+the entry to `.awaitingUser` and the timeout is never needed;
+if it returns `cards = []`, §1.5 step 2's "awaiting-response
+inside its timeout window" clause preserves the entry and the
+watcher fires on the next 30 s tick. The `reloadInFlightCount`
+half of the gate is what makes the warm-foreground
+unlock-after-long-lock case look identical to the cold-launch
+case — both defer the watcher by up to one reload cycle
+(~1-2 s); both then run normally.
+
+**Re-entrant `reload()` calls (S-17 / S-20 / S-21 corollary).**
+`reload()` calls can overlap in practice: the bootstrap GET races
+the §6.5 auto-GET when the WS reconnects mid-bootstrap; the
+`scenePhase.active` reload races §6.5 when WiFi flaps during the
+same wake; a manual pull-to-refresh can race any of the above.
+Because every `reload()` is `@MainActor`-isolated only at
+synchronous boundaries — the HTTP `await` releases the actor —
+two reloads can be suspended on URLSession at the same time.
+A Bool flag would let whichever GET returns first clear the
+flag while the other is still mid-flight, opening the watcher's
+gate prematurely (sim 3 S-17 / S-20 / S-21). The counter
+representation (`reloadInFlightCount: Int`, incremented on entry,
+decremented via Swift `defer { reloadInFlightCount -= 1 }` so
+both do and catch tails balance the entry increment exactly
+once) composes correctly under any overlap pattern: the gate
+opens only when every in-flight GET has settled. The single-
+reload case is unaffected — counter goes 0 → 1 → 0 around the
+HTTP await, identical to the Bool semantics.
+
+**Captive-portal escape hatch (S-14 sub-corollary).** If the
+GET fails forever (captive portal, persistent network down, JSON
+parse error from an HTTP intercept), `loadPhase` stays at
+`.bootstrapping` indefinitely and the gate would otherwise short-
+circuit the watcher forever — the user's chip stays stuck at "1
+running" with no actionable banner. The §5.1 escape hatch breaks
+this: if `loadPhase != .ready` for more than 5 minutes
+consecutively, the watcher fires regardless of the gate. We
+prefer a possibly-spurious `.failed("response timeout")` banner
+over a permanently silent stuck entry — the user can retry the
+reply (the retry POST will queue while offline and flush on
+network recovery via the existing `pendingReplies` flow), but
+they cannot recover from a chip whose timeout safety net has
+been permanently disabled by a stuck bootstrap. The 5-minute
+threshold is well above the 10-minute response timeout's ±30 s
+slop and well above any healthy GET RTT (sub-second on LTE/5G),
+so a healthy network never trips it. If the GET later succeeds
+after the hatch has fired, `loadPhase` returns to `.ready`,
+`loadPhaseEnteredNotReadyAt` resets to nil, and subsequent
+ticks behave normally; a response card that lands post-hatch
+promotes the now-`.failed` entry to `.awaitingUser` via the
+existing §5.3 promotion path.
 
 ### 5.4 iOS-only or also Mac
 
@@ -974,6 +1226,63 @@ The suppression rule is therefore: **don't increment
 `reconnectAttempt` separately from `receiveLoop`'s existing
 mechanism.** The watchdog's job is to *unblock* `receiveLoop`, not
 to drive the reconnect itself. This composes cleanly.
+
+### 6.5 Auto-GET after WS reconnect
+
+This rule is a host-side responsibility, not a reducer change. It
+closes the S-8 gap surfaced by the golden-set simulation: a brief
+WiFi flap with the app still foregrounded causes `receiveLoop` to
+catch + exponential-backoff + `connectWebSocket` again, but no path
+fires `reload()` to backfill the broadcasts that landed at the relay
+during the down window. The 30 s `DevicePresenceObserver` poll
+eventually catches up by re-fetching the device list, but card data
+itself is not re-fetched — a `card.upsert` broadcast issued while
+the socket was dead is dropped by Cloudflare's DO (the relay's
+`upsertCard` fans out synchronously to *currently-connected* sockets;
+there is no delivery queue per device).
+
+**Rule.** After `reconnectAttempt > 0` and the first frame of the
+new socket arrives (the existing "reset attempt counter" branch in
+`receiveLoop`), the host calls `reload()` **exactly once** as a
+backfill. The reducer doesn't change — `reload()` just dispatches a
+`.snapshot` event through the existing PR-3 plumbing, and §2.B's
+`snapshotStartedAtSeq` rule already protects any in-flight user
+write that might race the backfill.
+
+Concretely, the call site lands in `SyncInbox.handleWSText` (or
+wherever `receiveLoop` resets `reconnectAttempt`). Sketch:
+
+```swift
+// Inside receiveLoop's first-frame-of-new-socket branch:
+if reconnectAttempt > 0 {
+    reconnectAttempt = 0
+    Task { @MainActor [weak self] in
+        await self?.reload()   // backfill any broadcasts missed
+                               // during the down window
+    }
+}
+self.lastFrameReceivedAt = Date()   // §6.2 watchdog stamp
+```
+
+The Mac side has the symmetric concern but a different fix surface:
+Mac's `SyncClient.receiveLoop` doesn't consume card state (the local
+SQLite is authoritative), so the auto-GET equivalent on Mac is a
+no-op. The rule is iOS-only.
+
+**Idempotency.** A backfill `reload()` against a state that already
+matches the server is a no-op via the reducer's `.snapshot`
+expansion (§1.5): each card in the snapshot either matches an
+existing entry (same RR → refresh content, no stage change per
+§1.4) or inserts a missing entry. No flicker, no spurious APNS.
+
+**One-shot per reconnect.** The `reconnectAttempt > 0` guard
+ensures the backfill fires only on actual reconnects, not on the
+initial connect (which `scenePhase.active` or sign-in already
+followed with `reload()`). The guard also prevents a backfill loop
+if the new socket itself dies before the first frame — the next
+successful connect carries the same `reconnectAttempt > 0`
+condition, so the next first-frame triggers exactly one new
+backfill.
 
 ---
 
@@ -1369,6 +1678,73 @@ Several UI sites depend on its shape (`MacSyncStatusView`,
 same compactMap signature). Locked by test:
 `test_pendingReplies_projection_unchangedAcrossReducerVersions`.
 
+### 8.9 `.resolved` event does not strip an in-flight `.awaitingResponse` entry
+
+Only `.awaitingUser` and `.failed` entries are dropped on
+`.resolved`. `.awaitingResponse` entries are preserved so the §5.1
+10-minute timeout watcher has an entry to fire against. Without
+this preservation, the S-4 Case B failure mode (wrapper ack=
+`injected` then codex dies mid-output) silently loses the user's
+reply — the reducer drops the entry on the `card.resolved`
+broadcast, the watcher iterates over an empty list, and the user
+sees chip=0 with no "response timeout" banner.
+
+**Snapshot application does not strip an `.awaitingResponse`
+entry while it is inside the §5.1 timeout window.** The
+`.resolved` preservation above is one half of the rule; §1.5
+step 2's "awaiting-response inside its timeout window" clause is
+the other half. After `.resolved` arrives, the agent's
+`resolveActionCardsForSession` strips the card from the relay's
+active list, so the next server-truth GET returns `cards = []`
+for that session. Without the §1.5 step 2 clause, the next
+snapshot (background→foreground inside the 10-min window, §6.5
+auto-GET after WS reconnect, or a manual pull-to-refresh) would
+silently drop the preserved entry — re-introducing the S-4 Case B
+silent-loss bug at a different layer. The §5.1 watcher is the
+**only** sanctioned path that decays an `.awaitingResponse`
+entry; no reducer code path may pre-empt it within its 10-min
+window.
+
+Re-entrant `reload()` calls are tracked by a counter; the §5.1
+timeout watcher requires `reloadInFlightCount == 0` (no GET in
+flight from any path). `reloadInFlightCount: Int` is incremented
+at the entry of every `reload()` and decremented via Swift
+`defer` so both do and catch tails balance the entry increment
+exactly once. The counter representation (not a Bool) is
+load-bearing because bootstrap reload, §6.5 auto-GET on WS
+reconnect, `scenePhase.active` reloads, and manual
+pull-to-refresh can overlap — a Bool would let whichever GET
+returns first clear the flag while the other is still mid-HTTP,
+opening the watcher's gate prematurely and re-introducing the
+1-frame `.failed` banner flicker the gate was added to prevent
+(sim 3 S-17 / S-20 / S-21).
+
+Test: `test_resolved_preservesAwaitingResponse` +
+`test_resolved_dropsAwaitingUserAndFailed` +
+`test_resolved_then_no_upsert_triggers_10min_timeout` +
+`test_snapshot_preservesAwaitingResponseForResolvedSession` +
+`test_snapshot_dropsAwaitingResponseAfterTimeoutWindowExpired` +
+`test_watcher_defersWhileTwoReloadsOverlap`.
+
+### 8.10 `eventSeq` is per-device, per-process — never on the wire
+
+`eventSeq` is a monotonic counter local to a single client process
+(one counter per iPhone, one per Mac). It is never serialized into
+any HTTP body or WS frame. Multi-device contention (e.g. S-7: two
+iPhones replying to the same card) is resolved exclusively by
+`updatedAt` and `responseRevision`, both server-stamped. The
+client-only `eventSeq` is used only for §2.B's
+`snapshotStartedAtSeq` vs `lastReplyEventSeq` comparison, which is
+a within-process race protection — never cross-device.
+
+A future server-side event id (per §9.4 / §9.8) would obsolete the
+client-only counter for snapshot ordering as well. Until then, any
+PR that pushes `eventSeq` through the relay or compares it across
+devices breaks §2.B's semantics and should be rejected.
+
+Test: `test_eventSeq_neverSerializedToWire` (grep-style assertion
+in CI: no `Codable` type carries an `eventSeq` field).
+
 ---
 
 ## §9. What this doc does NOT cover
@@ -1489,21 +1865,30 @@ Under the new design, this becomes one rule:
 Test: `test_snapshot_drops_or_promotes_or_keeps_per_revision_and_seq`
 exercises all three branches.
 
-### A.2 The R-4 → R-5 oscillation
+### A.2 The R-4 → R-5 oscillation (post-simulation revision — see §1.4.1)
 
 **R-4 (86f87a3):** `onCardResolved` held `.awaitingResponse` entries
 through the resolve → upsert gap, on theory of "next upsert is
 coming." **R-5 (79a2f24):** R-4 was unbounded; entries stuck
 forever when no upsert came. Reverted to drop on resolve.
 
-Under the new design:
-- `.resolved` drops the entry unconditionally (matches R-5).
-- `.awaitingResponseTimeout` after 10 min provides the upper bound
-  R-4 was trying to give us. The flicker between `.resolved` and
-  the next `.upsert` is unchanged (one frame); the unbounded stick
-  is fixed by the timeout *in the case where no upsert ever comes*.
+Under the new design (with the §1.4.1 simulation patch):
+- `.resolved` drops `.awaitingUser` and `.failed` entries (matches
+  the half of R-5 that protected the user-signed-out / Mac-killed
+  flow).
+- `.resolved` **preserves** `.awaitingResponse` entries (a bounded
+  return to R-4's posture). The bound is the §5.1 10-minute timeout,
+  which `.awaitingResponseTimeout` decays to `.failed("response
+  timeout")`. R-4's "stuck forever" failure mode is gone.
+- The S-4 Case B failure mode (wrapper ack=`injected` then codex
+  dies mid-output → `card.resolved` broadcast → entry dropped → no
+  watcher fires → silent reply loss) is closed: the entry now lives
+  long enough for the watcher to surface a user-actionable banner.
 
-Test: `test_resolved_dropsAwaitingResponse` + `test_timeout_decaysStaleAwaitingResponse`.
+Test: `test_resolved_preservesAwaitingResponse` +
+`test_resolved_dropsAwaitingUserAndFailed` +
+`test_resolved_then_no_upsert_triggers_10min_timeout` +
+`test_timeout_decaysStaleAwaitingResponse`.
 
 ### A.3 The R-6 → R-7a oscillation
 
@@ -1561,3 +1946,291 @@ Zero changes to relay, agent, CLI, or wrapper layers. The fix
 lives entirely in the two client apps and SteerCore. That's the
 correct scope — the audit's root cause was client-side state
 machine drift, not server-side semantics.
+
+---
+
+## §11. Post-simulation patches (2026-05-13)
+
+`docs/SYNC_LAYER_DESIGN_GOLDENSET_SIM_2026-05-13.md` walked 15
+scenarios through the design and found four gaps. Each is patched
+in this revision; the patches are minimal (≤ one rule each) and
+preserve §7's migration order and §10's executive summary.
+
+### §11.1 S-4 FAIL — `.resolved` no longer strips in-flight `.awaitingResponse`
+
+Patched in: §1.4 idempotency table, new §1.4.1 prose paragraph,
+new §8.9 invariant, §A.2 revised.
+
+> Before: `.resolved` drops the entry unconditionally; the §5.1
+> 10-minute watcher iterates over an empty list when the wrapper's
+> ack=`injected` path resolves the card before any response upsert
+> can land. User's reply silently vanishes (chip=0, no banner).
+>
+> After: `.resolved` preserves `.awaitingResponse` entries and
+> drops only `.awaitingUser` / `.failed`. The §5.1 watcher decays
+> the preserved entry to `.failed("response timeout")` at T+10min,
+> giving the user an actionable retry banner. R-5's
+> user-signed-out / Mac-killed protection survives via the
+> `.awaitingUser` / `.failed` drop branch.
+
+### §11.2 S-8 RISK — auto-GET on WS reconnect
+
+Patched in: new §6.5 (host-side rule, reducer unchanged).
+
+> Before: in-foreground WiFi flap reconnects the socket via
+> `receiveLoop` + backoff but never calls `reload()`. Any
+> `card.upsert` broadcast during the down window is lost until
+> the next `scenePhase.active` (foreground transition) or APNS-
+> driven event. 30 s `DevicePresenceObserver` poll only catches
+> the device list, not card data.
+>
+> After: when `reconnectAttempt > 0` and the first frame of the
+> new socket arrives, the host calls `reload()` exactly once as a
+> backfill. The reducer's `.snapshot` expansion is idempotent
+> (§1.5) so reapplying a state that already matches the server
+> is a no-op. Call site sketched in `SyncInbox.handleWSText`
+> after `reconnectAttempt = 0`.
+
+### §11.3 S-14 RISK — timeout watcher gated on `loadPhase == .ready`
+
+Patched in: §5.1 pseudocode now short-circuits, §5.3 wall-clock
+latency note.
+
+> Before: §5.1 polling Task wakes on `Task.sleep(30s)` and runs
+> regardless of bootstrap state. A phone unlocked at exactly
+> T+10:00 of a backgrounded reply can fire
+> `.awaitingResponseTimeout` 200 ms *before* the cold-start GET
+> returns the response card — surfacing a 1-frame `.failed`
+> banner that gets overwritten when the snapshot promotes via
+> §1.6 rule 1. UI flicker that looks like a glitch.
+>
+> After: `checkAwaitingResponseTimeouts()` short-circuits while
+> `loadPhase != .ready`. Cost: a phone that unlocks exactly when
+> its 10-min entry expires sees the decay 1-2 s late, deferred
+> until `reload()` settles. Acceptable because response-timeout
+> is a wall-clock guarantee, not a real-time one (the watcher's
+> 30 s cadence already builds in ±30 s slop).
+
+### §11.4 S-7 wording — `eventSeq` is per-device
+
+Patched in: §1.2 signature doc-comment, new §8.10 invariant.
+
+> Before: §1.2 says `eventSeq` is "process-monotonic" — ambiguous;
+> a future reader could try to serialize it through the relay as
+> a cross-device cursor and break §2.B's semantics. §9.4 / §9.8
+> imply per-device but require cross-referencing.
+>
+> After: §1.2 explicitly states `eventSeq` is monotonic *within a
+> single client process*, NOT serialized to the wire, NOT shared
+> across devices. Multi-device contention (S-7: two iPhones
+> replying) is resolved exclusively by `updatedAt` and
+> `responseRevision` from the server. §8.10 codifies this as a
+> testable invariant ("no `Codable` type carries an `eventSeq`
+> field").
+
+### §11.5 S-18 FAIL — `.snapshot` step 2 must preserve `.awaitingResponse` inside its timeout window
+
+Patched in: §1.5 step 2 (extended pseudocode + new (a)/(b) clause),
+§8.9 invariant (extended with the snapshot-application clause and
+two new tests).
+
+This is the headline fix from sim #2. §1.4.1 preserved
+`.awaitingResponse` entries across `.resolved`, but the next
+`.snapshot` event (from `scenePhase.active`, the §6.5 auto-GET
+after WS reconnect, or any manual pull-to-refresh) silently
+dropped the preserved entry — because the agent's
+`resolveActionCardsForSession` had already stripped the card from
+the relay, so the server-truth GET returned `cards = []` for that
+session. The reducer's §1.5 step 2 then ran the "session not in
+cards → drop" branch and the entry vanished before the §5.1
+10-minute watcher could fire on it. The user's reply silently
+disappeared: chip drops to 0, no "response timeout" banner, no
+retry. This recurred on every background→foreground inside the
+10-minute window, which is common.
+
+> Before: §1.5 step 2 only preserved entries whose
+> `lastReplyEventSeq > snapshotStartedAtSeq` (the §2.B in-flight
+> write race). An `.awaitingResponse` entry that had been
+> preserved across `.resolved` would be dropped by the next
+> snapshot because the server already considered the session
+> resolved. The §5.1 watcher then iterated over an empty list
+> and the user's reply silently disappeared.
+>
+> After: §1.5 step 2 preserves an entry if **either** the §2.B
+> write-race rule OR the new `.awaitingResponse`-inside-timeout-
+> window rule applies. Concretely: an entry whose
+> `stage == .awaitingResponse(stampedAt:)` AND
+> `stampedAt + 10min > now` is kept across the snapshot, even
+> when its session isn't in `cards`. The §5.1 watcher in §5.1 is
+> the *only* sanctioned path that decays an `.awaitingResponse`
+> entry; snapshot application must not pre-empt it. §8.9 is
+> extended to codify this as an invariant, with two new tests
+> (`test_snapshot_preservesAwaitingResponseForResolvedSession`
+> and `test_snapshot_dropsAwaitingResponseAfterTimeoutWindowExpired`)
+> locking the behaviour and its complement.
+
+The fix is symmetric with §1.4.1: just as `.resolved` drops only
+`.awaitingUser` / `.failed` (and preserves `.awaitingResponse`
+inside the window), `.snapshot` now drops only entries that are
+either signed-out-ish (`.awaitingUser` / `.failed` with no
+in-flight write) or genuinely past their timeout. R-5's
+user-signed-out / Mac-killed protection still survives: sign-out
+wipes via `setSessions([])`, not via `.snapshot`; entries past
+their 10-min window are also dropped here (the watcher should
+have already moved them to `.failed`, but if it missed its window
+the snapshot is the backstop).
+
+### §11.6 S-14 warm-foreground — gate the watcher on `reloadInFlightCount == 0` too
+
+Patched in: §5.1 pseudocode (extended gate + extended doc comment),
+§5.3 wall-clock latency prose (extended to cover the warm-foreground
+case).
+
+The §11.3 patch gated the watcher on `loadPhase == .ready`. That
+closes the cold-launch flicker case (loadPhase transits
+`.idle → .bootstrapping → .ready`, gate engaged during transit).
+But it does NOT close the warm-foreground case sim #2 walked: on
+a process that survived in iOS jetsam, `loadPhase` stays `.ready`
+throughout `scenePhase.active`'s `await reload()` flow. The
+§6.5 auto-GET hasn't returned yet, but the gate is already open
+— so the watcher can fire `.failed("response timeout")` 100-200
+ms before the GET delivers the response card, producing the same
+1-frame banner flicker the cold-launch gate was supposed to
+prevent.
+
+> Before: gate was `guard loadPhase == .ready else { return }`.
+> Closed cold-launch (loadPhase != .ready during bootstrap);
+> open during warm-foreground unlock (loadPhase stays .ready
+> throughout the `scenePhase.active`→`reload()` flow). Watcher
+> could fire mid-reload and produce a 1-frame `.failed` banner.
+>
+> After: gate is
+> `guard loadPhase == .ready && reloadInFlightCount == 0 else { return }`
+> (subject to the §11.7 captive-portal escape hatch).
+> `reloadInFlightCount` is an `Int` incremented at the entry of
+> `reload()` and decremented via Swift `defer` so both do and
+> catch tails balance the entry increment exactly once. A counter
+> (rather than a Bool) is required because reload() calls can
+> overlap (bootstrap + §6.5 auto-GET, scenePhase.active + §6.5
+> on the same wake, or manual pull-to-refresh racing any of the
+> above) — see §11.8. The watcher defers until every in-flight
+> GET settles in both cold-launch and warm-foreground cases.
+> §5.3's wall-clock latency prose is extended to note that
+> timeout decay can lag by up to one reload cycle (~1-2 s) on
+> warm foreground — acceptable because the response-timeout
+> signal is a wall-clock guarantee, not a real-time one, and the
+> watcher's 30-second polling cadence already builds in ±30 s
+> slop.
+
+If the GET returns the response card before the watcher fires,
+§1.6 rule 1 promotes the entry to `.awaitingUser` and the timeout
+is never needed; if it returns `cards = []`, the §11.5 preservation
+clause keeps the entry and the watcher fires on the next 30 s
+tick.
+
+### §11.7 S-14 corollary — captive-portal escape hatch
+
+Patched in: §5.1 pseudocode (new `escapeHatch` branch with
+`loadPhaseEnteredNotReadyAt` stamp), §5.3 prose (new
+"Captive-portal escape hatch" paragraph).
+
+The §11.6 gate combined with §11.3's loadPhase gate introduces a
+new failure mode at the long-tail end: if the GET fails forever
+(captive portal, persistent network down, JSON parse error from
+an HTTP intercept), `loadPhase` never reaches `.ready` and the
+`.awaitingResponse` watcher silently never fires. The entry sits
+forever even after the wall-clock 10-min timeout has long passed.
+The chip stays at "1 running" with no actionable banner, and the
+user has no recovery path other than to background+foreground
+the app once the captive portal clears.
+
+> Before: the gate was strict — `loadPhase == .ready &&
+> reloadInFlightCount == 0`. A GET that fails forever leaves the
+> gate permanently closed, the §5.1 watcher permanently dormant,
+> and the user's `.awaitingResponse` entry stuck with no
+> actionable banner.
+>
+> After: the gate is bypassed when `loadPhase != .ready` for
+> more than 5 minutes consecutively (tracked via a
+> `loadPhaseEnteredNotReadyAt` stamp set on every transition
+> away from `.ready`, cleared on the next `.ready` transition).
+> Rationale (§5.3 prose): we prefer a possibly-spurious
+> `.failed("response timeout")` over a permanently silent stuck
+> entry — the user can retry the reply (the retry POST queues
+> while offline and flushes on network recovery via the
+> existing `pendingReplies` flow), but they cannot recover from
+> a chip whose timeout safety net has been permanently disabled
+> by a stuck bootstrap. The 5-minute threshold is well above
+> the watcher's ±30 s slop and well above any healthy GET RTT,
+> so a healthy network never trips it.
+
+If the GET later succeeds after the escape hatch has fired,
+`loadPhase` returns to `.ready`, `loadPhaseEnteredNotReadyAt`
+resets to nil, and subsequent ticks behave normally; a response
+card that lands post-hatch promotes the now-`.failed` entry to
+`.awaitingUser` via the existing §5.3 `.failed → .awaitingUser`
+promotion path.
+
+### §11.8 S-20 RISK — `reloadInFlight` Bool → counter
+
+Patched in: §5.1 pseudocode + doc comment (`reloadInFlight` Bool
+replaced with `reloadInFlightCount` counter, gate test rewritten),
+§5.3 prose (new "Re-entrant `reload()` calls" paragraph), §8.9
+invariant (extended with the counter contract + new test
+`test_watcher_defersWhileTwoReloadsOverlap`), §11.6 prose
+(Before/After block updated to describe the counter rather than
+the Bool).
+
+Sim 3 S-17 / S-20 / S-21 surfaced that `reloadInFlight: Bool` is
+not re-entrant. `reload()` calls overlap in practice — bootstrap
+GET + §6.5 auto-GET when the WS first frame arrives mid-bootstrap;
+`scenePhase.active` reload + §6.5 when WiFi flaps during the same
+wake; manual pull-to-refresh racing any of the above. Because
+every `reload()` is `@MainActor`-isolated only at synchronous
+boundaries (the HTTP `await` releases the actor), two reloads can
+be suspended on URLSession concurrently. A Bool flag's tail
+clears the flag unconditionally — so whichever GET returns first
+opens the gate while the other is still mid-HTTP, allowing the
+§5.1 watcher to fire 100-200 ms before the in-flight snapshot
+lands. The same 1-frame `.failed` banner flicker §11.6 was
+designed to prevent.
+
+> Before:
+> ```swift
+> @MainActor
+> public func reload() async {
+>     reloadInFlight = true
+>     do { ... } catch { ... }
+>     reloadInFlight = false
+> }
+> // Gate:
+> guard loadPhase == .ready && !reloadInFlight else { return }
+> ```
+> Two overlapping reloads race the tail clears. The first reload
+> to return clears `reloadInFlight = false` while the second is
+> still mid-HTTP. The watcher's next tick sees the gate open and
+> can fire before the second snapshot lands.
+>
+> After:
+> ```swift
+> @MainActor
+> public func reload() async {
+>     reloadInFlightCount += 1
+>     defer { reloadInFlightCount -= 1 }
+>     do { ... } catch { ... }
+> }
+> // Gate:
+> guard loadPhase == .ready && reloadInFlightCount == 0 else { return }
+> ```
+> Each `reload()` increments on entry and decrements via `defer`
+> (so both do and catch tails balance the entry increment exactly
+> once). The gate opens only when every in-flight GET has settled.
+> The single-reload case is unaffected — counter goes 0 → 1 → 0
+> around the HTTP await, identical to the prior Bool semantics.
+
+The fix is one line of state + one line of `defer` + a `> 0`
+comparison; it closes the S-20 RISK and the S-17 / S-21
+sub-risks that share the same root cause. The §8.9 invariant
+codifies the counter as load-bearing so a future "simplify back
+to a Bool" PR is rejected at review.
+
