@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-13 (Mac iPhone presence dot, Settings polish, legal links, iOS onboarding + sign-in)
+Last updated: 2026-05-14 (G15 sync layer collapse + v0.2.0 Mac DMG release)
 
 ## Purpose
 
@@ -173,7 +173,7 @@ Goal: make reports actionable without becoming noisy.
 - [x] `steer stats` CLI for session/card/instruction summary + avg reply→inject latency.
 - [x] Surface a `waiting` "ready" card the moment a session is registered (run_state=running, no trusted output, no user reply). Card body uses a canned summary; PTY content never sources card body.
 - [x] Auto-resolve the active card when the user types directly in the wrapped terminal (wrapper sends `user_input` debounced; agent records a synthetic user transcript entry and resolves the card). Prevents double-replying via Steer + terminal.
-- [ ] Fix Codex PTY-only post-reply false negative: after a Steer reply hides a card, a later Codex TUI response can arrive only on `stream="pty"` with no `report/stdout/stderr`; classifier then keeps the card `answered/done` because no trusted output appears after the latest user instruction. Add a provider-native report path or a tightly scoped Codex PTY fallback so stopped Codex sessions resurface cards after follow-up answers without reintroducing terminal chrome/user echo noise.
+- [x] Fix Codex PTY-only post-reply false negative: after a Steer reply hides a card, a later Codex TUI response can arrive only on `stream="pty"` with no `report/stdout/stderr`; classifier then keeps the card `answered/done` because no trusted output appears after the latest user instruction. Add a provider-native report path or a tightly scoped Codex PTY fallback so stopped Codex sessions resurface cards after follow-up answers without reintroducing terminal chrome/user echo noise.
 - [ ] Run classifier against a broader real transcript sample set.
 - [ ] Track false positive and false negative notifications. *(dogfood-driven)*
 - [ ] Tune prompts for high precision on `requiresAction`. *(dogfood-driven)*
@@ -208,14 +208,14 @@ Goal: ship Steer to non-developer Mac users without joining the Mac App Store. T
 
 #### P0 — required to release at all
 
-- [ ] Apple Developer Program membership active; record Team ID in `docs/RELEASE.md`. *(scaffold landed; user must enroll)*
-- [ ] Generate a *Developer ID Application* signing certificate (not the MAS variant) and import into the keychain used by the release machine. *(blocked on enrollment)*
-- [ ] Generate an app-specific password for `notarytool` and store it in keychain via `xcrun notarytool store-credentials steer-notary`. *(blocked on enrollment)*
+- [x] Apple Developer Program membership active; record Team ID in `docs/RELEASE.md`. *(scaffold landed; user must enroll)*
+- [x] Generate a *Developer ID Application* signing certificate (not the MAS variant) and import into the keychain used by the release machine. *(blocked on enrollment)*
+- [x] Generate an app-specific password for `notarytool` and store it in keychain via `xcrun notarytool store-credentials steer-notary`. *(blocked on enrollment)*
 - [x] Author `apps/mac/Steer.entitlements` with the minimal hardened-runtime entitlements (`allow-jit`, `allow-unsigned-executable-memory`). Escalation path (`disable-library-validation`) is documented in `docs/RELEASE.md` for when something actually fails under hardened runtime.
 - [x] Extend `scripts/build-mac-app.sh` for hardened-runtime signing + entitlements + version-from-git-tag, and add `scripts/release-mac.sh` that wraps build, signs with the Developer ID identity, runs `xcrun notarytool submit --wait`, and `xcrun stapler staple`s the bundle.
 - [x] Build the `.dmg` (`create-dmg` with `hdiutil` fallback) inside `scripts/release-mac.sh`, sign + notarize + staple the dmg as well as the inner `.app`.
 - [x] Drive `CFBundleShortVersionString` and `CFBundleVersion` from `git describe --tags --abbrev=0` and `git rev-list --count HEAD` at build time so each release has a unique build number.
-- [ ] Verify spawn paths under hardened runtime: `node-pty` `spawn-helper`, `node packages/agent/src/agent.js`, `steer send`, `sqlite3`. Capture which entitlements are actually needed in `docs/RELEASE.md`. *(needs the first signed build to actually exercise.)*
+- [x] Verify spawn paths under hardened runtime: `node-pty` `spawn-helper`, `node packages/agent/src/agent.js`, `steer send`, `sqlite3`. Capture which entitlements are actually needed in `docs/RELEASE.md`. *(needs the first signed build to actually exercise.)*
 - [x] Provide a 1024×1024 master icon and an `iconutil`-driven `.icns` generator (`scripts/generate-app-icon.sh`). A placeholder master is committed; replace `apps/mac/Resources/AppIcon-master.png` with final art before any release.
 
 #### P0 — first-run UX without which the product cannot run
@@ -223,20 +223,20 @@ Goal: ship Steer to non-developer Mac users without joining the Mac App Store. T
 - [x] First-run check: detect whether `steer` CLI is on PATH. If not, offer to install a symlink to `~/.local/bin/steer`. (System-path symlink with admin elevation deferred — userland path is the safe default.)
 - [x] First-run check: detect whether the Claude Stop/Notification hooks are installed; if not, offer to run `steer install-claude-hooks`. Implemented as a status check (parses `~/.claude/settings.local.json` for a steer hook command) plus a button that runs `steer install-claude-hooks` directly.
 - [x] First-run check: prompt the macOS Notification authorization (`UNUserNotificationCenter.requestAuthorization`).
-- [ ] First-run check: if the bundled launch path needs Documents folder access, trigger the TCC dialog explicitly (already partially done — verify it survives notarization).
+- [x] First-run check: if the bundled launch path needs Documents folder access, trigger the TCC dialog explicitly (already partially done — verify it survives notarization).
 - [ ] Implement `docs/CROSS_DEVICE_ONBOARDING_PLAN.md` Mac-first checklist: CLI install, provider verification, notifications, Apple sign-in, iPhone Sync opt-in, first `steer codex` / `steer claude` session, and iPhone install handoff.
 - [ ] Mac Settings exposes signed-in Apple state, iPhone Sync toggle, What Syncs review, editable Mac device label, and "keep Steer for Mac running" guidance.
-- [ ] GitHub Release notes explain the Mac-first setup order and include iPhone setup once App Store/TestFlight URL exists.
+- [x] GitHub Release notes explain the Mac-first setup order and include iPhone setup once App Store/TestFlight URL exists.
 
 #### P1 — needed for sustainable distribution
 
 - [ ] Integrate Sparkle (Swift Package): generate EdDSA key pair, ship the public key in the bundle, keep the private key only on the release machine.
-- [ ] Host `appcast.xml` and the `.dmg` artifacts on GitHub Releases. The release script uploads both and runs `generate_appcast` to produce a signed entry.
+- [x] Host `appcast.xml` and the `.dmg` artifacts on GitHub Releases. The release script uploads both and runs `generate_appcast` to produce a signed entry.
 - [ ] Wire a "Check for Updates…" menu item into the existing status menu and trigger Sparkle's update check on launch (silent if no update).
 - [ ] Crash + telemetry: opt-in MetricKit collector that writes to `~/.steer/diagnostics/`. Defer Sentry until we have a real install base.
 - [ ] About window: surface app version, agent version, link to `~/.steer/` log folder ("Reveal in Finder"), and a "Copy diagnostics" button that bundles the last N session logs.
 - [x] Draft Privacy Policy, Terms, App Store privacy labels, App Review notes, and legal launch checklist in `docs/legal/`.
-- [ ] Privacy + Terms static pages hosted at a stable URL (steer.ai or a GitHub Pages fallback). Sparkle's network call alone is enough that we should publish a one-page privacy statement.
+- [x] Privacy + Terms static pages hosted at a stable URL (steer.ai or a GitHub Pages fallback). Sparkle's network call alone is enough that we should publish a one-page privacy statement.
 - [x] Relay account deletion API for App Store account-deletion requirements (`DELETE /v1/me`) with route coverage.
 - [x] iOS account/settings UI exposes Delete Account, Sign Out, Privacy Policy, and Terms.
 
@@ -273,13 +273,13 @@ The likely App Review objections are:
 
 #### P0 — must finish before App Store submission
 
-- [ ] Implement `docs/IOS_PRE_CONNECTION_ONBOARDING.md` as the source of truth for signed-out, demo, signed-in-empty, and Mac-offline states.
+- [x] Implement `docs/IOS_PRE_CONNECTION_ONBOARDING.md` as the source of truth for signed-out, demo, signed-in-empty, and Mac-offline states.
 - [ ] Treat the `App Review Pass Strategy` section in `docs/IOS_PRE_CONNECTION_ONBOARDING.md` as a submission gate: reviewer can complete the demo flow without Mac, privacy/legal links are reachable before sign-in, account deletion is reachable after sign-in, and Mac-first setup is explained without blocking review.
-- [ ] Build **Demo Mode** available from the signed-out screen and from the empty signed-in state. It must show the full native flow: action card stack, detail, terminal excerpt, suggested replies, reply composer, and simulated queued / delivered / failed status.
-- [ ] Replace any signed-out dead end with a useful first-run surface: Sign in with Apple, Try Demo, Privacy Policy, Terms, Support, and a short explanation that live delivery requires the user's own Mac.
-- [ ] Use Apple's native `SignInWithAppleButton` styling instead of a custom black capsule button.
-- [ ] Publish live public URLs for `https://steer.ai/privacy`, `https://steer.ai/terms`, and `https://steer.ai/support`; remove all `TODO` placeholders from legal docs before publishing.
-- [ ] Ensure Privacy Policy and Terms are reachable without signing in and from Account/Settings after signing in.
+- [x] Build **Demo Mode** available from the signed-out screen and from the empty signed-in state. It must show the full native flow: action card stack, detail, terminal excerpt, suggested replies, reply composer, and simulated queued / delivered / failed status.
+- [x] Replace any signed-out dead end with a useful first-run surface: Sign in with Apple, Try Demo, Privacy Policy, Terms, Support, and a short explanation that live delivery requires the user's own Mac.
+- [x] Use Apple's native `SignInWithAppleButton` styling instead of a custom black capsule button.
+- [x] Publish live public URLs for `https://steer.ai/privacy`, `https://steer.ai/terms`, and `https://steer.ai/support`; remove all `TODO` placeholders from legal docs before publishing.
+- [x] Ensure Privacy Policy and Terms are reachable without signing in and from Account/Settings after signing in.
 - [ ] Complete Delete Account for Sign in with Apple: reauthenticate as needed, revoke Apple tokens using Apple's revocation flow, call relay `DELETE /v1/me`, clear Keychain token, and return to signed-out state.
 - [ ] Add Mac-side **Enable iPhone Sync** consent screen listing exactly what leaves the Mac: card title, summary, short terminal excerpt, suggested replies, project/provider/branch labels, iPhone reply text, and delivery status.
 - [ ] Add a setting or launch-time choice for terminal excerpt sync. Default should be conservative: either off until explicitly enabled, or on only after the sync consent screen clearly explains the risk.
@@ -605,6 +605,33 @@ Next:
 Risks:
 
 - `fix/notification-icons` branch has a commit (`123051c`) whose message advertises 4-area changes but whose diff is only 6 lines in `build-mac-app.sh`. The actual @2x/@3x assets and `ActionNotificationService` attachment changes never made it into the commit. Restoring them safely requires user-side visual checks on the dogfood build.
+
+### 2026-05-14: G15 Sync-Layer Collapse + v0.2.0 Mac Release + ASO Repositioning
+
+Completed (PR #41 merged to main `f8d9d35`; v0.2.0 DMG live on GitHub Releases):
+
+- **G15 PTY-flood durability (`89ae5b5`, `2205e8f`)** — `sessions.last_user_*` / `last_trusted_*` snapshot columns (migration 0008) so the per-session 100-row `transcript_entries` cap can't evict the classifier's input under codex idle repaint. New `scripts/stress-pty-flood.sh` exercises ~500 chunks against a live wrapper in an isolated `STEER_HOME` every regression run.
+- **G15.chip + G15.applyBootstrap (`15ee546`, `7faf1e4`)** — Mac connection chip no longer gates "N running" on `state == .connected`, and the iPhone bootstrap promote only fires on a strictly-newer `responseRevision`. Fixed both halves of "chip flashes for a second then disappears."
+- **G15 relay responseRevision (`1f1055c`)** — relay's `CardPayload` type and D1 schema (migration 0007) finally carry the monotonic revision the Mac wrapper has been publishing the whole time; it was being stripped at the relay boundary. Worker version `d24e65f4` deployed to production.
+- **G15.A → G15.B sync-layer collapse (`02da9c4`, `d7cd56b`)** — dropped the `SessionEntry.stage` state machine on iPhone entirely. Cards + pendingReplies are the published source of truth; `activeSessionIds = pendingReplies − cards`. Removed `SessionEntryStore.swift` and five race-rule test files (1,660 lines net). SteerCore drops from 73 to 29 tests because most of those tests pinned a state machine that no longer exists.
+- **Mac chip mirrors iPhone (`ab0bf33`)** — Mac-side `InstructedSessionDecay` chip count now also subtracts visible cards, matching the iPhone collapse. Fixes the "1 running" pill staying on while the answering card is already on screen.
+- **Notification title = project name (`26f244e`)** — APNS payload + Mac local-notification title both lead with `Documents/<repo>` (`card.payload.project`) instead of the classifier headline. Users now see which worktree paged them at a glance.
+- **G16 interactive-modal sniff attempted + reverted (`c8fa789` → `6c2dbdf`)** — investigated whether AskUserQuestion / permission-prompt modals could surface as blocker cards by sniffing the PTY footer. Concluded the Claude TUI never emits the footer onto the wrapper PTY (only spinner repaint flows through), so detection is impossible without a TUI-internal hook. Reverted; documented in marketing pack Rejection Risk Controls.
+- **Empty-state copy + glyph split (`85ccef3`, `19bb22e`, `bcff85a`)** — `.neverConnected` and `.connected` empty states are now visually different (`link.badge.plus` gray vs. `checkmark.circle.fill` green). Detail line drops the forced newline and switches to SF body when the copy is plain English rather than a shell snippet, so wrapping looks natural on iPhone.
+- **Marketing pack reposition for vibe-coder target (`bcff85a`)** — App Store metadata, screenshot set (6 → 5 shots), and review-notes rewritten around the role split: "Your AI codes. You answer." Description adds an explicit "What this app does NOT do" section so reviewers reading from a CC Pocket / Happy / mobile-IDE mental model find the framing twice. iOS subtitle moves from `Never let AI sit idle` to `Your AI codes. You answer.`.
+- **Mac v0.2.0 release** — GitHub Actions release workflow tagged `v0.2.0` produced `Steer-0.2.0.dmg` (4.99 MB, run `25868504518`). DMG is signed + notarized + stapled + uploaded with Sparkle EdDSA signature.
+- **iOS App Store IPA** — `scripts/build-ios-appstore.sh` produces `.build/ios-appstore/export/Steer.ipa` (1.4 MB). Ready for Xcode Organizer upload to App Store Connect.
+
+Learned:
+
+- Trying to detect TUI modals through the wrapper PTY is a dead end. Claude renders the footer + box body directly to the terminal display without flushing it onto the PTY byte stream the wrapper sees; only the spinner animation transits. Any "show a Mac-required card on iPhone" feature for modals needs either (a) a TUI-internal hook (we don't control that) or (b) a heuristic on session idleness, which is too false-positive-prone to ship. We chose to ship without the feature.
+- The whole G15 series ran for ~24 hours and produced four sequential regressions; the root cause every time was the same — chip count and carousel state were derived from a shared mutable state machine and slipped against each other under different race shapes. Collapsing the chip to `pendingReplies − cards` removed the surface area entirely.
+
+Next:
+
+- App Store Connect submission flow (user-driven): upload `.ipa` via Xcode Organizer, attach 5 screenshots, paste metadata from `docs/APP_STORE_SUBMISSION_MARKETING_PACK.md`, submit for review.
+- iPhone background card-resolve race: when WS is disconnected and the user resolves a card from the Mac, the iPhone may briefly show a stale card until the next scenePhase.active reload reissues the bootstrap GET. Followup PR.
+- Relay event-log clients: the v3 `events` table is dual-write only; both clients still read legacy card/instruction routes. Switching them over is a separate hardening pass, not launch-critical.
 
 ## Open Questions
 
