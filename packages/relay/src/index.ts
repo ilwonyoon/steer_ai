@@ -684,17 +684,41 @@ app.get("/v1/stream", async (c) => {
 });
 
 async function broadcast(env: Env, userId: string, message: WSMessage) {
+  // Step-1 diagnostic: log recipients count so we can compare
+  // WS reach vs APNS reach over a week of dogfood. Tag each line
+  // with the card id (when applicable) so we can join it against
+  // Mac publish logs + iPhone reload logs. wrangler tail picks
+  // these up live.
+  const correlate =
+    message.type === "card.upsert" ? `card=${message.card.cardId}` :
+    message.type === "card.resolved" ? `card=${message.cardId}` :
+    `type=${message.type}`;
   try {
     const id = env.USER_HUB.idFromName(userId);
     const stub = env.USER_HUB.get(id);
-    await stub.fetch("https://internal/broadcast", {
+    const resp = await stub.fetch("https://internal/broadcast", {
       method: "POST",
       body: JSON.stringify(message),
       headers: { "Content-Type": "application/json" },
     });
-  } catch {
+    let recipients = -1;
+    try {
+      const body = (await resp.clone().json()) as { recipients?: number };
+      recipients = typeof body.recipients === "number" ? body.recipients : -1;
+    } catch {
+      // body parse failed — leave recipients=-1 to signal "unknown"
+    }
+    console.log(
+      `[broadcast] user=${userId.slice(0, 8)} ${correlate} recipients=${recipients}`
+    );
+  } catch (error) {
     // Broadcast failure is non-fatal; the persisted row is the
     // source of truth and clients reconcile on reconnect.
+    console.log(
+      `[broadcast] user=${userId.slice(0, 8)} ${correlate} error=${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 }
 
