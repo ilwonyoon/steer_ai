@@ -150,6 +150,7 @@
 
 - [x] 🤖 `apps/ios/ExportOptions-AppStore.plist` 작성 (method=app-store-connect, automatic signing)
 - [x] 🤖 `scripts/release-ios.sh` 작성 — archive + export + 다음 단계 안내까지 한 명령에 묶음
+- [x] 🤖 `scripts/build-ios-appstore.sh` 추가 (cowork) — `xcpretty` fallback + cleaner output, **권장**. 결과: `.build/ios-appstore/export/Steer.ipa`
 - [x] 🤖 archive 단계 통과 (`xcodebuild archive` ARCHIVE SUCCEEDED)
 - [x] 🤖 export 단계 통과 (`xcodebuild -exportArchive -allowProvisioningUpdates` EXPORT SUCCEEDED)
 - [x] 🤖 Cloud-managed App Store signing 확인 — certificate `Cloud Managed Apple Distribution`, profile `iOS Team Store Provisioning Profile: ai.steer.ios`, APNS `production`
