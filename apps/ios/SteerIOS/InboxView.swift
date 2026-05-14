@@ -267,22 +267,26 @@ struct InboxView: View {
         case .neverConnected:
             // First poll returned and confirmed no paired Mac.
             // CTAs surface here so the user has an obvious path
-            // forward.
+            // forward. The link.badge.plus glyph reads as
+            // "connect something", not "open a terminal" — Steer
+            // doesn't run agents on the phone.
             EmptyStateView(
-                icon: "terminal",
-                message: "No Steer sessions yet",
-                detail: "In a terminal:\n  cd ~/your/project\n  steer codex   # or steer claude",
+                icon: "link.badge.plus",
+                message: "Connect your Mac",
+                detail: "Sign in to see agent runs that need your attention.",
                 primaryCTA: ("Set Up Mac", { showsMacSyncStatus = true }),
                 secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
             )
         case .connected:
-            // Mac is reachable. Mirror Mac's "No waiting actions"
-            // exactly — same icon, same copy. No CTAs (the user is
-            // already wired up and just needs a session to pause).
+            // Mac is reachable. The distinction from .neverConnected
+            // matters: no cards here means *every reply is handled*
+            // and the agents are still running in the background. A
+            // green checkmark + "All clear" frames the empty inbox
+            // as completion, not as "nothing's hooked up".
             EmptyStateView(
-                icon: "terminal",
-                message: "No waiting actions",
-                detail: "Running sessions appear here when they stop."
+                icon: "checkmark.circle.fill",
+                message: "All clear",
+                detail: "Agents are still running."
             )
         case .stale, .offline:
             // No CTA — there's nothing the user can do from the
@@ -642,12 +646,22 @@ private struct EmptyStateView: View {
     var primaryCTA: (label: String, action: () -> Void)? = nil
     var secondaryCTA: (label: String, action: () -> Void)? = nil
 
+    /// "All clear" leans on the running color so the empty state
+    /// reads as completion (every reply handled, agents still going)
+    /// rather than the muted "nothing's hooked up" of the other
+    /// states. Every other glyph stays neutral.
+    private var iconColor: Color {
+        icon == "checkmark.circle.fill"
+            ? SteerColors.running
+            : SteerColors.tertiaryInk
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             Spacer()
             Image(systemName: icon)
                 .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(SteerColors.tertiaryInk)
+                .foregroundStyle(iconColor)
             Text(message)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(SteerColors.secondaryInk)

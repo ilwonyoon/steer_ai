@@ -196,7 +196,11 @@ struct SteerRootView: View {
             .rotationEffect(.degrees(cardDragOffset / 34))
             .gesture(cardSwipeGesture)
         } else {
-            EmptyStateView(message: emptyStateMessage, detail: emptyStateDetail)
+            EmptyStateView(
+                icon: emptyStateIcon,
+                message: emptyStateMessage,
+                detail: emptyStateDetail
+            )
         }
     }
 
@@ -205,16 +209,30 @@ struct SteerRootView: View {
             return lastError
         }
         if !liveChips.isEmpty {
-            return "No waiting actions"
+            return "All clear"
         }
         return "No Steer sessions yet"
     }
 
     private var emptyStateDetail: String {
         if !liveChips.isEmpty {
-            return "Running sessions appear here when they stop."
+            return "Agents are still running."
         }
         return "In a terminal:\n  cd ~/your/project\n  steer codex   # or steer claude"
+    }
+
+    /// Empty-state glyph picks the symbol whose meaning maps directly
+    /// to *why* the inbox is empty. Two genuinely different states:
+    ///   - `liveChips` non-empty → user is connected and has just
+    ///     answered everything → green check, "All clear".
+    ///   - `liveChips` empty → no agents have ever paired with this
+    ///     Mac → terminal glyph, the literal `steer codex` setup hint.
+    /// Avoids the prior single-glyph ("terminal") look where both
+    /// cases shared the same screen and looked like a setup error.
+    private var emptyStateIcon: String {
+        if lastError != nil { return "exclamationmark.triangle" }
+        if !liveChips.isEmpty { return "checkmark.circle.fill" }
+        return "terminal"
     }
 
     private func replyBinding(for sessionId: String) -> Binding<String> {
@@ -922,14 +940,24 @@ private struct CompactActionCardView: View {
 }
 
 private struct EmptyStateView: View {
+    let icon: String
     let message: String
     let detail: String
 
+    /// The "all clear" check is the only state we want to lean green
+    /// on — it reads as completion, not the muted "nothing here yet"
+    /// of the other states.
+    private var iconColor: Color {
+        icon == "checkmark.circle.fill"
+            ? SteerColors.running
+            : SteerColors.tertiaryInk
+    }
+
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "terminal")
+            Image(systemName: icon)
                 .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(SteerColors.tertiaryInk)
+                .foregroundStyle(iconColor)
             Text(message)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(SteerColors.secondaryInk)
