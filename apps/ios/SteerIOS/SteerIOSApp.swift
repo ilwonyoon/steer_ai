@@ -90,18 +90,34 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency U
     /// Foreground delivery: still show the banner + play the sound,
     /// don't silently drop it. Without this iOS suppresses notifications
     /// while the app is active.
+    ///
+    /// APNS = relay-trusted "new card exists" signal. WebSocket delivery
+    /// is best-effort (Cloudflare DO can silently half-close a socket
+    /// without the iPhone noticing for up to 60 s, and broadcasts to a
+    /// dead socket vanish). When the OS hands us a push for a card the
+    /// user can't see yet, fetch the snapshot immediately so the card
+    /// shows up regardless of WS health.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound, .list])
+        Task { @MainActor in
+            await SyncInbox.shared.reload()
+        }
     }
 
     /// Tap on a notification (lock screen, banner, or Notification
     /// Center). The relay-side fanout includes cardId/sessionId in the
     /// payload; we hand it to SyncInbox so InboxView can scroll to
     /// that card.
+    ///
+    /// Same APNS-trust rationale as willPresent: trigger a GET so the
+    /// matching card is already in cards[] by the time the inbox
+    /// renders. Without this, taps from the lock screen would land on
+    /// an inbox whose only path to the new card is the WS upsert that
+    /// has already been dropped.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
@@ -112,6 +128,7 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency U
         let sessionId = info["sessionId"] as? String
         Task { @MainActor in
             SyncInbox.shared.requestFocus(cardId: cardId, sessionId: sessionId)
+            await SyncInbox.shared.reload()
             completionHandler()
         }
     }
