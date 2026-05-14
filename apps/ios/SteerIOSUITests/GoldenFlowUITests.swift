@@ -43,7 +43,7 @@ final class GoldenFlowUITests: XCTestCase {
         reply.typeText("hello demo")
         app.buttons["reply-send"].tap()
         let cleared = expectation(
-            for: NSPredicate(format: "value == 'reply to this session'"),
+            for: NSPredicate(format: "value == 'Reply to this session'"),
             evaluatedWith: reply, handler: nil
         )
         wait(for: [cleared], timeout: 3)
@@ -90,7 +90,7 @@ final class GoldenFlowUITests: XCTestCase {
         // replaced by the next card's TextField; XCTest re-resolves
         // `reply` because the query is by identifier.
         // After the swipe, value should be empty (= placeholder).
-        let placeholderPredicate = NSPredicate(format: "value == 'reply to this session'")
+        let placeholderPredicate = NSPredicate(format: "value == 'Reply to this session'")
         let onCardB = expectation(for: placeholderPredicate, evaluatedWith: reply, handler: nil)
         wait(for: [onCardB], timeout: 3)
 

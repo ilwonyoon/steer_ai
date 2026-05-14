@@ -12,7 +12,7 @@ settings:
     SWIFT_VERSION: "6.0"
     CODE_SIGN_STYLE: Automatic
     CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 0.0.1
+    MARKETING_VERSION: 1.0.0
 
 packages:
   SteerCore:
@@ -41,14 +41,10 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        # Allow http://127.0.0.1 during local wrangler dev. Drop before
-        # App Store submission once the relay is on https.
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.steer.ios
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         CODE_SIGN_ENTITLEMENTS: SteerIOS/Steer.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

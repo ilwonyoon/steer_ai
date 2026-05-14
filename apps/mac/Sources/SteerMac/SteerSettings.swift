@@ -232,9 +232,9 @@ private struct AboutPane: View {
                 Link("Browse Known Issues",
                      destination: URL(string: "https://github.com/ilwonyoon/steer_ai/issues")!)
                 Link("Privacy Policy",
-                     destination: URL(string: "https://steer.ai/privacy")!)
+                     destination: URL(string: "https://steer-legal.pages.dev/privacy/")!)
                 Link("Terms of Service",
-                     destination: URL(string: "https://steer.ai/terms")!)
+                     destination: URL(string: "https://steer-legal.pages.dev/terms/")!)
             }
 
             Section("Diagnostics") {

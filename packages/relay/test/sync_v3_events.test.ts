@@ -22,6 +22,7 @@ import migration0003 from "../migrations/0003_devices.sql?raw";
 import migration0004 from "../migrations/0004_apns_token.sql?raw";
 import migration0005 from "../migrations/0005_aps_environment.sql?raw";
 import migration0006 from "../migrations/0006_events.sql?raw";
+import migration0007 from "../migrations/0007_card_response_revision.sql?raw";
 
 // SESSION_JWT_SECRET is set by wrangler test config — we read it from
 // env at sign time so we don't hard-code anything.
@@ -38,7 +39,7 @@ declare module "cloudflare:test" {
 }
 
 async function runMigrations() {
-  for (const sql of [migration0001, migration0002, migration0003, migration0004, migration0005, migration0006]) {
+  for (const sql of [migration0001, migration0002, migration0003, migration0004, migration0005, migration0006, migration0007]) {
     const cleaned = sql
       .split("\n")
       .filter((l) => !l.trim().startsWith("--"))
@@ -328,7 +329,7 @@ describe("dual-write: legacy mutations produce event rows", () => {
     expect((events[0].payload as { cardId: string }).cardId).toBe("c-dw-2");
   });
 
-  it("POST /v1/sync/sessions inserts a session.upsert event", async () => {
+  it("POST /v1/sync/sessions is a deprecated no-op (no event written)", async () => {
     const jwt = await makeJwt("user-1");
     const res = await call(
       "/v1/sync/sessions",
@@ -344,10 +345,15 @@ describe("dual-write: legacy mutations produce event rows", () => {
       jwt
     );
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; deprecated?: boolean };
+    expect(body.ok).toBe(true);
+    expect(body.deprecated).toBe(true);
 
+    // Critical: no session.upsert event landed. Older Mac binaries
+    // that still publish here must not pile up dead session rows on
+    // the event log.
     const events = await new Store(env).eventsSince("user-1", 0);
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("session.upsert");
+    expect(events).toHaveLength(0);
   });
 
   it("retrying the SAME PUT /v1/sync/cards/:id (same updatedAt) dedupes", async () => {

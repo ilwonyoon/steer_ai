@@ -68,28 +68,37 @@ test("filename parser accepts 4-digit prefix + description", () => {
 test("fresh DB: applies 0001_initial, records version=1", () => {
   const { db } = freshDb();
   const after = applyMigrations(db, { migrationsDir: REAL_MIGRATIONS_DIR });
-  assert.equal(after, 1);
-  // Baseline tables present.
+  assert.equal(after, 8);
+  // Baseline tables present. `messages` was dropped in 0003 and
+  // `metric_events` in 0006; we assert they're gone separately.
   for (const t of [
     "rooms",
     "sessions",
-    "messages",
     "instructions",
     "terminal_excerpts",
     "action_cards",
     "transcript_entries",
-    "metric_events",
     "schema_version",
   ]) {
     assert.equal(tableExists(db, t), true, `${t} should exist`);
   }
+  assert.equal(
+    tableExists(db, "messages"),
+    false,
+    "messages should be gone after migration 0003"
+  );
+  assert.equal(
+    tableExists(db, "metric_events"),
+    false,
+    "metric_events should be gone after migration 0006"
+  );
   // schema_version has exactly one row at version 1.
   const versions = db
     .prepare("SELECT version FROM schema_version ORDER BY version")
     .all();
   assert.deepEqual(
     versions.map((r) => r.version),
-    [1]
+    [1, 2, 3, 4, 5, 6, 7, 8]
   );
 });
 
@@ -108,7 +117,7 @@ test("pre-S0 DB: baseline tables exist, no schema_version → backstamps without
   ).run("default", "Default", new Date().toISOString(), new Date().toISOString());
 
   const after = applyMigrations(db, { migrationsDir: REAL_MIGRATIONS_DIR });
-  assert.equal(after, 1);
+  assert.equal(after, 8);
   // Our row survived.
   const row = db.prepare("SELECT id FROM rooms WHERE id = 'default'").get();
   assert.equal(row?.id, "default");
@@ -128,11 +137,11 @@ test("already-current DB: runner is a no-op", () => {
     "INSERT INTO rooms (id, name, is_default, created_at, updated_at) VALUES (?, ?, 1, ?, ?)"
   ).run("default", "Default", "2026-01-01", "2026-01-01");
   const v2 = applyMigrations(db, { migrationsDir: REAL_MIGRATIONS_DIR });
-  assert.equal(v1, 1);
-  assert.equal(v2, 1);
-  // Still just one row in schema_version (didn't insert a duplicate).
+  assert.equal(v1, 8);
+  assert.equal(v2, 8);
+  // schema_version has exactly the migrations we ran (no duplicates).
   const rows = db.prepare("SELECT version FROM schema_version").all();
-  assert.equal(rows.length, 1);
+  assert.equal(rows.length, 8);
 });
 
 test("DB schema_version higher than max-on-disk: throws with actionable message", () => {
@@ -151,27 +160,29 @@ test("DB schema_version higher than max-on-disk: throws with actionable message"
   );
 });
 
-test("stages a synthetic 0002 migration and applies it on top of an existing DB", () => {
+test("stages a synthetic migration on top of an existing DB", () => {
   const { db, tempDir } = freshDb();
-  // First bring the DB up to v1.
+  // First bring the DB up to the current real version.
   applyMigrations(db, { migrationsDir: REAL_MIGRATIONS_DIR });
 
-  // Build a temporary migrations dir mirroring the real one + adding
-  // a synthetic 0002 that adds a sentinel table. This proves the
-  // runner handles new migrations on a non-empty DB.
+  // Stage a brand-new 0099 sentinel that nothing in-tree owns. This
+  // proves the runner handles new migrations on a non-empty DB
+  // without coupling to whatever number is the current head.
   const stagedDir = path.join(tempDir, "migrations");
   fs.mkdirSync(stagedDir);
-  fs.copyFileSync(
-    path.join(REAL_MIGRATIONS_DIR, "0001_initial.sql"),
-    path.join(stagedDir, "0001_initial.sql")
-  );
+  for (const f of fs.readdirSync(REAL_MIGRATIONS_DIR)) {
+    fs.copyFileSync(
+      path.join(REAL_MIGRATIONS_DIR, f),
+      path.join(stagedDir, f)
+    );
+  }
   fs.writeFileSync(
-    path.join(stagedDir, "0002_pr_s0_sentinel.sql"),
+    path.join(stagedDir, "0099_pr_s0_sentinel.sql"),
     "CREATE TABLE pr_s0_sentinel (n INTEGER);\n"
   );
 
   const after = applyMigrations(db, { migrationsDir: stagedDir });
-  assert.equal(after, 2);
+  assert.equal(after, 99);
   assert.equal(tableExists(db, "pr_s0_sentinel"), true);
 });
 
@@ -191,7 +202,7 @@ test("createStore wires the runner — store.js path covered end to end", async 
   // Re-open the path to verify schema_version was recorded.
   const db = new DatabaseSync(dbPath);
   const v = db.prepare("SELECT MAX(version) AS v FROM schema_version").get().v;
-  assert.equal(v, 1);
+  assert.equal(v, 8);
 });
 
 test("missing migrations dir → throws", () => {

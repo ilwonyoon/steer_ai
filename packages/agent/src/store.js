@@ -55,28 +55,65 @@ export function createStore(filePath = databasePath) {
       INSERT INTO transcript_entries (id, session_id, timestamp, stream, chunk)
       VALUES (?, ?, ?, ?, ?)
     `),
-    insertMessage: db.prepare(`
-      INSERT INTO messages (
-        id, room_id, session_id, timestamp, direction, raw_content,
-        display_content, priority, requires_action, needs_input, source
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
-    `),
     insertInstruction: db.prepare(`
       INSERT INTO instructions (
-        id, room_id, target_session_id, source_message_id, text,
+        id, room_id, target_session_id, text,
         is_quick_reply, status, created_at
       )
-      VALUES (?, ?, ?, NULL, ?, 0, ?, ?)
+      VALUES (?, ?, ?, ?, 0, ?, ?)
     `),
     updateInstructionStatus: db.prepare(`
       UPDATE instructions
       SET status = ?, injected_at = ?, failure_reason = ?
       WHERE id = ?
     `),
-    insertMetricEvent: db.prepare(`
-      INSERT INTO metric_events (id, session_id, room_id, type, timestamp, metadata_json)
-      VALUES (?, ?, ?, ?, ?, ?)
+    /// Mark a session as awaiting the terminal's response. Called
+    /// at instruction-route time so refreshActionCard can detect
+    /// "next trusted entry after this is the response."
+    markSessionAwaitingResponse: db.prepare(`
+      UPDATE sessions
+      SET awaiting_response_since = ?
+      WHERE id = ?
+    `),
+    /// Bump revision when refreshActionCard sees a trusted entry
+    /// after awaiting_response_since. Atomic: increments AND clears
+    /// the marker in one statement so a second concurrent refresh
+    /// can't double-bump.
+    ///
+    /// G15 — source of truth is the session-snapshot column
+    /// (last_trusted_at) rather than transcript_entries, so PTY
+    /// flood can't suppress the bump by evicting the report row.
+    bumpResponseRevisionIfReady: db.prepare(`
+      UPDATE sessions
+      SET last_response_revision = last_response_revision + 1,
+          awaiting_response_since = NULL
+      WHERE id = ?
+        AND awaiting_response_since IS NOT NULL
+        AND last_trusted_at IS NOT NULL
+        AND last_trusted_at > awaiting_response_since
+    `),
+    /// G15 — session snapshot columns updated alongside
+    /// transcript_entries inserts. Survives the per-session cap.
+    updateSessionUserSnapshot: db.prepare(`
+      UPDATE sessions
+      SET last_user_text = ?, last_user_at = ?
+      WHERE id = ?
+    `),
+    updateSessionTrustedSnapshot: db.prepare(`
+      UPDATE sessions
+      SET last_trusted_text = ?, last_trusted_at = ?
+      WHERE id = ?
+    `),
+    selectSessionForRefresh: db.prepare(`
+      SELECT id, provider, adapter_kind, command, cwd, run_state,
+             last_user_at, last_user_text,
+             last_trusted_at, last_trusted_text
+      FROM sessions
+      WHERE id = ?
+    `),
+    /// Read the current revision for publishing.
+    selectResponseRevision: db.prepare(`
+      SELECT last_response_revision FROM sessions WHERE id = ?
     `),
     selectSession: db.prepare(`
       SELECT id, provider, adapter_kind, command, cwd, run_state
@@ -114,10 +151,10 @@ export function createStore(filePath = databasePath) {
     `),
     upsertTerminalExcerpt: db.prepare(`
       INSERT INTO terminal_excerpts (
-        id, session_id, source_message_id, start_offset, end_offset,
+        id, session_id, start_offset, end_offset,
         raw_text, display_lines_json, highlighted_line_indexes_json, created_at
       )
-      VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, ?)
+      VALUES (?, ?, NULL, NULL, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         raw_text = excluded.raw_text,
         display_lines_json = excluded.display_lines_json,
@@ -126,11 +163,11 @@ export function createStore(filePath = databasePath) {
     `),
     upsertActionCard: db.prepare(`
       INSERT INTO action_cards (
-        id, room_id, source_message_id, session_id, terminal_excerpt_id,
+        id, room_id, session_id, terminal_excerpt_id,
         category, priority, title, summary, action_prompt, options_json,
         state, created_at, updated_at, snoozed_until
       )
-      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(id) DO UPDATE SET
         terminal_excerpt_id = excluded.terminal_excerpt_id,
         category = excluded.category,
@@ -151,17 +188,6 @@ export function createStore(filePath = databasePath) {
 
   const now = new Date().toISOString();
   statements.insertDefaultRoom.run(DEFAULT_ROOM_ID, "Unified Queue", "default", now, now);
-
-  const recordMetric = ({ sessionId, type, metadata = {} }) => {
-    statements.insertMetricEvent.run(
-      randomUUID(),
-      sessionId ?? null,
-      DEFAULT_ROOM_ID,
-      type,
-      new Date().toISOString(),
-      JSON.stringify(metadata)
-    );
-  };
 
   const refreshTimers = new Map();
   const REFRESH_DEBOUNCE_MS = 200;
@@ -217,41 +243,42 @@ export function createStore(filePath = databasePath) {
         session.updatedAt,
         session.currentRoomId ?? DEFAULT_ROOM_ID
       );
-      recordMetric({
-        sessionId: session.id,
-        type: "session_registered",
-        metadata: { provider: session.provider, adapterKind: session.adapterKind }
-      });
     },
     updateSessionState(sessionId, runState, exitCode = null) {
       const now = new Date().toISOString();
       const endedAt = runState === "ended" ? now : null;
       statements.updateSessionState.run(runState, exitCode, endedAt, now, sessionId);
-      recordMetric({
-        sessionId,
-        type: "state_changed",
-        metadata: { runState, exitCode }
-      });
       flushRefresh(sessionId);
     },
     appendTranscript({ sessionId, stream, chunk }) {
+      // S2 — drop pty chunks whose post-ANSI-strip content is
+      // whitespace-only. The classifier already filters these on
+      // read; persisting them is pure overhead (the bulk of the
+      // 1.8GB users hit). Other streams (stdout / stderr / report /
+      // user / system) always pass through — they're already filtered
+      // or trusted upstream.
+      if (stream === "pty" && isWhitespaceOnlyPty(chunk)) {
+        return;
+      }
+
       const timestamp = new Date().toISOString();
       statements.insertTranscriptEntry.run(randomUUID(), sessionId, timestamp, stream, chunk);
 
-      const message = transcriptMessageForStream(stream, chunk);
-      if (!message) return;
+      // G15 — mirror trusted / user chunks into the session
+      // snapshot columns so the classifier never loses them to
+      // the per-session transcript cap under PTY repaint flood.
+      // PTY and system chunks are not authoritative; they only
+      // feed the terminal-excerpt scrub fallback.
+      if (stream === "user") {
+        statements.updateSessionUserSnapshot.run(chunk, timestamp, sessionId);
+      } else if (stream === "report" || stream === "stdout" || stream === "stderr") {
+        statements.updateSessionTrustedSnapshot.run(chunk, timestamp, sessionId);
+      }
 
-      statements.insertMessage.run(
-        randomUUID(),
-        DEFAULT_ROOM_ID,
-        sessionId,
-        timestamp,
-        message.direction,
-        chunk,
-        chunk,
-        "normal",
-        message.source
-      );
+      // S2 — the `messages` table is dropped (migration 0003). The
+      // classifier, Mac UI, and iPhone all read from
+      // action_cards + transcript_entries + sessions; messages was
+      // never consulted.
       if (stream === "report" || stream === "user") {
         flushRefresh(sessionId);
       } else {
@@ -259,19 +286,21 @@ export function createStore(filePath = databasePath) {
       }
     },
     createInstruction({ id, sessionId, text }) {
+      const now = new Date().toISOString();
       statements.insertInstruction.run(
         id,
         DEFAULT_ROOM_ID,
         sessionId,
         text,
         "pending",
-        new Date().toISOString()
+        now
       );
-      recordMetric({
-        sessionId,
-        type: "instruction_sent",
-        metadata: { instructionId: id }
-      });
+      // Stamp the session so the next trusted transcript entry
+      // (report/stdout/stderr after `now`) triggers a
+      // responseRevision bump in refreshActionCard. This is the
+      // signal iPhone uses to atomically transition the chip from
+      // `.awaitingResponse` to `.awaitingUser`.
+      statements.markSessionAwaitingResponse.run(now, sessionId);
     },
     updateInstructionStatus(id, status, failureReason = null) {
       statements.updateInstructionStatus.run(
@@ -280,11 +309,6 @@ export function createStore(filePath = databasePath) {
         failureReason,
         id
       );
-      recordMetric({
-        sessionId: null,
-        type: "instruction_status_changed",
-        metadata: { instructionId: id, status, failureReason }
-      });
     },
     resolveActionCardsForSession(sessionId) {
       statements.resolveActionCardsForSession.run(new Date().toISOString(), sessionId);
@@ -299,18 +323,73 @@ export function createStore(filePath = databasePath) {
       `);
       return stmt.run(now).changes ?? 0;
     },
-    recordHookEvent(event) {
-      recordMetric({
-        sessionId: event.sessionId,
-        type: "hook_event",
-        metadata: {
-          provider: event.provider,
-          eventName: event.eventName,
-          providerSessionId: event.providerSessionId,
-          transcriptPath: event.transcriptPath
-        }
-      });
+    /// Drop sessions in terminal states whose final state timestamp
+    /// is older than the supplied horizons. ended → 1h horizon
+    /// (most users want recent transcripts around for a short
+    /// debug window). disconnected → 24h horizon (allows a wake-
+    /// from-sleep wrapper to reattach within a day).
+    ///
+    /// Returns the number of sessions actually pruned. Order
+    /// matters: child rows in transcript_entries / terminal_excerpts
+    /// / action_cards / instructions must go before the session
+    /// row itself, otherwise SQLite's FK enforcement (which we
+    /// keep ON for safety) raises constraint failed. The whole
+    /// thing runs inside one transaction so a crash mid-prune
+    /// can't leave orphan rows.
+    pruneTerminalSessions({
+      endedHorizonMs = 60 * 60 * 1000,           // 1 h
+      disconnectedHorizonMs = 24 * 60 * 60 * 1000, // 24 h
+    } = {}) {
+      const nowMs = Date.now();
+      const endedBefore = new Date(nowMs - endedHorizonMs).toISOString();
+      const disconnectedBefore = new Date(nowMs - disconnectedHorizonMs).toISOString();
 
+      const pickup = db.prepare(`
+        SELECT id FROM sessions
+        WHERE (run_state = 'ended' AND COALESCE(ended_at, updated_at) < ?)
+           OR (run_state = 'disconnected' AND updated_at < ?)
+      `);
+      const ids = pickup.all(endedBefore, disconnectedBefore).map((r) => r.id);
+      if (ids.length === 0) return 0;
+
+      const placeholders = ids.map(() => "?").join(",");
+      const params = ids;
+      // node:sqlite has no `db.transaction(fn)` helper. Manual
+      // BEGIN/COMMIT around the cascade gives atomicity — a mid-
+      // cascade crash leaves everything intact.
+      //
+      // FK off during the cascade: even though we delete child
+      // rows before parents, the Phase 1 triggers on action_cards
+      // can move rows mid-statement and trip deferred FK checks.
+      // Turning FK off for the transaction body is the standard
+      // SQLite pattern; re-enabling at the end (createStore set
+      // it ON at connect time) keeps every subsequent statement
+      // back under enforcement.
+      db.exec("PRAGMA foreign_keys = OFF; BEGIN;");
+      try {
+        db.prepare(
+          `DELETE FROM transcript_entries WHERE session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM terminal_excerpts WHERE session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM action_cards WHERE session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM instructions WHERE target_session_id IN (${placeholders})`
+        ).run(...params);
+        db.prepare(
+          `DELETE FROM sessions WHERE id IN (${placeholders})`
+        ).run(...params);
+        db.exec("COMMIT; PRAGMA foreign_keys = ON;");
+      } catch (e) {
+        db.exec("ROLLBACK; PRAGMA foreign_keys = ON;");
+        throw e;
+      }
+      return ids.length;
+    },
+    recordHookEvent(event) {
       const assistantMessage = normalizeHookText(event.lastAssistantMessage);
       if (assistantMessage) {
         this.appendTranscript({
@@ -332,13 +411,49 @@ export function createStore(filePath = databasePath) {
   };
 
   function refreshActionCard(sessionId) {
-    const session = statements.selectSession.get(sessionId);
+    // Bump responseRevision FIRST (before upsertActionCard) so the
+    // card row carries the post-bump revision in the same write
+    // transaction. iPhone sees one consistent upsert with the new
+    // revision and atomically swaps stage.
+    statements.bumpResponseRevisionIfReady.run(sessionId);
+
+    const session = statements.selectSessionForRefresh.get(sessionId);
     if (!session) return;
 
-    const trusted = statements.selectRecentTrustedEntries.all(sessionId);
-    const users = statements.selectRecentUserEntries.all(sessionId);
-    const pty = trusted.length === 0 ? statements.selectRecentPtyEntries.all(sessionId) : [];
-    const entries = [...trusted, ...users, ...pty].sort((a, b) => a.rid - b.rid);
+    // G15 — the classifier's source of truth for "what was the
+    // last user line, what was the last trusted output" is the
+    // session-snapshot columns, not transcript_entries. The
+    // 100-row cap evicts those rows under PTY flood; the snapshot
+    // survives. We forge synthetic entries from the snapshot
+    // columns so the classifier keeps its current interface.
+    const synthetic = [];
+    if (session.last_user_at && session.last_user_text) {
+      synthetic.push({
+        stream: "user",
+        chunk: session.last_user_text,
+        timestamp: session.last_user_at,
+        rid: 0,
+      });
+    }
+    if (session.last_trusted_at && session.last_trusted_text) {
+      synthetic.push({
+        stream: "report",
+        chunk: session.last_trusted_text,
+        timestamp: session.last_trusted_at,
+        // rid ordering must reflect real arrival. A user line at
+        // T1 followed by a trusted reply at T2 means rid_user <
+        // rid_trusted. We compare timestamps to assign ordering.
+        rid: session.last_user_at && session.last_user_at >= session.last_trusted_at ? -1 : 1,
+      });
+    }
+
+    // PTY screen scrub is still allowed as a tertiary fallback —
+    // mirrors pre-G15 behavior when no user/trusted is present.
+    const pty = synthetic.length === 0
+      ? statements.selectRecentPtyEntries.all(sessionId)
+      : [];
+
+    const entries = [...synthetic, ...pty].sort((a, b) => a.rid - b.rid);
     const { rawText, displayLines, card } = classifyTranscript({ session, entries });
     const now = new Date().toISOString();
     const excerptId = `excerpt-${sessionId}`;
@@ -369,11 +484,32 @@ export function createStore(filePath = databasePath) {
   }
 }
 
-function transcriptMessageForStream(stream, chunk) {
-  if (!chunk?.trim()) return null;
-  if (stream === "user") return { direction: "user_to_agent", source: "user" };
-  if (stream === "system") return { direction: "system", source: "wrapper" };
-  return { direction: "agent_to_user", source: "wrapper" };
+/// True if a pty chunk is just terminal repaint / cursor moves /
+/// status-line whitespace once ANSI control sequences are stripped.
+/// Those chunks are 95%+ of all pty traffic by row count and never
+/// affect classifier output, so we drop them at write time.
+///
+/// The strip pattern covers:
+///   - CSI escape sequences (cursor moves, color codes, mode sets)
+///   - OSC sequences (terminal title updates, hyperlinks)
+///   - SS3 single-shift sequences
+///   - C1 control characters
+///
+/// After strip, if the chunk has any non-whitespace character we
+/// keep it; otherwise we drop. Exported for unit-test access.
+export function isWhitespaceOnlyPty(chunk) {
+  if (typeof chunk !== "string" || chunk.length === 0) return true;
+  // eslint-disable-next-line no-control-regex
+  const stripped = chunk
+    // CSI: ESC [ params? intermediate? final
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    // OSC: ESC ] ... (BEL | ESC \)
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
+    // SS3 single-shift
+    .replace(/\x1bO./g, "")
+    // C1 control characters (incl. lone ESC, BEL, etc.)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+  return stripped.trim().length === 0;
 }
 
 function normalizeHookText(value) {

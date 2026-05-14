@@ -30,6 +30,13 @@ export interface CardPayload {
   state: "active" | "done";
   createdAt: number; // ms epoch
   updatedAt: number;
+  /// Monotonic counter incremented by the Mac wrapper each time
+  /// the session produces a new trusted answer (one bump per
+  /// answer, never decreased). iPhone uses this to atomically
+  /// flip `.awaitingResponse → .awaitingUser` when the incoming
+  /// revision exceeds the one stamped at reply time. Omit on
+  /// older clients — server defaults to 0.
+  responseRevision?: number;
 }
 
 export interface InstructionRequest {

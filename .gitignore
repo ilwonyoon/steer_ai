@@ -11,6 +11,7 @@ DerivedData/
 apps/*/build/
 node_modules/
 package-lock.json
+.playwright-cli/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 apps/mac/Resources/AppIcon.icns

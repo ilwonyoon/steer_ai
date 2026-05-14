@@ -18,12 +18,14 @@ final class DevicePresenceObserverTests: XCTestCase {
     // We confirm the boundaries are correct by feeding it timestamps
     // that straddle each boundary.
 
-    func testNeverConnectedWhenNoMac() {
+    func testStartsConnectingBeforeFirstPresencePoll() {
         let inbox = SyncInbox.shared
         inbox.exitDemoMode() // ensure not in demo
         let observer = DevicePresenceObserver(inbox: inbox)
-        // Without start(), state should default to neverConnected.
-        XCTAssertEqual(observer.state, .neverConnected)
+        // The chip starts in a soft "Connecting" state so users do
+        // not see "No Mac" before the first presence request has had
+        // a chance to return.
+        XCTAssertEqual(observer.state, .connecting)
     }
 
     func testDemoStateWhenInDemoMode() async {

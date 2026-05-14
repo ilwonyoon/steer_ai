@@ -2,7 +2,14 @@ import Foundation
 import AuthenticationServices
 import UIKit
 import UserNotifications
+import os.log
 import SteerCore
+
+/// G15 timing diagnostic. Streams setSessions ticks to Console.app
+/// (filter subsystem=ai.steer.ios, category=g15). Each line shows
+/// the chip count and card count for the same tick, so we can
+/// see whether a sub-second window exists where they disagree.
+private let g15Log = Logger(subsystem: "ai.steer.ios", category: "g15")
 
 /// iOS counterpart of the Mac SyncClient. Same wire shape (relay
 /// REST + WebSocket against /v1), same Sign in with Apple flow, same
@@ -18,7 +25,13 @@ public final class SyncInbox: ObservableObject {
     public static let shared = SyncInbox()
 
     @Published public private(set) var status: Status = .signedOut
+
+    /// Cards the user is currently looking at (carousel). Owned by
+    /// the WS upsert / bootstrap path; mutated through
+    /// `upsertCardDirect` / `removeCardByCardId`. The chip is a
+    /// derivative of this + `pendingReplies` — no Stage in between.
     @Published public private(set) var cards: [CardPayload] = []
+
     @Published public private(set) var lastError: String?
 
     public enum Status: Equatable {
@@ -44,6 +57,80 @@ public final class SyncInbox: ObservableObject {
     private let urlSession: URLSession
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
+
+    /// Process-monotonic event counter. Every external event the host
+    /// fans into `SessionEntryStore` claims a fresh seq via
+    /// `nextEventSeq()`. The reducer uses it (PR-3) to break the §2.B
+    /// stale-GET race: an entry stamped with `lastReplyEventSeq` that
+    /// is GREATER than a snapshot's `snapshotStartedAtSeq` outlived
+    /// that snapshot and must not be clobbered by it.
+    ///
+    /// Per-device only. NOT serialised to the wire. Multi-device
+    /// contention resolves via server-side `updatedAt` /
+    /// `responseRevision` instead (§9 invariant). Wraps at UInt64.max,
+    /// which at one stamp per second takes ~584 billion years — we
+    /// will not reach it.
+    private var _eventSeqCounter: UInt64 = 0
+
+    /// Returns the next monotonic event seq and bumps the counter.
+    /// Called from every site that fans an external event into the
+    /// reducer (`reload`, WS card.upsert handler, WS card.resolved
+    /// handler, `sendReply`, `retryPendingReply`).
+    @MainActor
+    public func nextEventSeq() -> UInt64 {
+        _eventSeqCounter &+= 1
+        return _eventSeqCounter
+    }
+
+    /// Counter of in-flight `reload()` calls. Bool would not be
+    /// re-entrant: bootstrap reload + §6.5 auto-GET, or
+    /// scenePhase.active + manual pull-to-refresh, can overlap. A
+    /// counter is incremented at function entry and decremented in
+    /// `defer`, so the gate is closed for every in-flight HTTP and
+    /// only opens when zero reloads remain (design doc §11.8).
+    private var reloadInFlightCount: Int = 0
+
+    /// First time `loadPhase` transitioned away from `.ready` during
+    /// this session — nil if currently `.ready`. The §5.1
+    /// captive-portal escape hatch fires the timeout watcher anyway
+    /// after `loadPhase != .ready` for >5 minutes consecutively,
+    /// preferring a possibly-spurious `.failed` banner over a
+    /// permanently silent stuck entry (design doc §5.1, §11.7).
+    private var loadPhaseEnteredNotReadyAt: Date?
+
+    /// Real wall-clock of the most recent WebSocket frame we received
+    /// (pong, broadcast, anything). The 60-s frame watchdog reads
+    /// this and force-cancels the socket if no frame has arrived
+    /// within the window — Cloudflare DO half-closes idle sockets
+    /// silently, and the existing ping send/receive don't always
+    /// detect it before the next user-driven send fails. Design
+    /// doc §6.
+    private var lastFrameReceivedAt: Date?
+    private var watchdogTask: Task<Void, Never>?
+    private var timeoutWatcherTask: Task<Void, Never>?
+
+    /// Loud no-op if you forget to call this in a reload site — the
+    /// gate stays closed and the timeout watcher never fires. Use
+    /// the `withReloadInFlight` helper around any GET that should
+    /// gate the watcher.
+    @MainActor
+    private func withReloadInFlight<T>(_ body: () async throws -> T) async rethrows -> T {
+        reloadInFlightCount += 1
+        defer { reloadInFlightCount -= 1 }
+        return try await body()
+    }
+
+    /// `loadPhase` setter that also stamps the escape-hatch clock.
+    /// Use everywhere instead of touching `loadPhase` directly.
+    @MainActor
+    private func setLoadPhase(_ phase: LoadPhase) {
+        if phase == .ready {
+            loadPhaseEnteredNotReadyAt = nil
+        } else if loadPhase == .ready {
+            loadPhaseEnteredNotReadyAt = Date()
+        }
+        loadPhase = phase
+    }
 
     private init() {
         let stored = UserDefaults.standard.string(forKey: "ai.steer.relay.baseURL")
@@ -75,20 +162,21 @@ public final class SyncInbox: ObservableObject {
             // function) means the UI sees the placeholder from the
             // very first frame, not from whenever refreshMe's first
             // await returns.
-            loadPhase = .bootstrapping
+            setLoadPhase(.bootstrapping)
             Task { await refreshMe() }
-        } else if !UserDefaults.standard.bool(forKey: Self.hasSeenOnboardingKey) {
-            // First launch ever (no keychain token + haven't dropped
-            // the onboarding flag yet): load demo cards as an inline
-            // onboarding tour. The last card has a "Sign in with
-            // Apple" chip that exits demo mode. We set the flag on
-            // first enterDemoMode so a relaunch goes straight to the
-            // sign-in prompt instead of looping the tour.
-            enterDemoMode()
         }
+        // First-launch demo-auto-enter is deliberately removed:
+        // onboarding is now its own flow (OnboardingFlowView) that
+        // runs *after* sign-in. Signed-out users always land on
+        // SignInPrompt; demo mode is opt-in from the Inbox empty
+        // state's "Preview without Mac" secondary link only.
     }
 
     /// UserDefaults key for the first-launch demo gate.
+    /// Deprecated — the gate now lives on InboxView's
+    /// `@AppStorage("ai.steer.onboardingCompleted")`. Kept here so
+    /// older installs that already set this key don't carry stale
+    /// state across an upgrade.
     private static let hasSeenOnboardingKey = "ai.steer.ios.hasSeenOnboarding"
 
     static var fixtureModeEnabled: Bool {
@@ -197,7 +285,15 @@ public final class SyncInbox: ObservableObject {
             let credential = try await delegate.result
             await handleAppleCredential(credential)
         } catch {
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            // Tapping outside the system sheet, hitting Cancel, or the
+            // OS bailing on a transient error all surface as
+            // ASAuthorizationError.canceled. That's just "the user
+            // changed their mind" — re-rendering the Apple button is
+            // already the next-step UX. Surfacing a red error banner
+            // makes it look like something is wrong with the app.
+            if !isAppleSignInCanceled(error) {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -214,8 +310,26 @@ public final class SyncInbox: ObservableObject {
             }
             await handleAppleCredential(credential)
         case .failure(let error):
-            lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            // Same canceled-suppression rationale as
+            // startSignInWithApple above — a cancel/dismiss isn't an
+            // error worth showing the user.
+            if !isAppleSignInCanceled(error) {
+                lastError = "Apple sign-in failed: \(error.localizedDescription)"
+            }
         }
+    }
+
+    /// True if the error represents the user closing or backing out
+    /// of the system Apple Sign In sheet (any reason). Surface only
+    /// real failures that need an explanation.
+    private func isAppleSignInCanceled(_ error: Error) -> Bool {
+        let ns = error as NSError
+        guard ns.domain == ASAuthorizationError.errorDomain else { return false }
+        // .canceled — explicit Cancel tap or backswipe.
+        // .unknown  — iOS/macOS 26 dismiss path observed in practice
+        //   when the user closes the sheet without pressing Cancel.
+        return ns.code == ASAuthorizationError.canceled.rawValue
+            || ns.code == ASAuthorizationError.unknown.rawValue
     }
 
     private func handleAppleCredential(_ credential: ASAuthorizationAppleIDCredential) async {
@@ -390,13 +504,29 @@ public final class SyncInbox: ObservableObject {
             Task { _ = try? await urlSession.data(for: req) }
         }
         tokenStore.clear()
+        // setSessions(...) is the single mutation funnel: clearing
+        // through it also clears cards + pendingReplies +
+        // activeSessionIds. Sign-out used to only zero `cards`,
+        // which left `.awaitingResponse` entries (and therefore
+        // the "N running" chip) alive across sign-in cycles —
+        // including for sessions whose Mac process was killed
+        // long ago. The chip can never recover on its own because
+        // the cardUpsert that would clear those entries is never
+        // going to arrive.
+        // B2 — wipe canonical arrays atomically on sign-out.
         cards = []
+        pendingReplies = []
+        g15Log.info("signOut cards=0 pend=0")
         status = .signedOut
-        loadPhase = .idle
+        setLoadPhase(.idle)
         webSocketTask?.cancel()
         webSocketTask = nil
         receiveTask?.cancel()
         receiveTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        timeoutWatcherTask?.cancel()
+        timeoutWatcherTask = nil
     }
 
     public func deleteAccount() async {
@@ -446,25 +576,49 @@ public final class SyncInbox: ObservableObject {
         }
     }
 
+    /// Re-establish the WebSocket if the receive loop has died.
+    /// Called by the InboxView lifecycle observer whenever the app
+    /// returns to the foreground — iOS suspends URLSession sockets
+    /// in the background and Cloudflare DOs close idle sockets after
+    /// ~5–10 min, so a phone that was locked for a while will have
+    /// a dead WS even though the in-memory `webSocketTask` still
+    /// looks set. Forcing reconnect drains the relay's queued
+    /// broadcasts in one shot.
+    ///
+    /// Cheap when the socket is healthy: the existing task is
+    /// cancelled and a new one is opened.
+    public func reconnectWebSocketIfNeeded() {
+        guard isSignedIn else { return }
+        connectWebSocket()
+    }
+
     public func reload() async {
         guard isSignedIn else { return }
-        if loadPhase == .idle { loadPhase = .bootstrapping }
-        do {
-            let resp: CardListResponse = try await getJSON("/v1/sync/cards")
-            // Filter out cards we're optimistically replying to so
-            // the GET-driven reload doesn't undo the user's send.
-            // pendingReplies clears when the relay broadcasts the
-            // matching card.resolved (see handleWSText).
-            let pendingCardIds = Set(pendingReplies.map(\.cardId))
-            cards = resp.cards
-                .filter { !pendingCardIds.contains($0.cardId) }
-                .sorted { $0.updatedAt < $1.updatedAt }
-            // First card list landed — UI can leave the cold-start
-            // placeholder, even when the list is empty.
-            loadPhase = .ready
-            lastError = nil
-        } catch {
-            lastError = "Failed to load cards: \(error.localizedDescription)"
+        if loadPhase == .idle { setLoadPhase(.bootstrapping) }
+        // Wrap the GET in withReloadInFlight so the §5.1 timeout
+        // watcher knows not to fire while a fresh snapshot is on
+        // the wire. The counter is re-entrant, so concurrent
+        // reload() calls (bootstrap + scenePhase.active + manual
+        // refresh) each get their own slot.
+        await withReloadInFlight {
+            do {
+                let resp: CardListResponse = try await getJSON("/v1/sync/cards")
+                // applyBootstrap preserves any sessions currently in
+                // .awaitingResponse / .failed (the user replied; Mac
+                // may have resolved the original card server-side,
+                // and the GET will lack it — we don't want to drop
+                // the entry until the WS push for the fresh card
+                // lands). It also refreshes content for sessions
+                // already in .awaitingUser and removes ones the relay
+                // no longer has.
+                applyBootstrapDirect(resp.cards)
+                // First card list landed — UI can leave the cold-
+                // start placeholder, even when the list is empty.
+                setLoadPhase(.ready)
+                lastError = nil
+            } catch {
+                lastError = "Failed to load cards: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -509,11 +663,18 @@ public final class SyncInbox: ObservableObject {
         #else
         apsEnvironment = "production"
         #endif
+        // iOS 16+ returns the generic "iPhone" for UIDevice.current.name
+        // unless the app holds the user-assigned-device-name
+        // entitlement (not granted to general apps). The marketing
+        // model name ("iPhone 14 Pro") is derivable from the utsname
+        // machine identifier — that's what the Mac wants for its
+        // presence label, since "iPhone" alone is too generic.
+        let modelName = IOSDeviceModel.marketingName()
         let snapshot = DeviceSnapshot(
             deviceId: Self.deviceId,
             platform: "ios",
-            displayName: UIDevice.current.name,
-            deviceClass: UIDevice.current.model,
+            displayName: modelName,
+            deviceClass: modelName,
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
             syncEnabled: true,
             lastSeenAt: Int64(Date().timeIntervalSince1970 * 1000),
@@ -529,8 +690,10 @@ public final class SyncInbox: ObservableObject {
     }
 
     /// In-flight reply that the user already saw "leave" the card
-    /// stack. Stays here until the relay POST resolves. Failed sends
-    /// stay with status=failed so the chip can offer retry/cancel.
+    /// Legacy projection of `sessions`. UI surfaces (PendingRepliesRow,
+    /// failure banner) that pre-date the unified model still read this.
+    /// Computed for backwards compatibility; the canonical source is
+    /// `sessions`.
     public struct PendingReply: Identifiable, Equatable {
         public let id: String              // instruction id
         public let cardId: String
@@ -540,53 +703,189 @@ public final class SyncInbox: ObservableObject {
         public let sentAt: Date
         public var status: Status
 
-        public enum Status: Equatable { case sending, failed(String) }
+        public enum Status: Equatable {
+            case sending      // entry currently `.awaitingResponse`
+            case injected     // (kept for binary compat, unused now)
+            case failed(String)
+        }
     }
+
+    /// Sessions whose stage is `.awaitingResponse` or `.failed`,
+    /// projected as PendingReply rows. Old UI bindings consume this.
     @Published public private(set) var pendingReplies: [PendingReply] = []
 
-    /// Optimistic send: yank the card from `cards` immediately (the
-    /// user's intent is "I'm done with it"), put a row in
-    /// pendingReplies, and POST in the background. Success: drop the
-    /// row. Failure: keep the row at .failed + push the card back so
-    /// the user can retry without losing context.
+    /// Sessions where the user has a reply in flight that hasn't
+    /// been answered yet.
+    ///
+    /// G15.A — derive this from the card stream rather than the
+    /// `SessionEntry.stage` state machine. Invariant the user gave:
+    ///   "Card disappears (I sent a reply) → 1 running.
+    ///    Card reappears (new answer arrived) → 1 running gone."
+    /// Translating directly: a session contributes to the chip iff
+    ///   (a) the user sent a reply (we have a PendingReply for it),
+    ///   (b) there is currently no visible card for that session.
+    /// `failed` replies stay on `pendingReplies` but DO show a
+    /// failure banner separately — they must NOT add to the
+    /// running count.
+    /// `disconnected` sessions have no card AND no pendingReply →
+    /// naturally contribute 0.
+    public var activeSessionIds: Set<String> {
+        let visibleCardSessions = Set(cards.map(\.sessionId))
+        return Set(
+            pendingReplies
+                .filter {
+                    if case .failed = $0.status { return false }
+                    return true
+                }
+                .map(\.sessionId)
+                .filter { !visibleCardSessions.contains($0) }
+        )
+    }
+
+    // MARK: - B1 mutation primitives — cards/pendingReplies as truth
+    //
+    // The chip "1 running" was historically driven by
+    // `SessionEntry.stage == .awaitingResponse`. That state needed five
+    // transition rules (markUserReplied, onCardUpsert, applyBootstrap,
+    // markReplyFailed, markAwaitingResponseTimedOut) AND a monotonic
+    // revision stamp to stay in sync with the carousel. Each rule
+    // was a separate place to race; over 24 h we hit four of them.
+    //
+    // The user's invariant collapses the model:
+    //   chip == reply I sent && no card for that session yet.
+    // Treat cards as the single visible state, pendingReplies as
+    // "Send press receipts" — let stage fall out as a derivative.
+    // These helpers mutate the canonical arrays directly so future
+    // entry points don't have to thread SessionEntry.
+
+    /// Upsert a card from WS / bootstrap. Same sessionId? replace.
+    /// New? append. The reply (if any) for that session is satisfied —
+    /// remove from pendingReplies in the SAME tick so chip and
+    /// carousel commit together.
+    private func upsertCardDirect(_ card: CardPayload, reason: String) {
+        if let idx = cards.firstIndex(where: { $0.sessionId == card.sessionId }) {
+            cards[idx] = card
+        } else {
+            cards.append(card)
+        }
+        // The arrival of any card for `card.sessionId` clears any
+        // .sending reply on that session. Failed replies stay so the
+        // failure banner survives a card refresh.
+        pendingReplies.removeAll { reply in
+            guard reply.sessionId == card.sessionId else { return false }
+            if case .failed = reply.status { return false }
+            return true
+        }
+        g15Log.info("upsertCardDirect reason=\(reason, privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
+    }
+
+    /// Card resolved (Mac side closed it; e.g. user pressed Send and
+    /// Mac is acknowledging the resolve before the new card lands).
+    /// Drop the card body; the chip stays "1 running" because the
+    /// matching pendingReply is still there.
+    private func removeCardByCardId(_ cardId: String, reason: String) {
+        cards.removeAll { $0.cardId == cardId }
+        g15Log.info("removeCardByCardId reason=\(reason, privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
+    }
+
+    /// Same as above but by sessionId (used when the user replies
+    /// optimistically — we don't always have the cardId at that
+    /// site).
+    private func removeCardForSession(_ sessionId: String, reason: String) {
+        cards.removeAll { $0.sessionId == sessionId }
+        g15Log.info("removeCardForSession reason=\(reason, privacy: .public) sid=\(sessionId.prefix(12), privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
+    }
+
+    /// User pressed Send. Track the in-flight reply and optimistically
+    /// remove the card the user just answered — that's the visual
+    /// "card slides out, chip turns on" in one tick.
+    private func appendPendingReply(_ reply: PendingReply, reason: String) {
+        // Replace any existing pendingReply for the same session
+        // (retry path) — there's only ever one in-flight reply per
+        // session at a time.
+        pendingReplies.removeAll { $0.sessionId == reply.sessionId }
+        pendingReplies.append(reply)
+        removeCardForSession(reply.sessionId, reason: "\(reason)+sendHide")
+    }
+
+    /// Reply POST failed. Flip the matching pendingReply's status to
+    /// .failed — keeps it visible to the failure banner but excludes
+    /// it from `activeSessionIds` so the running chip drops.
+    private func markPendingReplyFailedDirect(instructionId: String, reason: String) {
+        guard let idx = pendingReplies.firstIndex(where: { $0.id == instructionId }) else { return }
+        pendingReplies[idx].status = .failed(reason)
+        g15Log.info("markPendingReplyFailed instr=\(instructionId.prefix(8), privacy: .public) reason=\(reason, privacy: .public)")
+    }
+
+    /// User dismissed a failed reply.
+    private func cancelPendingReplyDirect(instructionId: String) {
+        pendingReplies.removeAll { $0.id == instructionId }
+    }
+
+    /// Bootstrap GET landed. Replace the carousel wholesale —
+    /// pendingReplies stay; if a card with the same sessionId arrives,
+    /// upsertCardDirect already removes the matching reply.
+    private func applyBootstrapDirect(_ apiCards: [CardPayload]) {
+        // Sort by updatedAt asc so newest answers float to the bottom
+        // of the carousel (matches the pre-B1 ordering).
+        cards = apiCards.sorted { $0.updatedAt < $1.updatedAt }
+        // Any reply whose card landed in the bootstrap is satisfied.
+        let bootstrapSessions = Set(apiCards.map(\.sessionId))
+        pendingReplies.removeAll { reply in
+            guard bootstrapSessions.contains(reply.sessionId) else { return false }
+            if case .failed = reply.status { return false }
+            return true
+        }
+        g15Log.info("applyBootstrapDirect cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
+    }
+
+    /// Optimistic send. Removes the card the user just answered from
+    /// the carousel and appends a `.sending` PendingReply in one
+    /// mutation. The chip rises and the carousel drops the card in
+    /// the same SwiftUI tick.
     public func sendReply(text: String, for card: CardPayload) {
         guard isSignedIn else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // The card the user is replying to should already be in
+        // `cards` (we drove it there via WS upsert or bootstrap).
+        // If it isn't, this is a stale UI binding — bail.
+        guard cards.contains(where: { $0.cardId == card.cardId })
+        else { return }
 
-        // Snapshot the card BEFORE we remove it so we can restore on
-        // failure.
-        let snapshot = card
         let instructionId = UUID().uuidString
-        let pending = PendingReply(
-            id: instructionId,
-            cardId: card.cardId,
-            sessionId: card.sessionId,
-            cardTitle: card.title,
-            text: trimmed,
-            sentAt: Date(),
-            status: .sending
+        let seq = nextEventSeq()
+        // B1 — canonical optimistic transition: append a PendingReply
+        // and remove the card the user just answered in one tick.
+        appendPendingReply(
+            PendingReply(
+                id: instructionId,
+                cardId: card.cardId,
+                sessionId: card.sessionId,
+                cardTitle: card.title,
+                text: trimmed,
+                sentAt: Date(),
+                status: .sending
+            ),
+            reason: "sendReply"
         )
-        pendingReplies.append(pending)
-        cards.removeAll { $0.cardId == card.cardId }
+        _ = seq  // event seq still bumped for debugging parity.
 
         Task { [weak self] in
             await self?.postReply(
-                pendingId: instructionId,
+                instructionId: instructionId,
                 request: InstructionRequestV2(
                     instructionId: instructionId,
-                    targetSessionId: snapshot.sessionId,
+                    targetSessionId: card.sessionId,
                     text: trimmed
-                ),
-                cardSnapshot: snapshot
+                )
             )
         }
     }
 
     private func postReply(
-        pendingId: String,
-        request: InstructionRequestV2,
-        cardSnapshot: CardPayload
+        instructionId: String,
+        request: InstructionRequestV2
     ) async {
         struct ReplyResponse: Decodable {
             let ok: Bool
@@ -597,43 +896,63 @@ public final class SyncInbox: ObservableObject {
                 "/v1/sync/instructions",
                 body: request
             )
-            pendingReplies.removeAll { $0.id == pendingId }
+            // Success = entry stays at .awaitingResponse. We don't
+            // need to do anything here; the chip will clear when the
+            // terminal produces a fresh card (WS upsert with new
+            // cardId for this session).
         } catch {
-            // Restore the card and mark the pending row failed.
-            if !cards.contains(where: { $0.cardId == cardSnapshot.cardId }) {
-                cards.append(cardSnapshot)
-                cards.sort { $0.updatedAt < $1.updatedAt }
-            }
-            if let idx = pendingReplies.firstIndex(where: { $0.id == pendingId }) {
-                pendingReplies[idx].status = .failed(error.localizedDescription)
-            }
+            // B1 — canonical fail path.
+            markPendingReplyFailedDirect(
+                instructionId: instructionId,
+                reason: error.localizedDescription
+            )
         }
     }
 
-    /// Manual retry from the pending-reply chip. Requeues the same
-    /// text against the same session.
-    public func retryPendingReply(_ id: String) {
-        guard let pending = pendingReplies.first(where: { $0.id == id }) else { return }
-        let cardId = pending.cardId
-        // Drop the failed row; sendReply will append a fresh sending
-        // row. If the card is still visible (because we restored it
-        // on failure), pull it back out.
-        pendingReplies.removeAll { $0.id == id }
-        guard let card = cards.first(where: { $0.cardId == cardId }) else { return }
-        sendReply(text: pending.text, for: card)
+    /// Manual retry from the failed-reply row. Re-runs the POST with
+    /// the same text against the same session.
+    public func retryPendingReply(_ instructionId: String) {
+        guard let prev = pendingReplies.first(where: { $0.id == instructionId })
+        else { return }
+        let newInstructionId = UUID().uuidString
+        _ = nextEventSeq()
+        appendPendingReply(
+            PendingReply(
+                id: newInstructionId,
+                cardId: prev.cardId,
+                sessionId: prev.sessionId,
+                cardTitle: prev.cardTitle,
+                text: prev.text,
+                sentAt: Date(),
+                status: .sending
+            ),
+            reason: "retryReply"
+        )
+        Task { [weak self] in
+            await self?.postReply(
+                instructionId: newInstructionId,
+                request: InstructionRequestV2(
+                    instructionId: newInstructionId,
+                    targetSessionId: prev.sessionId,
+                    text: prev.text
+                )
+            )
+        }
     }
 
-    /// Cancel a failed reply — drop the pending row but leave the
-    /// restored card visible so the user can rewrite or skip.
-    public func cancelPendingReply(_ id: String) {
-        pendingReplies.removeAll { $0.id == id }
+    /// Cancel a failed reply — entry drops from the failure banner.
+    /// The card for that session may still exist (Mac side never
+    /// resolved it), in which case the user lands back at the
+    /// original card.
+    public func cancelPendingReply(_ instructionId: String) {
+        cancelPendingReplyDirect(instructionId: instructionId)
     }
 
     public func resolveCard(_ cardId: String) async {
         guard isSignedIn else { return }
         do {
             try await deleteRequest("/v1/sync/cards/\(cardId)")
-            cards.removeAll { $0.cardId == cardId }
+            removeCardByCardId(cardId, reason: "resolveCard")
         } catch {
             lastError = "resolveCard failed: \(error.localizedDescription)"
         }
@@ -651,6 +970,12 @@ public final class SyncInbox: ObservableObject {
         let task = urlSession.webSocketTask(with: req)
         webSocketTask = task
         task.resume()
+        // Frame watchdog: reset the "last frame" clock at connect
+        // entry so a freshly-opened socket gets a 60 s grace window
+        // before the watchdog can fire. Without this, a brand-new
+        // socket that hasn't yet received its first frame would be
+        // killed by the watchdog the next time it ticks.
+        lastFrameReceivedAt = Date()
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task: task)
@@ -665,13 +990,103 @@ public final class SyncInbox: ObservableObject {
         pingTask = Task { [weak self] in
             await self?.pingLoop(task: task)
         }
+        // Frame watchdog: if `lastFrameReceivedAt` falls more than
+        // 60 s behind, force-cancel the socket so receiveLoop throws
+        // and reconnect kicks in (design doc §6). Cloudflare DO
+        // half-close sometimes evades the application ping; the
+        // watchdog catches those.
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            await self?.frameWatchdogLoop(task: task)
+        }
+        // §5.1 timeout watcher: lazy-start on first WS connect so
+        // signed-out launches don't burn a polling Task on a stage
+        // they'll never visit.
+        if timeoutWatcherTask == nil {
+            timeoutWatcherTask = Task { [weak self] in
+                await self?.awaitingResponseTimeoutLoop()
+            }
+        }
+    }
+
+    /// Force-cancel the WS task if `lastFrameReceivedAt` is older
+    /// than 60 s. Runs as a sibling Task to the receive loop. Quiet
+    /// when the socket is healthy — the receive loop refreshes the
+    /// timestamp on every frame.
+    private func frameWatchdogLoop(task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard task === webSocketTask else { return }
+            let lastFrame = await MainActor.run { lastFrameReceivedAt ?? Date.distantPast }
+            if Date().timeIntervalSince(lastFrame) > 60 {
+                // Socket has gone silent. Tear it down; receiveLoop
+                // throws and the exponential-backoff reconnect path
+                // takes over (same path as pingLoop's force-cancel).
+                task.cancel(with: .goingAway, reason: nil)
+                return
+            }
+        }
+    }
+
+    /// Wakes every 30 s, scans `.awaitingResponse` entries for ones
+    /// older than 10 min, and decays them to `.failed("response
+    /// timeout")`. Gated on `loadPhase == .ready && reloadInFlightCount
+    /// == 0` so a cold-start unlock doesn't fire a 1-frame spurious
+    /// banner before the bootstrap GET lands. 5-min escape hatch
+    /// fires anyway if `loadPhase` has been stuck not-ready for that
+    /// long — captive portal must not pin a chip forever
+    /// (design doc §5.1, §11.6, §11.7, §11.8).
+    private func awaitingResponseTimeoutLoop() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await checkAwaitingResponseTimeouts()
+        }
+    }
+
+    @MainActor
+    private func checkAwaitingResponseTimeouts() {
+        let now = Date()
+        // Captive-portal escape hatch.
+        let escapeHatch: Bool = {
+            guard loadPhase != .ready,
+                  let enteredAt = loadPhaseEnteredNotReadyAt
+            else { return false }
+            return now.timeIntervalSince(enteredAt) > 300
+        }()
+        if !escapeHatch {
+            guard loadPhase == .ready && reloadInFlightCount == 0 else { return }
+        }
+        // B2 — fail .sending replies older than 10 minutes. The user
+        // sees a "response timeout" failure banner; the chip drops
+        // (failed status is excluded from `activeSessionIds`).
+        for reply in pendingReplies {
+            guard reply.status == .sending,
+                  now.timeIntervalSince(reply.sentAt) > 600
+            else { continue }
+            markPendingReplyFailedDirect(
+                instructionId: reply.id,
+                reason: "response timeout"
+            )
+        }
     }
 
     private var pingTask: Task<Void, Never>?
 
     private func pingLoop(task: URLSessionWebSocketTask) async {
+        // Cloudflare Workers' Durable Objects close WebSockets after
+        // ~5-10 minutes of inactivity. 20 s keeps us comfortably
+        // inside that window without burning bandwidth. We send BOTH
+        //   (a) the application-level WSMessage.ping that the relay's
+        //       handler responds to, and
+        //   (b) URLSessionWebSocketTask.sendPing, which is a
+        //       TCP-level control frame whose pong-handler also fires
+        //       when the socket is half-closed. Doubling them means a
+        //       dead socket throws within one ping cycle instead of
+        //       waiting for the next outbound payload to fail.
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 20 * 1_000_000_000)
             guard !Task.isCancelled else { return }
             guard task === webSocketTask else { return }
             let ping = WSMessage.ping
@@ -680,7 +1095,23 @@ public final class SyncInbox: ObservableObject {
             do {
                 try await task.send(.string(s))
             } catch {
+                // Application send failed: Cloudflare DO has
+                // half-closed the socket. The receive loop is still
+                // blocked in task.receive(); force-cancel so it
+                // throws and the reconnect backoff takes over.
+                task.cancel(with: .goingAway, reason: nil)
                 return
+            }
+            // Drop a control-frame ping right after. If the pong never
+            // arrives (server is gone), Apple's framework eventually
+            // invalidates the task and receiveLoop throws on its own.
+            task.sendPing { error in
+                if error != nil {
+                    Task { @MainActor in
+                        guard task === self.webSocketTask else { return }
+                        task.cancel(with: .goingAway, reason: nil)
+                    }
+                }
             }
         }
     }
@@ -695,6 +1126,9 @@ public final class SyncInbox: ObservableObject {
         while !Task.isCancelled {
             do {
                 let message = try await task.receive()
+                // Frame received: feed the watchdog so it doesn't
+                // cancel a healthy socket the next time it ticks.
+                await MainActor.run { self.lastFrameReceivedAt = Date() }
                 // First successful frame after a (re)connect means we
                 // really are connected — reset the attempt counter.
                 if reconnectAttempt > 0 { reconnectAttempt = 0 }
@@ -723,34 +1157,24 @@ public final class SyncInbox: ObservableObject {
         }
         switch message {
         case .cardUpsert(let card):
-            // Drop upserts for any card the user already replied to.
-            // Mac re-publishes every active card on each reload tick
-            // (~2s), which races our optimistic removal: the user
-            // taps Send → we remove the card → 1s later Mac's tick
-            // re-publishes the same row → WS broadcast → card pops
-            // back in. The reconcile loop on Mac then resolves it
-            // ~1s after that ("disappear, reappear, disappear"). We
-            // gate WS upserts on the pendingReplies set so the
-            // optimistic state wins.
-            if pendingReplies.contains(where: { $0.cardId == card.cardId }) {
-                return
-            }
-            // Keep ordering by updatedAt asc; replace existing or append.
-            if let idx = cards.firstIndex(where: { $0.cardId == card.cardId }) {
-                cards[idx] = card
-            } else {
-                cards.append(card)
-            }
-            cards.sort { $0.updatedAt < $1.updatedAt }
+            // SessionEntryStore handles every case:
+            //   - Same cardId: refresh content, preserve stage. The
+            //     "Mac re-publishes my optimistically-removed card"
+            //     race is gone — the entry's stage already says
+            //     awaitingResponse, and the upsert can't downgrade it.
+            //   - New cardId for an existing session: the terminal
+            //     produced a fresh response. Atomic swap: stage
+            //     resets to .awaitingUser, chip count drops by one,
+            //     carousel gains the new card — all in one mutation.
+            //   - Brand-new session: insert as .awaitingUser.
+            let revStr = card.responseRevision.map(String.init) ?? "nil"
+            upsertCardDirect(card, reason: "ws.upsert rev=\(revStr)")
             // First WS upsert during cold-start counts as ready —
             // we have at least one real card even if the bootstrap
             // GET hasn't returned yet.
-            if loadPhase != .ready { loadPhase = .ready }
+            if loadPhase != .ready { setLoadPhase(.ready) }
         case .cardResolved(let id):
-            cards.removeAll { $0.cardId == id }
-            // A resolve from the server is the authoritative signal
-            // that our pending reply made it through; clear the row.
-            pendingReplies.removeAll { $0.cardId == id }
+            removeCardByCardId(id, reason: "ws.resolved")
         case .ping:
             sendPong()
         default:

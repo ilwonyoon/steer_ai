@@ -80,11 +80,20 @@ export class Store {
 
   /// Upsert a card.
   ///
-  /// Returns `inserted` (true when this card_id is new for the user)
-  /// and `changed` (true when the row is new OR any meaningful column
-  /// differs from what we previously stored). Callers gate on
-  /// `inserted` for APNS (one push per new card) and on `changed`
-  /// for the WebSocket broadcast (no-op upserts must not fan out).
+  /// Returns `inserted` (true when this card_id is new for the user),
+  /// `changed` (true when the row is new OR any meaningful column
+  /// differs from what we previously stored), and `becameActive`
+  /// (true when the row was either inserted with state="active" OR
+  /// transitioned from a non-active state to active — this is the
+  /// signal the APNS fanout needs to push every NEW user-actionable
+  /// card, not just the first one of a session's lifetime).
+  ///
+  /// Why becameActive matters: SteerAgent reuses `card-${sessionId}`
+  /// as the card_id for every card on that session, so after the
+  /// first card is resolved, every subsequent stop/blocker/etc on
+  /// the same session is an UPDATE not an INSERT. Pre-fix, only the
+  /// very first card of a session ever produced a push; users
+  /// reported "first card alerts, every reply after that silent."
   ///
   /// "Meaningful" here = everything except `updated_at`. Mac
   /// re-publishes on its reload tick, bumping updated_at every time
@@ -94,10 +103,10 @@ export class Store {
   async upsertCard(
     userId: string,
     card: CardPayload
-  ): Promise<{ inserted: boolean; changed: boolean }> {
+  ): Promise<{ inserted: boolean; changed: boolean; becameActive: boolean }> {
     const existing = await this.env.DB.prepare(
       `SELECT session_id, category, priority, title, summary,
-              action_prompt, payload_json, state
+              action_prompt, payload_json, state, response_revision
        FROM cards WHERE card_id = ? AND user_id = ? LIMIT 1`
     )
       .bind(card.cardId, userId)
@@ -110,9 +119,11 @@ export class Store {
         action_prompt: string | null;
         payload_json: string;
         state: string;
+        response_revision: number | null;
       }>();
     const inserted = existing == null;
     const incomingPayload = JSON.stringify(card.payload ?? {});
+    const incomingRevision = card.responseRevision ?? 0;
     const changed =
       inserted ||
       existing.session_id !== card.sessionId ||
@@ -122,14 +133,24 @@ export class Store {
       existing.summary !== card.summary ||
       (existing.action_prompt ?? null) !== (card.actionPrompt ?? null) ||
       existing.payload_json !== incomingPayload ||
-      existing.state !== card.state;
+      existing.state !== card.state ||
+      (existing.response_revision ?? 0) !== incomingRevision;
+    // True when the card is reaching state="active" for the first
+    // time in this upsert: either it's a brand-new row OR the
+    // previous stored state was something else (typically "done"
+    // after the user replied to the previous turn). This is the
+    // event that should trigger a fresh push notification.
+    const becameActive =
+      card.state === "active" &&
+      (inserted || existing.state !== "active");
 
     await this.env.DB.prepare(
       `INSERT INTO cards (
          card_id, user_id, session_id, category, priority, title, summary,
-         action_prompt, payload_json, state, created_at, updated_at
+         action_prompt, payload_json, state, created_at, updated_at,
+         response_revision
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(card_id) DO UPDATE SET
          category = excluded.category,
          priority = excluded.priority,
@@ -138,7 +159,8 @@ export class Store {
          action_prompt = excluded.action_prompt,
          payload_json = excluded.payload_json,
          state = excluded.state,
-         updated_at = excluded.updated_at`
+         updated_at = excluded.updated_at,
+         response_revision = excluded.response_revision`
     )
       .bind(
         card.cardId,
@@ -152,16 +174,18 @@ export class Store {
         incomingPayload,
         card.state,
         card.createdAt,
-        card.updatedAt
+        card.updatedAt,
+        incomingRevision
       )
       .run();
-    return { inserted, changed };
+    return { inserted, changed, becameActive };
   }
 
   async listActiveCards(userId: string, sinceUpdatedAt = 0): Promise<CardPayload[]> {
     const rs = await this.env.DB.prepare(
       `SELECT card_id, session_id, category, priority, title, summary,
-              action_prompt, payload_json, state, created_at, updated_at
+              action_prompt, payload_json, state, created_at, updated_at,
+              response_revision
        FROM cards
        WHERE user_id = ? AND state = 'active' AND updated_at > ?
        ORDER BY updated_at ASC
@@ -182,6 +206,7 @@ export class Store {
       state: row.state as "active" | "done",
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
+      responseRevision: (row.response_revision as number | null) ?? 0,
     }));
   }
 

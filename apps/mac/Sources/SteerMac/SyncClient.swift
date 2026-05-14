@@ -98,12 +98,44 @@ public final class SyncClient: ObservableObject {
     }
 
     public func signOut() {
+        // Fire-and-forget DELETE so the relay drops this device row
+        // immediately. Without it the other paired device (the
+        // iPhone) keeps seeing this Mac as "connected" until the
+        // freshness window expires several minutes later. We don't
+        // await the result — the user-visible side of sign-out
+        // (status flip, token clear) must be synchronous, and the
+        // relay-side cleanup is best-effort.
+        let deviceId = Self.deviceId
+        let token = tokenStore.read()
+        if token != nil {
+            Task { [weak self] in
+                await self?.deleteThisDevice(deviceId: deviceId, token: token!)
+            }
+        }
         tokenStore.clear()
         status = .signedOut
         webSocketTask?.cancel()
         webSocketTask = nil
         receiveTask?.cancel()
         receiveTask = nil
+    }
+
+    /// Best-effort DELETE /v1/sync/devices/:deviceId. We can't reuse
+    /// `deleteRequest()` because by the time the task body runs the
+    /// keychain has been cleared, so we capture the token at call
+    /// time and hand-build the request.
+    private func deleteThisDevice(deviceId: String, token: String) async {
+        var req = URLRequest(url: baseURL.appendingPathComponent("/v1/sync/devices/\(deviceId)"))
+        req.httpMethod = "DELETE"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(deviceId, forHTTPHeaderField: "X-Steer-Device-Id")
+        do {
+            let (_, response) = try await urlSession.data(for: req)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            SignInDebugLog.write("[signOut] device DELETE status=\(code)")
+        } catch {
+            SignInDebugLog.write("[signOut] device DELETE failed: \(error)")
+        }
     }
 
     /// Kicks off Sign in with Apple. The presenting window must be
@@ -136,18 +168,28 @@ public final class SyncClient: ObservableObject {
         } catch {
             self.pendingSignIn = nil
             SignInDebugLog.write("[apple-signin] failed: \(error)")
-            // Same canceled-suppression rationale as
-            // handleAppleSignInResult above — keep silent on user
-            // cancel + macOS 26 transient retry-cancel, surface
-            // everything else.
-            let ns = error as NSError
-            let isCanceled =
-                ns.domain == ASAuthorizationError.errorDomain
-                && ns.code == ASAuthorizationError.canceled.rawValue
-            if !isCanceled {
+            // Suppress any user-side abort, including the .unknown code
+            // macOS 26 raises when the sheet is dismissed without an
+            // explicit cancel button press. The user is just going to
+            // tap the Apple button again; a red banner makes the app
+            // look broken.
+            if !isAppleSignInAbort(error) {
                 lastError = "Apple sign-in failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// True if the error represents the user closing or backing out of
+    /// the system Apple Sign In sheet (any reason). Surface only
+    /// real failures that need an explanation.
+    private func isAppleSignInAbort(_ error: Error) -> Bool {
+        let ns = error as NSError
+        guard ns.domain == ASAuthorizationError.errorDomain else { return false }
+        // .canceled — user hit Cancel or dismissed the sheet.
+        // .unknown  — macOS 26 sheet dismiss path; we observed this
+        //   when the user clicks outside the sheet on real hardware.
+        return ns.code == ASAuthorizationError.canceled.rawValue
+            || ns.code == ASAuthorizationError.unknown.rawValue
     }
 
     private struct PendingSignIn {
@@ -168,21 +210,10 @@ public final class SyncClient: ObservableObject {
             await handleAppleCredential(credential)
         case .failure(let error):
             SignInDebugLog.write("[apple-signin] onCompletion failure: \(error)")
-            // ASAuthorizationError.canceled fires when the user
-            // dismisses the system sheet OR — more often than you'd
-            // expect — when macOS 26's SignInWithAppleButton emits a
-            // transient cancellation before re-presenting the sheet
-            // and succeeding on the next pass. Either way it's not
-            // something the user wants to read in red right above
-            // the button they just clicked.
-            //
-            // Other failure modes (network, missing entitlement)
-            // SHOULD surface, so we only silence the canceled code.
-            let ns = error as NSError
-            let isCanceled =
-                ns.domain == ASAuthorizationError.errorDomain
-                && ns.code == ASAuthorizationError.canceled.rawValue
-            if !isCanceled {
+            // Suppress any user-side abort (cancel or sheet dismiss).
+            // Other failure modes (network, missing entitlement) keep
+            // surfacing because the user needs an explanation.
+            if !isAppleSignInAbort(error) {
                 lastError = "Apple sign-in failed: \(error.localizedDescription)"
             }
             status = .signedOut
@@ -350,21 +381,6 @@ public final class SyncClient: ObservableObject {
         return false
     }
 
-    /// Publish a single live-session snapshot. Mirrors the Mac
-    /// status-bar chip's "1 running · 2 waiting" badge to iPhone via
-    /// /v1/sync/sessions. Fire-and-forget: failure is silent because
-    /// the next reload tick will retry.
-    public func publishSession(_ session: SessionSnapshot) async {
-        guard isSignedIn else { return }
-        do {
-            try await postJSONIgnoringResponse("/v1/sync/sessions", body: session)
-        } catch {
-            if !isTransientError(error) {
-                SignInDebugLog.write("[publishSession] failed: \(error)")
-            }
-        }
-    }
-
     /// Pull every card the relay still considers active for this
     /// user. The Mac reconciles against this list each reload tick so
     /// cards that no longer exist on disk get resolved server-side
@@ -378,6 +394,25 @@ public final class SyncClient: ObservableObject {
         } catch {
             if !isTransientError(error) {
                 SignInDebugLog.write("[fetchActiveCards] failed: \(error)")
+            }
+            return []
+        }
+    }
+
+    /// List the user's registered devices. Mac chrome uses this
+    /// to read iPhone presence (lastSeenAt of any iOS device row)
+    /// so the menu bar can show whether the user's phone is
+    /// connected. Empty list on failure — UI treats that as
+    /// "unknown" and falls back to the not-paired state.
+    public func fetchDevices() async -> [DeviceSnapshot] {
+        guard isSignedIn else { return [] }
+        struct ListResponse: Decodable { let devices: [DeviceSnapshot] }
+        do {
+            let resp: ListResponse = try await getJSON("/v1/sync/devices")
+            return resp.devices
+        } catch {
+            if !isTransientError(error) {
+                SignInDebugLog.write("[fetchDevices] failed: \(error)")
             }
             return []
         }
@@ -470,6 +505,10 @@ public final class SyncClient: ObservableObject {
         let task = urlSession.webSocketTask(with: req)
         webSocketTask = task
         task.resume()
+        // Frame watchdog: reset on connect so a brand-new socket
+        // gets a 60 s grace window before the watchdog can cancel
+        // it for silence (design doc §6).
+        lastFrameReceivedAt = Date()
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task: task)
@@ -481,24 +520,54 @@ public final class SyncClient: ObservableObject {
         // during the exact window an iPhone reply would have been
         // pushed. The relay only sends a single ping on accept and
         // never again; clients didn't send any ping either. Drive
-        // a client-side ping every 30s so Cloudflare's idle timer
+        // a client-side ping every 20s so Cloudflare's idle timer
         // never trips: any pong (or even the bare ping send) keeps
-        // the socket warm. Sized at 30s so we tolerate one missed
-        // ping cycle before Cloudflare's window expires.
+        // the socket warm.
         pingTask?.cancel()
         pingTask = Task { [weak self] in
             await self?.pingLoop(task: task)
+        }
+        // Frame watchdog (design doc §6). Force-cancels the socket
+        // if `lastFrameReceivedAt` falls more than 60 s behind —
+        // catches Cloudflare DO half-close that evades the
+        // application ping.
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            await self?.frameWatchdogLoop(task: task)
+        }
+    }
+
+    private var watchdogTask: Task<Void, Never>?
+    private var lastFrameReceivedAt: Date?
+
+    private func frameWatchdogLoop(task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard task === webSocketTask else { return }
+            let lastFrame = await MainActor.run { lastFrameReceivedAt ?? Date.distantPast }
+            if Date().timeIntervalSince(lastFrame) > 60 {
+                task.cancel(with: .goingAway, reason: nil)
+                return
+            }
         }
     }
 
     private var pingTask: Task<Void, Never>?
 
     private func pingLoop(task: URLSessionWebSocketTask) async {
+        // 20 s keepalive — comfortably inside Cloudflare's DO idle
+        // timeout. We send both the application-level WSMessage.ping
+        // (so the relay's handler sees it as activity) AND a
+        // TCP-level control-frame ping via sendPing(pongReceiveHandler:).
+        // The latter's pong handler is the fastest health signal Apple's
+        // SDK exposes — when the server is gone, send throws or the
+        // handler reports an error, and we force-cancel so receiveLoop
+        // unblocks and the exponential-backoff reconnect takes over.
+        // Same logic as iOS SyncInbox's pingLoop.
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 20 * 1_000_000_000)
             guard !Task.isCancelled else { return }
-            // If the receive loop already moved on to a new socket,
-            // stop pinging the old one.
             guard task === webSocketTask else { return }
             let ping = WSMessage.ping
             guard let data = try? JSONEncoder().encode(ping),
@@ -506,10 +575,16 @@ public final class SyncClient: ObservableObject {
             do {
                 try await task.send(.string(s))
             } catch {
-                // Send failure means the socket is already dead;
-                // the receive loop will surface the same error and
-                // trigger reconnect. Just exit the ping loop.
+                task.cancel(with: .goingAway, reason: nil)
                 return
+            }
+            task.sendPing { error in
+                if error != nil {
+                    Task { @MainActor in
+                        guard task === self.webSocketTask else { return }
+                        task.cancel(with: .goingAway, reason: nil)
+                    }
+                }
             }
         }
     }
@@ -523,6 +598,8 @@ public final class SyncClient: ObservableObject {
         while !Task.isCancelled {
             do {
                 let message = try await task.receive()
+                // Frame received — feed the watchdog.
+                await MainActor.run { self.lastFrameReceivedAt = Date() }
                 if reconnectAttempt > 0 { reconnectAttempt = 0 }
                 switch message {
                 case .string(let s):

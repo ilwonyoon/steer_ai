@@ -26,7 +26,14 @@ final class ActionNotificationService {
         guard await ensureAuthorization() else { return }
 
         let content = UNMutableNotificationContent()
-        content.title = card.title
+        // Title = project name ("Documents/Steer_ai") so the user can
+        // see at a glance which repo paged them. Falls back to the
+        // classifier headline only when project is empty (legacy
+        // ActionCard rows had unknown-project default).
+        let projectTitle = card.project.trimmingCharacters(in: .whitespaces)
+        content.title = !projectTitle.isEmpty && projectTitle != "unknown-project"
+            ? projectTitle
+            : card.title
         content.body = card.summary
         content.sound = SteerSettings.shared.soundEnabled ? .default : nil
         content.userInfo = [

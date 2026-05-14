@@ -5,6 +5,10 @@ struct SteerRootView: View {
     private let store = LocalSteerStore()
     private let notificationService = ActionNotificationService.shared
     @ObservedObject private var status = SteerAppDelegate.status
+    /// Drives the iPhone presence dot's visibility. Observing the
+    /// shared SyncClient means the dot appears/disappears the moment
+    /// sign-in lands instead of waiting for the next reload tick.
+    @ObservedObject private var sync = SyncClient.shared
 
     @State private var cards: [ActionCard] = []
     @State private var liveChips: [LiveSessionChip] = []
@@ -32,24 +36,17 @@ struct SteerRootView: View {
     /// anything the local store no longer reports active.
     @State private var didSeedFromRelay = false
     /// Per-chip snapshot of (fingerprint, lastPublishedAt). We dedupe
-    /// on the fingerprint to avoid spam, but we ALSO force a publish
-    /// every ~30s so the relay's last_activity_at stays fresh — its
-    /// listLiveSessions cutoff drops sessions whose row hasn't been
-    /// touched in 90s, and dedupe alone would let a steadily running
-    /// session fall off that cliff and stop showing on iPhone.
-    @State private var lastPublishedChipFingerprints: [String: (fp: String, at: Date)] = [:]
     @State private var liveChipsExpanded = false
-    /// Set of sessionIds where the user (typically from iPhone) issued
-    /// an instruction we already injected; the badge counts how many
-    /// of these are currently `run_state == "running"` and displays
-    /// "N running". A sessionId is *added* the moment we drain a
-    /// queued instruction targeting it, and *removed* the moment the
-    /// session falls out of `running` (stopped, hit a card, completed
-    /// — any non-running state). Effect: the chip only ever surfaces
-    /// "work the user kicked off", not idle sessions, not other
-    /// people's sessions, not running sessions that never received
-    /// an instruction from us.
-    @State private var instructedSessionIds: Set<String> = []
+    /// Map of `sessionId → instructed-at timestamp (ms)` for sessions
+    /// where the user (Mac card reply or iPhone drain) already
+    /// successfully injected a reply. Drives the Mac "N running" pill
+    /// AND the iPhone chip — both surfaces count the same set.
+    ///
+    /// Membership is governed entirely by `InstructedSessionDecay`
+    /// (SteerCore): the stamp lets the decay distinguish "card from
+    /// before the reply" (chip stays) from "card produced after the
+    /// reply" (chip falls off). See that helper for the full spec.
+    @State private var instructedSessions: [String: InstructedAt] = [:]
     @State private var replyDrafts: [String: String] = [:]
     @State private var attachmentDrafts: [String: [ReplyAttachment]] = [:]
     @Namespace private var sessionTransition
@@ -70,26 +67,54 @@ struct SteerRootView: View {
 
     /// Count of sessions the user kicked off (an instruction was
     /// successfully injected) that are still live and have not yet
-    /// produced a card. Drives the top "N running" pill. The decay
-    /// logic in reload() guarantees this only contains sessions
-    /// in the active instruction-processing window — see that
-    /// comment for the full membership rules.
+    /// produced a card. Drives the top "N running" pill.
+    ///
+    /// Matches iPhone's G15.A invariant exactly:
+    ///   running = sessions the user replied to AND no card visible.
+    /// `instructedSessions` is the "user-replied" record; subtracting
+    /// `cards.sessionId` collapses the chip the instant the terminal
+    /// produces a fresh card. The previous `InstructedSessionDecay`
+    /// state machine inferred this from card timestamps and could
+    /// drift if the decay rule had a hole — cards-derive removes
+    /// that surface.
     private var instructedRunningCount: Int {
-        instructedSessionIds.count
+        let activeCardSessions = Set(cards.map(\.sessionId))
+        return instructedSessions.keys.filter { !activeCardSessions.contains($0) }.count
     }
+
+    /// Newest iOS device snapshot polled from /v1/sync/devices, or
+    /// nil if no iPhone has ever paired with this account. Drives
+    /// the menu-bar iPhone presence dot.
+    @State private var iPhoneDevice: DeviceSnapshot?
+    @State private var iPhonePopoverVisible: Bool = false
 
     var body: some View {
         ZStack(alignment: .top) {
             SteerColors.appBackground
                 .ignoresSafeArea()
 
-            Text("Steer")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(SteerColors.secondaryInk)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .frame(height: 28)
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
+            ZStack {
+                Text("Steer")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .allowsHitTesting(false)
+
+                if sync.isSignedIn {
+                    HStack {
+                        Spacer()
+                        IPhonePresenceDot(
+                            device: iPhoneDevice,
+                            isPopoverVisible: $iPhonePopoverVisible,
+                            hasFetchedOnce: lastDeviceRefreshAt != nil
+                        )
+                        .padding(.trailing, 10)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .ignoresSafeArea(edges: .top)
 
             VStack(spacing: 12) {
                 if let lastError {
@@ -275,7 +300,9 @@ struct SteerRootView: View {
             // as "user-kicked-off" so the top pill counts it. Without
             // this hook the pill only ever surfaced iPhone drains and
             // missed every Mac-side card reply.
-            instructedSessionIds.insert(sessionId)
+            instructedSessions[sessionId] = InstructedAt(
+                atMs: Int64(Date().timeIntervalSince1970 * 1000)
+            )
             await reload()
         } catch {
             lastError = "send failed"
@@ -310,38 +337,36 @@ struct SteerRootView: View {
         let loadedCards = await store.loadCards()
         await notifyForNewCards(loadedCards)
         let activeSessionIds = Set(loadedCards.map(\.sessionId))
-        let loadedChipsRaw = await store.loadLiveSessions(excluding: activeSessionIds)
-        // Belt-and-suspenders: loadLiveSessions runs a separate sqlite3
-        // subprocess from loadCards, so a session that flipped from
-        // `running` to `waiting` between the two queries can briefly
-        // show up in BOTH lists ("1 running · 1 waiting" for what is
-        // really one session). Filter the chip list one more time
-        // here, in the same tick, against the cards we just observed.
-        let loadedChips = loadedChipsRaw.filter { !activeSessionIds.contains($0.sessionId) }
+        // We need ALL live sessions for the iPhone "N running" chip,
+        // including ones that currently have an active card. The chip
+        // counts sessions the user already replied to and the terminal
+        // is still working on; cards drop in/out of that window but
+        // membership in `instructedSessionIds` is the source of truth.
+        // Mac UI's chip header (`liveChips`) uses the card-filtered
+        // view so we don't double-list a session that has its own card.
+        let loadedLive = await store.loadLiveSessions(excluding: [])
+        let loadedChips = loadedLive.filter { !activeSessionIds.contains($0.sessionId) }
         cards = loadedCards
         liveChips = loadedChips
-        // Decay instructed-session membership. A session stays in the
-        // set from the moment we inject an instruction until ONE of:
-        //
-        //   1. The session disappears from the live snapshot — it
-        //      ended, disconnected, or fell off the 90s live cutoff.
-        //   2. A card appeared for that session — the user has a
-        //      direct surface (the card) to handle it, so the pill
-        //      no longer needs to advertise the in-progress work.
-        //
-        // We deliberately do NOT decay just because the wrapper
-        // flipped run_state back to "waiting". Short replies finish
-        // before the next reload tick and would make the pill
-        // flicker into existence for a single frame, so the user
-        // never sees it. Holding membership through the whole
-        // instruction-processing window matches the user's mental
-        // model: "if I sent something and it isn't visibly resolved
-        // yet, the pill should still show it".
-        let liveSessionIds = Set(loadedChips.map(\.sessionId))
-        let cardSessionIds = Set(loadedCards.map(\.sessionId))
-        instructedSessionIds = instructedSessionIds
-            .intersection(liveSessionIds)
-            .subtracting(cardSessionIds)
+        // Decay instructed-session membership. Logic lives in
+        // SteerCore.InstructedSessionDecay (with unit tests covering
+        // the full spec). Crucially we use the raw `loadedLive` set,
+        // not the card-filtered `loadedChips`: if we kept using the
+        // filtered set, every reply to an existing card would
+        // immediately drop the session from the chip before the
+        // terminal had a chance to produce its next response.
+        let liveSessionIds = Set(loadedLive.map(\.sessionId))
+        let cardSnapshots = loadedCards.map {
+            CardUpdateSnapshot(
+                sessionId: $0.sessionId,
+                updatedAtMs: Int64($0.updatedAt.timeIntervalSince1970 * 1000)
+            )
+        }
+        instructedSessions = InstructedSessionDecay.decay(
+            previous: instructedSessions,
+            liveSessionIds: liveSessionIds,
+            cards: cardSnapshots
+        )
         isLoading = false
         // Keep the user's focus stable across reloads. If the previously
         // focused session is gone (resolved / disconnected), fall back to
@@ -382,11 +407,9 @@ struct SteerRootView: View {
         if !signedIn || !toggleOn {
             if !lastPublishedCardIds.isEmpty
                 || !lastPublishedCardHashes.isEmpty
-                || !lastPublishedChipFingerprints.isEmpty
             {
                 lastPublishedCardIds.removeAll()
                 lastPublishedCardHashes.removeAll()
-                lastPublishedChipFingerprints.removeAll()
             }
             // Re-seed from relay on the next sign-in / toggle-on
             // cycle (the orphan-cleanup path runs once per
@@ -411,6 +434,12 @@ struct SteerRootView: View {
                 // resolved cards. See CardReconciler in SteerCore
                 // for the diff logic.
                 if !didSeedFromRelay {
+                    // First reload after sign-in: seed
+                    // lastPublishedCardIds from the relay's active set
+                    // so any card the previous Mac process published
+                    // (but the current local store no longer reports)
+                    // gets DELETEd on the next reconcile pass. See
+                    // CardReconciler in SteerCore for the diff logic.
                     let remoteCards = await SyncClient.shared.fetchActiveCards()
                     lastPublishedCardIds = Set(remoteCards.map(\.cardId))
                     didSeedFromRelay = true
@@ -418,27 +447,21 @@ struct SteerRootView: View {
                         "[reconcile] cold-start seed: relay had \(remoteCards.count) active card(s)"
                     )
                 }
-                // Diff-based publish. Only PUT the cards/chips that
-                // actually changed since our last successful publish,
-                // and only DELETE rows the iPhone still believes are
-                // active. SwiftUI tick runs every 2s but most ticks
-                // observe the same set of cards with identical
-                // contents; without this gate we re-publish them all
-                // on every tick and the iPhone sees a fresh WS upsert
-                // burst every two seconds.
+                // Cards: diff-based publish so the iPhone doesn't see
+                // a fresh WS upsert burst every 2s of the SwiftUI tick.
                 let (cardsToPublish, idsToResolve) = diffCardsForPublish(
                     loadedCards: loadedCards
                 )
-                let chipsToPublish = diffChipsForPublish(loadedChips: loadedChips)
                 if !cardsToPublish.isEmpty || !idsToResolve.isEmpty {
                     await syncToiPhone(
                         publishCards: cardsToPublish,
                         idsToResolve: idsToResolve
                     )
                 }
-                if !chipsToPublish.isEmpty {
-                    await syncLiveSessionsToiPhone(chips: chipsToPublish)
-                }
+                // Chip publishing path is gone — iPhone derives its
+                // chip locally from the cards it already receives over
+                // WebSocket + its own pendingReplies. The relay's
+                // /v1/sync/sessions route is no longer consulted.
             }
             // Drain on every 60s tick at most. The primary drain
             // trigger is the WebSocket instruction.queued message —
@@ -455,7 +478,38 @@ struct SteerRootView: View {
         // only post when we cross the cooldown.
         if signedIn {
             await maybeHeartbeat(syncEnabled: toggleOn)
+            // Refresh the iPhone presence dot on the same cadence —
+            // GETting /v1/sync/devices on every 2s tick would be the
+            // same kind of Cloudflare spam the heartbeat was. The
+            // popover content is "last seen Ns ago" granularity, so a
+            // minute of staleness is fine.
+            await maybeRefreshIPhoneDevice()
+        } else if iPhoneDevice != nil {
+            // Drop stale presence the moment we sign out so the dot
+            // doesn't keep showing yesterday's iPhone.
+            iPhoneDevice = nil
         }
+    }
+
+    @State private var lastDeviceRefreshAt: Date? = nil
+    private func maybeRefreshIPhoneDevice() async {
+        let now = Date()
+        // 30 s cadence — iOS heartbeats every 60 s, so polling
+        // twice that gives us at most one stale window before the
+        // dot updates. Lower than the 60 s heartbeat cooldown and
+        // we'd waste relay GETs for no extra freshness.
+        if let last = lastDeviceRefreshAt, now.timeIntervalSince(last) < 30 {
+            return
+        }
+        lastDeviceRefreshAt = now
+        let devices = await SyncClient.shared.fetchDevices()
+        // Pick the most-recently-seen iOS device. Users typically
+        // pair one iPhone, but if they sign in on multiple, the one
+        // with the freshest heartbeat is the one they actually have
+        // in front of them.
+        iPhoneDevice = devices
+            .filter { $0.platform == "ios" }
+            .max(by: { $0.lastSeenAt < $1.lastSeenAt })
     }
 
     @State private var lastHeartbeatAt: Date? = nil
@@ -481,24 +535,6 @@ struct SteerRootView: View {
         }
         lastDrainAt = now
         await drainQueuedInstructions()
-    }
-
-    /// Push the running-session chip list to the relay so the iPhone
-    /// can render the "1 running" badge inside its connection chip.
-    /// LiveSessionChip is what RunningBadge already consumes locally;
-    /// we lift the same shape to the wire as SessionSnapshot.
-    private func syncLiveSessionsToiPhone(chips: [LiveSessionChip]) async {
-        for chip in chips {
-            let snapshot = SessionSnapshot(
-                sessionId: chip.sessionId,
-                provider: chip.provider.rawValue,
-                projectName: chip.project,
-                branchLabel: nil,
-                runState: chip.runState,
-                lastActivityAt: Int64(chip.lastActivityAt.timeIntervalSince1970 * 1000)
-            )
-            await SyncClient.shared.publishSession(snapshot)
-        }
     }
 
     /// Splits the freshly loaded card set against the last-published
@@ -549,42 +585,6 @@ struct SteerRootView: View {
         return (cardsToPublish, idsToResolve)
     }
 
-    /// Diff helper for live-session chips. Two reasons we may
-    /// publish a chip on a given reload tick:
-    ///
-    /// 1. Its content fingerprint changed since last publish
-    ///    (runState / project / provider). Standard dedupe path.
-    /// 2. Its content is unchanged but more than 30s elapsed since
-    ///    the last publish. This is the heartbeat path: the relay's
-    ///    listLiveSessions cutoff drops sessions whose row hasn't
-    ///    been touched in 90s, so without a periodic re-publish a
-    ///    healthy long-running session would fall off the iPhone
-    ///    chip's "N running" count after ~90s of no activity.
-    private func diffChipsForPublish(
-        loadedChips: [LiveSessionChip]
-    ) -> [LiveSessionChip] {
-        var next: [LiveSessionChip] = []
-        let now = Date()
-        let heartbeatInterval: TimeInterval = 30
-        for chip in loadedChips {
-            let fp = "\(chip.runState)|\(chip.project)|\(chip.provider.rawValue)"
-            let prev = lastPublishedChipFingerprints[chip.sessionId]
-            let staleHeartbeat = prev.map { now.timeIntervalSince($0.at) > heartbeatInterval } ?? true
-            if prev?.fp != fp || staleHeartbeat {
-                next.append(chip)
-                lastPublishedChipFingerprints[chip.sessionId] = (fp, now)
-            }
-        }
-        // Prune snapshots for chips that no longer exist locally so
-        // the dictionary doesn't grow unbounded across long-running
-        // sessions.
-        let liveIds = Set(loadedChips.map(\.sessionId))
-        for key in lastPublishedChipFingerprints.keys where !liveIds.contains(key) {
-            lastPublishedChipFingerprints.removeValue(forKey: key)
-        }
-        return next
-    }
-
     private func syncToiPhone(
         publishCards: [ActionCard],
         idsToResolve: [String]
@@ -627,9 +627,11 @@ struct SteerRootView: View {
                 // Track this session as "user-kicked-off". The next
                 // reload tick will check whether it actually entered
                 // run_state=running and surface it in the top pill.
-                // Membership decays automatically when the session
-                // leaves running (see reload()).
-                instructedSessionIds.insert(record.targetSessionId)
+                // Membership decays automatically via
+                // `InstructedSessionDecay` (see reload()).
+                instructedSessions[record.targetSessionId] = InstructedAt(
+                    atMs: Int64(Date().timeIntervalSince1970 * 1000)
+                )
             } catch {
                 await SyncClient.shared.markInstructionFailed(
                     instructionId: record.instructionId,
@@ -944,6 +946,179 @@ private struct EmptyStateView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(SteerColors.separator, lineWidth: 1)
+        }
+    }
+}
+
+/// Tiny iPhone-pairing indicator that lives in the top-right of the
+/// Mac window's header. Color encodes recency of the iPhone's last
+/// heartbeat:
+///   - green: heartbeat within 90s — phone is awake nearby
+///   - yellow: 90s–10min — phone may be locked or asleep
+///   - gray: > 10min, or no iOS device has ever paired
+///
+/// Tapping the dot opens a popover with the iPhone's device class,
+/// "last seen N ago" text, and an unpaired prompt if nothing has
+/// ever registered. Intentionally label-less in the header so it
+/// reads as a status light, not a button.
+private struct IPhonePresenceDot: View {
+    let device: DeviceSnapshot?
+    @Binding var isPopoverVisible: Bool
+
+    fileprivate enum Freshness { case connecting, fresh, stale, cold, none }
+
+    let hasFetchedOnce: Bool
+
+    fileprivate var freshness: Freshness {
+        // First fetch hasn't returned yet: we're still figuring out
+        // whether the user has an iPhone paired. Same "we're working
+        // on it" semantic as the iPhone's connecting chip.
+        if !hasFetchedOnce { return .connecting }
+        guard let device else { return .none }
+        let ageMs = Int64(Date().timeIntervalSince1970 * 1000) - device.lastSeenAt
+        let ageSeconds = Double(ageMs) / 1000
+        // Mirror the iPhone chip's tolerance window. iOS heartbeats
+        // every 60s while the app is in the foreground, so a 120s
+        // window covers one missed beat (jitter, brief background)
+        // without flipping the dot to yellow. 5 min of silence is
+        // a real "phone is asleep" signal.
+        if ageSeconds < 120 { return .fresh }
+        if ageSeconds < 300 { return .stale }
+        return .cold
+    }
+
+    private var dotColor: Color {
+        switch freshness {
+        case .connecting: return SteerColors.running
+        case .fresh: return SteerColors.running
+        case .stale: return SteerColors.waiting
+        case .cold, .none: return SteerColors.softSeparator
+        }
+    }
+
+    /// Drives the dot pulse during `.connecting`. Mirrors the
+    /// iPhone chip's behavior — only the in-flight state breathes;
+    /// fresh/stale/cold/none stay static so the dot doesn't become
+    /// a permanent attention-grabber.
+    @State private var breathe = false
+
+    var body: some View {
+        Button(action: { isPopoverVisible.toggle() }) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 6, height: 6)
+                    .opacity(freshness == .connecting && breathe ? 0.45 : 1.0)
+                    .animation(
+                        freshness == .connecting
+                            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                            : .default,
+                        value: breathe
+                    )
+                // SF Mono reads as "metadata / system" — feels like
+                // a status line rather than a label competing with
+                // the "Steer" wordmark. Kept at tertiaryInk + 50%
+                // alpha so it sinks into the chrome.
+                Text(labelText)
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(SteerColors.tertiaryInk.opacity(0.65))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .onAppear { breathe = true }
+        .popover(isPresented: $isPopoverVisible, arrowEdge: .top) {
+            IPhonePresencePopoverContent(device: device, freshness: freshness)
+        }
+    }
+
+    /// Prefer the actual device name (UIDevice.current.name on iOS,
+    /// e.g. "Ilwon's iPhone") because that's the line that makes
+    /// the user say "oh, that's my phone." `deviceClass` is the
+    /// generic UIDevice.model — usually just "iPhone" — so it's a
+    /// fallback, not the first choice. No iPhone paired = "iPhone"
+    /// alone, paired with a dimmed gray dot.
+    private var labelText: String {
+        if freshness == .connecting { return "Connecting" }
+        if let display = device?.displayName, !display.isEmpty {
+            return display
+        }
+        return device?.deviceClass ?? "iPhone"
+    }
+
+    private var accessibilityLabel: String {
+        switch freshness {
+        case .connecting: return "Looking for iPhone"
+        case .fresh: return "iPhone connected"
+        case .stale: return "iPhone idle"
+        case .cold: return "iPhone offline"
+        case .none: return "iPhone not paired"
+        }
+    }
+}
+
+private struct IPhonePresencePopoverContent: View {
+    let device: DeviceSnapshot?
+    let freshness: IPhonePresenceDot.Freshness
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if freshness == .connecting {
+                Text("Looking for iPhone…")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
+                Text("Checking the relay for a signed-in iPhone.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let device {
+                Text(device.displayName ?? device.deviceClass ?? "iPhone")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
+                Text(statusLine(for: device))
+                    .font(.system(size: 11))
+                    .foregroundStyle(SteerColors.secondaryInk)
+            } else {
+                Text("No iPhone paired")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SteerColors.ink)
+                // Plain hint copy — the public TestFlight / App Store
+                // link isn't ready yet, so don't make a button that
+                // dead-ends. When the build is live, swap this for a
+                // real link.
+                Text("Install Steer on iPhone and sign in with the same Apple ID.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(SteerColors.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(width: 220, alignment: .leading)
+    }
+
+    private func statusLine(for device: DeviceSnapshot) -> String {
+        let ageMs = Int64(Date().timeIntervalSince1970 * 1000) - device.lastSeenAt
+        let ageSeconds = max(0, Double(ageMs) / 1000)
+        let agoText: String
+        if ageSeconds < 60 {
+            agoText = "just now"
+        } else if ageSeconds < 3600 {
+            agoText = "\(Int(ageSeconds / 60)) min ago"
+        } else if ageSeconds < 86400 {
+            agoText = "\(Int(ageSeconds / 3600))h ago"
+        } else {
+            agoText = "\(Int(ageSeconds / 86400))d ago"
+        }
+        switch freshness {
+        case .connecting: return "Looking for iPhone…"
+        case .fresh: return "Connected · last seen \(agoText)"
+        case .stale: return "Idle · last seen \(agoText)"
+        case .cold: return "Offline · last seen \(agoText)"
+        case .none: return "Not paired"
         }
     }
 }

@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-11 (Mac top chip — pending reply semantics)
+Last updated: 2026-05-13 (Mac iPhone presence dot, Settings polish, legal links, iOS onboarding + sign-in)
 
 ## Purpose
 
@@ -552,6 +552,59 @@ User flagged "3 waiting" badge with only 2 visible cards: the collapsed chip was
 - `main` is at `57ab652 fix(ui): narrow polish scope to terminal body only`.
 - Untracked in working tree: `WAKE_UP.md`, `setup-github-secrets.sh`, `update-notary-secrets.sh`, `docs/NOTARY_SECRETS.md` — user-authored notes / helper scripts, not yet tracked or decided.
 - Closed CI/release branches still on remote: `release/mac-dmg-distribution`, `fix/mac-launchd-spawn`, `ios-spike`, `fix-terminal-excerpt-formatting`. Same status as 2026-05-11 macOS 26 deployment entry — pending user cleanup.
+
+### 2026-05-12: iOS Sign-in + Onboarding Redesign
+
+Completed (all on branch `fix/mac-chip-reconciliation`, PR #40 in flight):
+
+- **OnboardingCard data + CardDisplayable protocol** — `ActionCardView` is now generic over `Card: CardDisplayable`, with both real cards and onboarding cards conforming. Shared chrome (provider mark, project name, terminal body, reply dock) so the tutorial is visually identical to the inbox it teaches.
+- **OnboardingFlowView** — 3-card scripted intro that runs once after sign-in (`onboardingCompleted` `@AppStorage`). Character-by-character text streaming (32 ms/char). Each card ends with an action prompt ("Type 'next' or just hit send →"); `ReplyDock` gets `allowEmptySend=true` so the user can advance with no text. Tap inside the card body skips to the prompt. Header has explicit "Tutorial" pill + progress dots + Skip — replaces the dead Mac chip that read as a broken connection.
+- **SignInPrompt redesign with RoutingFieldView** — animated dot-grid background where ~3 organic "blob" highlights drift bottom→top at 22 s/cycle, deforming via angle-modulated radius (3-fold + 5-fold sin lobes) so the silhouette ripples instead of being a perfect circle. Dot size stays constant; influence shows through alpha + the orange `#FB7139` accent. Reduce-motion path renders a static grid. SignInPrompt now reads as a creative landing screen: SF Mono "Steer" wordmark, value-prop "Never let your AI sit idle.", and the system Sign in with Apple button (height 56, corner radius 20). Privacy / Terms / Support row sits at the bottom in monospace.
+- **Connecting chip lifecycle hardening** — `DevicePresenceObserver` got a `.connecting` state separate from `.neverConnected`, with a 1.5 s minimum-visible floor so fast networks don't skip the connecting frame entirely. Signed-out branch no longer pre-seeds `.neverConnected`, which was causing the "No Mac" → "Connecting" → "Connected" flicker after sign-out / sign-in.
+
+Learned:
+
+- iOS 16+ silently returns "iPhone" for `UIDevice.current.name` unless the app holds the `user-assigned-device-name` entitlement (not granted to general apps). Mac presence labels needed the marketing model name — see 2026-05-13 entry for the fix.
+
+Next:
+
+- App icon — diagnosis pending; see `docs/ICON_FIX_DIAGNOSIS_2026-05-13.md`. `origin/fix/notification-icons` claims a 4-area fix in its commit message but the diff only contains the `scripts/build-mac-app.sh` CFBundleIconName line. iOS @2x/@3x PNG and `ActionNotificationService` attachment changes are missing.
+- iPhone push notification delivery — code path looks intact (APNS token registration, `aps-environment` routing, relay `fanoutPush`) but user reports banners/badges aren't reaching the lock screen. Needs `wrangler tail` capture to confirm.
+
+Risks:
+
+- Settings → Notifications toggle deep-links to the system Settings app for any state other than `notDetermined → granted`. iOS doesn't allow apps to revoke their own grant, so this is the only correct behavior, but it's worth a one-line walkthrough in the eventual App Store reviewer note.
+
+### 2026-05-13: Mac iPhone Presence Dot + Settings Polish + Legal Links
+
+Completed (commits on `fix/mac-chip-reconciliation`, pushed):
+
+- **Mac iPhone presence dot + popover** — Small SF Mono label + colored dot in the top-right of `SteerRootView`, sourced from `SyncClient.fetchDevices()` (polled every 30 s). States mirror the iPhone's Mac-side chip: `connecting` breathes; `fresh` (< 120 s since last iOS heartbeat) stays solid green; `stale` (< 5 min) goes yellow; `cold` / unpaired goes gray. Popover shows device class + last-seen relative time, or an unpaired hint with "install on iPhone and sign in" copy. The 120 s freshness window is double the iOS heartbeat cooldown so one missed beat doesn't flip the dot to yellow.
+- **iOS device snapshot carries marketing model name** — New `IOSDeviceModel.swift` maps the `utsname` machine identifier ("iPhone15,2") to the marketing name ("iPhone 14 Pro"). Heartbeat now ships that as `displayName` + `deviceClass` so the Mac presence label reads "iPhone 14 Pro" instead of the generic "iPhone" iOS 16+ returns from `UIDevice.current.name`.
+- **`.connecting` re-entry regression fix** — `DevicePresenceObserver.refresh()` was resetting `connectingStartedAt = nil` at resolution, which caused the very next poll tick to re-enter the "first sign-in" branch and flip the chip back to "Connecting" on a healthy connection. The marker now stays set for the lifetime of the sign-in session; only `signOut()` clears it (by tearing down the observer entirely).
+- **Settings polish** — Notifications row becomes a real `Toggle`: off + `.notDetermined` triggers the system prompt; off + `.denied` or on (user wants off) deep-links to iOS Settings since iOS won't let an app revoke its own grant. Dropped the "What Syncs?" row and the debug "Token registered (…)" diagnostic. "Report an Issue" now uses the official GitHub Octicons mark (CC0) as a template image instead of an SF Symbol.
+- **Legal-site links** — Privacy and Terms links across iOS Settings, iOS SignInPrompt, and Mac Settings move from `steer.ai/{privacy,terms}` to the deployed `steer-legal.pages.dev/{privacy,terms}/` instance (the `steer.ai` apex is reserved for marketing and doesn't host these pages). Support becomes a `mailto:superwedge.labs@gmail.com?subject=Steer%20Feedback` link. The Pages deploy itself lives on the separate `chore/legal-site-pages` branch and worktree.
+- **Mac sign-out drops device row on the relay** — `SyncClient.signOut` now fires DELETE /v1/sync/devices/<deviceId> before clearing the JWT. Without it the user's iPhone kept reading "Mac connected" for several minutes after Mac sign-out, until the iPhone-side freshness window expired. iOS already had this; Mac was lagging.
+- **Inbox empty-state CTA pruning** — `.offline` / `.error` branches no longer surface a "Mac Status" button. Opening the sync sheet just restated the same fact the empty-state line already conveyed; there's nothing the user can do from the phone to bring the Mac back online or fix a relay outage. Surface stays honest.
+- **Wrapper disconnect-after-reply root-cause analysis** — `docs/WRAPPER_DISCONNECT_DIAGNOSIS_2026-05-13.md`. Top finding: `submitPtyInstruction` (`packages/cli/src/index.js:253-268`) emits `ack=injected` unconditionally without awaiting the pty drain or checking whether the TUI is mid-turn. When an iPhone reply lands during a long Codex/Claude turn, the bracketed-paste bytes are lost but the agent records "injected", resolves the active card, and the session sits at `runState=running` forever (the user-visible "1 running" chip stuck). Fix sketch + reproduction harness pointer are in the doc; no code changes in tonight's batch.
+- **G15.chip: chip "N running" 즉시 표시 fix** (`fix/transcript-pty-flood-snapshot`, commit `15ee546`). PR-1/2/6 설계 — chip은 iPhone-local `.awaitingResponse` 카운트라서 network와 무관하게 Send 직후 즉시 떠야 함. `MacConnectionChip.label`이 `state == .connected` 가드를 걸어서 reply→answer 사이 WS가 `.connecting`/`.stale`로 떨어진 30초 동안 chip이 안 보이는 회귀. `.demo` / `.neverConnected` 만 suppress, 나머지 모든 상태에서 표시. 도그푸드 검증: 사용자가 메세지 보내고 답 오는 round-trip 동안 chip "1 running" 지속.
+- **G15: PTY-flood durability — session-state snapshot** (`fix/transcript-pty-flood-snapshot`, commits `89ae5b5` + `2205e8f`). 5/13 dogfood regression: iPhone showed `"codex session opened; send your first instruction."` ~50 min after the user replied. Root cause confirmed in live SQLite: the 100-row `transcript_entries` cap (`migration 0005`) is stream-agnostic, and codex PTY status-bar repaint at ~60 chunks/min evicts the single user row and the single report row within ~2 min. classifier then sees `latestUserIndex/latestOutputIndex = null` and emits the stub waiting card. Fix: `migration 0008_session_snapshot.sql` adds `last_user_at/text` + `last_trusted_at/text` columns on `sessions`. `appendTranscript` mirrors trusted/user chunks into them; `refreshActionCard` reads from these snapshot columns (forged into synthetic classifier entries) instead of `transcript_entries`. `bumpResponseRevisionIfReady` also switches its trusted-entry check to `last_trusted_at`. Regression tests: `transcript_pty_flood.test.js`, `classifier_stub_card_regression.test.js`. New stress smoke `scripts/stress-pty-flood.sh` (real `steer wrap` + isolated `STEER_HOME` + 30s PTY flood + SQLite verify) wired into `scripts/verify-steer-regression.sh`. REGRESSION_CONTRACT.md G15 documents the invariant.
+
+Learned:
+
+- iOS's `Toggle` row in `Form` automatically handles trailing affordance for `Settings` deep-link — no need for a custom row layout. The trick is wiring `Binding<Bool>` so the source of truth is the observed permission, not local state; that way coming back from Settings refreshes the toggle without manual reconciliation.
+- iOS Asset Catalog with a single `idiom: universal` 1024×1024 PNG and `preserves-vector-representation: true` on an SVG both produce working app/template images in Xcode 14+. The Octicons GitHub SVG ships at 822 bytes total.
+
+Next:
+
+- App icon: see diagnosis doc; needs user visual verification + restoration of missing changes from `fix/notification-icons`.
+- iPhone push delivery: needs wrangler tail + a manual card creation to verify relay-side fanout actually reaches the device.
+- DMG + Sparkle auto-update verification (open task #272).
+- App Store launch runbook pass (open task #277, #279).
+
+Risks:
+
+- `fix/notification-icons` branch has a commit (`123051c`) whose message advertises 4-area changes but whose diff is only 6 lines in `build-mac-app.sh`. The actual @2x/@3x assets and `ActionNotificationService` attachment changes never made it into the commit. Restoring them safely requires user-side visual checks on the dogfood build.
 
 ## Open Questions
 

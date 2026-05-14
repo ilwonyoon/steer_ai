@@ -12,9 +12,10 @@ import migration0003 from "../migrations/0003_devices.sql?raw";
 import migration0004 from "../migrations/0004_apns_token.sql?raw";
 import migration0005 from "../migrations/0005_aps_environment.sql?raw";
 import migration0006 from "../migrations/0006_events.sql?raw";
+import migration0007 from "../migrations/0007_card_response_revision.sql?raw";
 
 async function runMigrations() {
-  const migrations = [migration0001, migration0002, migration0003, migration0004, migration0005, migration0006];
+  const migrations = [migration0001, migration0002, migration0003, migration0004, migration0005, migration0006, migration0007];
   for (const sql of migrations) {
     const cleaned = sql
       .split("\n")
@@ -133,5 +134,64 @@ describe("Store.upsertCard dedupe", () => {
       baseCard({ actionPrompt: null, updatedAt: 2000 })
     );
     expect(result.changed).toBe(false);
+  });
+
+  // becameActive is the gate APNS fanout uses. Without it, the
+  // SteerAgent's "card-${sessionId}" id-reuse rule meant only the
+  // first card of a session's lifetime ever pushed; every reply
+  // after that produced a state-only flip (done → active) that
+  // looked like a normal update and was silently filtered out.
+  it("first insert with state=active sets becameActive=true", async () => {
+    const store = new Store(env);
+    const result = await store.upsertCard("user-1", baseCard());
+    expect(result.becameActive).toBe(true);
+  });
+
+  it("state-stable update (active → active) keeps becameActive=false", async () => {
+    const store = new Store(env);
+    await store.upsertCard("user-1", baseCard());
+    // Mac's reload tick: same content + bumped updated_at. Already
+    // active, so no new push.
+    const second = await store.upsertCard(
+      "user-1",
+      baseCard({ updatedAt: 2000 })
+    );
+    expect(second.becameActive).toBe(false);
+  });
+
+  it("active → done sets becameActive=false (resolution does not push)", async () => {
+    const store = new Store(env);
+    await store.upsertCard("user-1", baseCard());
+    const result = await store.upsertCard(
+      "user-1",
+      baseCard({ state: "done", updatedAt: 2000 })
+    );
+    expect(result.becameActive).toBe(false);
+  });
+
+  it("done → active flips becameActive=true (the regression fix)", async () => {
+    // The user's reported flow: first card alerts, user replies,
+    // card resolves to done. Next stop on the SAME session
+    // produces another active card with the same card_id —
+    // pre-fix the gate said "not inserted" and ate the push.
+    const store = new Store(env);
+    await store.upsertCard("user-1", baseCard());
+    await store.upsertCard("user-1", baseCard({ state: "done", updatedAt: 2000 }));
+    const reactivated = await store.upsertCard(
+      "user-1",
+      baseCard({ state: "active", updatedAt: 3000 })
+    );
+    expect(reactivated.inserted).toBe(false);
+    expect(reactivated.becameActive).toBe(true);
+  });
+
+  it("done → done keeps becameActive=false", async () => {
+    const store = new Store(env);
+    await store.upsertCard("user-1", baseCard({ state: "done" }));
+    const result = await store.upsertCard(
+      "user-1",
+      baseCard({ state: "done", updatedAt: 2000 })
+    );
+    expect(result.becameActive).toBe(false);
   });
 });
