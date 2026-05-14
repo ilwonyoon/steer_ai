@@ -26,16 +26,10 @@ public final class SyncInbox: ObservableObject {
 
     @Published public private(set) var status: Status = .signedOut
 
-    /// Single source of truth for "what sessions are we tracking, and
-    /// what stage is each in." All other published projections (cards,
-    /// pendingReplies, activeSessionIds) derive from this. Mutations
-    /// MUST go through SessionEntryStore + setSessions so the derived
-    /// arrays stay consistent in one tick.
-    @Published public private(set) var sessions: [SessionEntry] = []
-
-    /// Cards the user must respond to. Derived from `sessions`. Kept
-    /// as a published projection so existing UI bindings don't have to
-    /// learn the new model.
+    /// Cards the user is currently looking at (carousel). Owned by
+    /// the WS upsert / bootstrap path; mutated through
+    /// `upsertCardDirect` / `removeCardByCardId`. The chip is a
+    /// derivative of this + `pendingReplies` — no Stage in between.
     @Published public private(set) var cards: [CardPayload] = []
 
     @Published public private(set) var lastError: String?
@@ -519,7 +513,10 @@ public final class SyncInbox: ObservableObject {
         // long ago. The chip can never recover on its own because
         // the cardUpsert that would clear those entries is never
         // going to arrive.
-        setSessions([], reason: "signOut")
+        // B2 — wipe canonical arrays atomically on sign-out.
+        cards = []
+        pendingReplies = []
+        g15Log.info("signOut cards=0 pend=0")
         status = .signedOut
         setLoadPhase(.idle)
         webSocketTask?.cancel()
@@ -614,12 +611,7 @@ public final class SyncInbox: ObservableObject {
                 // lands). It also refreshes content for sessions
                 // already in .awaitingUser and removes ones the relay
                 // no longer has.
-                setSessions(
-                    SessionEntryStore.applyBootstrap(
-                        previous: sessions, cards: resp.cards
-                    ),
-                    reason: "bootstrap"
-                )
+                applyBootstrapDirect(resp.cards)
                 // First card list landed — UI can leave the cold-
                 // start placeholder, even when the list is empty.
                 setLoadPhase(.ready)
@@ -750,84 +742,134 @@ public final class SyncInbox: ObservableObject {
         )
     }
 
-    /// Single mutation funnel. Recomputes the derived projections in
-    /// the same tick the source changes — UI never sees a state where
-    /// the chip and the carousel disagree.
-    private func setSessions(_ next: [SessionEntry], reason: String = "?") {
-        sessions = next
-        cards = SessionEntryStore.awaitingUserEntries(in: next).map(\.card)
-        pendingReplies = (
-            SessionEntryStore.awaitingResponseEntries(in: next)
-            + SessionEntryStore.failedEntries(in: next)
-        ).compactMap(makePendingReply(from:))
+    // MARK: - B1 mutation primitives — cards/pendingReplies as truth
+    //
+    // The chip "1 running" was historically driven by
+    // `SessionEntry.stage == .awaitingResponse`. That state needed five
+    // transition rules (markUserReplied, onCardUpsert, applyBootstrap,
+    // markReplyFailed, markAwaitingResponseTimedOut) AND a monotonic
+    // revision stamp to stay in sync with the carousel. Each rule
+    // was a separate place to race; over 24 h we hit four of them.
+    //
+    // The user's invariant collapses the model:
+    //   chip == reply I sent && no card for that session yet.
+    // Treat cards as the single visible state, pendingReplies as
+    // "Send press receipts" — let stage fall out as a derivative.
+    // These helpers mutate the canonical arrays directly so future
+    // entry points don't have to thread SessionEntry.
 
-        // G15 timing diagnostic. Logs are routed to Console.app
-        // (subsystem ai.steer.ios, category g15). The single line
-        // captures chip+card+pending counts derived from the SAME
-        // entries snapshot — if Console shows a window where chip
-        // and card disagree, that's a real bug. Stage-by-stage list
-        // makes the chip↔card linkage obvious.
-        let stages = next.map { entry -> String in
-            let stage: String
-            switch entry.stage {
-            case .awaitingUser:     stage = "user"
-            case .awaitingResponse: stage = "resp"
-            case .failed:           stage = "fail"
-            }
-            let rev = entry.card.responseRevision.map(String.init) ?? "nil"
-            let stamp = entry.instructedRevision.map(String.init) ?? "nil"
-            return "\(entry.sessionId.prefix(12))[\(stage) rev=\(rev) stamp=\(stamp)]"
+    /// Upsert a card from WS / bootstrap. Same sessionId? replace.
+    /// New? append. The reply (if any) for that session is satisfied —
+    /// remove from pendingReplies in the SAME tick so chip and
+    /// carousel commit together.
+    private func upsertCardDirect(_ card: CardPayload, reason: String) {
+        if let idx = cards.firstIndex(where: { $0.sessionId == card.sessionId }) {
+            cards[idx] = card
+        } else {
+            cards.append(card)
         }
-        g15Log.info("setSessions reason=\(reason, privacy: .public) chip=\(self.activeSessionIds.count, privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public) | \(stages.joined(separator: " "), privacy: .public)")
+        // The arrival of any card for `card.sessionId` clears any
+        // .sending reply on that session. Failed replies stay so the
+        // failure banner survives a card refresh.
+        pendingReplies.removeAll { reply in
+            guard reply.sessionId == card.sessionId else { return false }
+            if case .failed = reply.status { return false }
+            return true
+        }
+        g15Log.info("upsertCardDirect reason=\(reason, privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
     }
 
-    private func makePendingReply(from entry: SessionEntry) -> PendingReply? {
-        guard let instructionId = entry.lastInstructionId,
-              let text = entry.lastReplyText
-        else { return nil }
-        let status: PendingReply.Status
-        switch entry.stage {
-        case .awaitingResponse: status = .sending
-        case .failed(let r):    status = .failed(r)
-        case .awaitingUser:     return nil
-        }
-        return PendingReply(
-            id: instructionId,
-            cardId: entry.card.cardId,
-            sessionId: entry.sessionId,
-            cardTitle: entry.card.title,
-            text: text,
-            sentAt: Date(),
-            status: status
-        )
+    /// Card resolved (Mac side closed it; e.g. user pressed Send and
+    /// Mac is acknowledging the resolve before the new card lands).
+    /// Drop the card body; the chip stays "1 running" because the
+    /// matching pendingReply is still there.
+    private func removeCardByCardId(_ cardId: String, reason: String) {
+        cards.removeAll { $0.cardId == cardId }
+        g15Log.info("removeCardByCardId reason=\(reason, privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
     }
 
-    /// Optimistic send. Atomically moves the session entry from
-    /// `.awaitingUser` to `.awaitingResponse` — same array, one
-    /// mutation. The chip count rises and the card carousel drops the
-    /// card in the same SwiftUI tick.
+    /// Same as above but by sessionId (used when the user replies
+    /// optimistically — we don't always have the cardId at that
+    /// site).
+    private func removeCardForSession(_ sessionId: String, reason: String) {
+        cards.removeAll { $0.sessionId == sessionId }
+        g15Log.info("removeCardForSession reason=\(reason, privacy: .public) sid=\(sessionId.prefix(12), privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
+    }
+
+    /// User pressed Send. Track the in-flight reply and optimistically
+    /// remove the card the user just answered — that's the visual
+    /// "card slides out, chip turns on" in one tick.
+    private func appendPendingReply(_ reply: PendingReply, reason: String) {
+        // Replace any existing pendingReply for the same session
+        // (retry path) — there's only ever one in-flight reply per
+        // session at a time.
+        pendingReplies.removeAll { $0.sessionId == reply.sessionId }
+        pendingReplies.append(reply)
+        removeCardForSession(reply.sessionId, reason: "\(reason)+sendHide")
+    }
+
+    /// Reply POST failed. Flip the matching pendingReply's status to
+    /// .failed — keeps it visible to the failure banner but excludes
+    /// it from `activeSessionIds` so the running chip drops.
+    private func markPendingReplyFailedDirect(instructionId: String, reason: String) {
+        guard let idx = pendingReplies.firstIndex(where: { $0.id == instructionId }) else { return }
+        pendingReplies[idx].status = .failed(reason)
+        g15Log.info("markPendingReplyFailed instr=\(instructionId.prefix(8), privacy: .public) reason=\(reason, privacy: .public)")
+    }
+
+    /// User dismissed a failed reply.
+    private func cancelPendingReplyDirect(instructionId: String) {
+        pendingReplies.removeAll { $0.id == instructionId }
+    }
+
+    /// Bootstrap GET landed. Replace the carousel wholesale —
+    /// pendingReplies stay; if a card with the same sessionId arrives,
+    /// upsertCardDirect already removes the matching reply.
+    private func applyBootstrapDirect(_ apiCards: [CardPayload]) {
+        // Sort by updatedAt asc so newest answers float to the bottom
+        // of the carousel (matches the pre-B1 ordering).
+        cards = apiCards.sorted { $0.updatedAt < $1.updatedAt }
+        // Any reply whose card landed in the bootstrap is satisfied.
+        let bootstrapSessions = Set(apiCards.map(\.sessionId))
+        pendingReplies.removeAll { reply in
+            guard bootstrapSessions.contains(reply.sessionId) else { return false }
+            if case .failed = reply.status { return false }
+            return true
+        }
+        g15Log.info("applyBootstrapDirect cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public)")
+    }
+
+    /// Optimistic send. Removes the card the user just answered from
+    /// the carousel and appends a `.sending` PendingReply in one
+    /// mutation. The chip rises and the carousel drops the card in
+    /// the same SwiftUI tick.
     public func sendReply(text: String, for card: CardPayload) {
         guard isSignedIn else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         // The card the user is replying to should already be in
-        // `sessions` (we drove it there via WS upsert or bootstrap).
+        // `cards` (we drove it there via WS upsert or bootstrap).
         // If it isn't, this is a stale UI binding — bail.
-        guard sessions.contains(where: { $0.card.cardId == card.cardId })
+        guard cards.contains(where: { $0.cardId == card.cardId })
         else { return }
 
         let instructionId = UUID().uuidString
         let seq = nextEventSeq()
-        setSessions(
-            SessionEntryStore.markUserReplied(
-                previous: sessions,
+        // B1 — canonical optimistic transition: append a PendingReply
+        // and remove the card the user just answered in one tick.
+        appendPendingReply(
+            PendingReply(
+                id: instructionId,
                 cardId: card.cardId,
+                sessionId: card.sessionId,
+                cardTitle: card.title,
                 text: trimmed,
-                instructionId: instructionId,
-                eventSeq: seq
+                sentAt: Date(),
+                status: .sending
             ),
             reason: "sendReply"
         )
+        _ = seq  // event seq still bumped for debugging parity.
 
         Task { [weak self] in
             await self?.postReply(
@@ -859,13 +901,10 @@ public final class SyncInbox: ObservableObject {
             // terminal produces a fresh card (WS upsert with new
             // cardId for this session).
         } catch {
-            setSessions(
-                SessionEntryStore.markReplyFailed(
-                    previous: sessions,
-                    instructionId: instructionId,
-                    reason: error.localizedDescription
-                ),
-                reason: "replyFailed"
+            // B1 — canonical fail path.
+            markPendingReplyFailedDirect(
+                instructionId: instructionId,
+                reason: error.localizedDescription
             )
         }
     }
@@ -873,20 +912,19 @@ public final class SyncInbox: ObservableObject {
     /// Manual retry from the failed-reply row. Re-runs the POST with
     /// the same text against the same session.
     public func retryPendingReply(_ instructionId: String) {
-        guard let entry = sessions.first(where: {
-            $0.lastInstructionId == instructionId
-        }) else { return }
-        guard let text = entry.lastReplyText else { return }
+        guard let prev = pendingReplies.first(where: { $0.id == instructionId })
+        else { return }
         let newInstructionId = UUID().uuidString
-        let seq = nextEventSeq()
-        // Reuse the same card; just reset stage + bump instruction id.
-        setSessions(
-            SessionEntryStore.markUserReplied(
-                previous: sessions,
-                cardId: entry.card.cardId,
-                text: text,
-                instructionId: newInstructionId,
-                eventSeq: seq
+        _ = nextEventSeq()
+        appendPendingReply(
+            PendingReply(
+                id: newInstructionId,
+                cardId: prev.cardId,
+                sessionId: prev.sessionId,
+                cardTitle: prev.cardTitle,
+                text: prev.text,
+                sentAt: Date(),
+                status: .sending
             ),
             reason: "retryReply"
         )
@@ -895,36 +933,26 @@ public final class SyncInbox: ObservableObject {
                 instructionId: newInstructionId,
                 request: InstructionRequestV2(
                     instructionId: newInstructionId,
-                    targetSessionId: entry.sessionId,
-                    text: text
+                    targetSessionId: prev.sessionId,
+                    text: prev.text
                 )
             )
         }
     }
 
-    /// Cancel a failed reply — entry returns to `.awaitingUser` so
-    /// the card resurfaces in the carousel for the user to edit or
-    /// skip.
+    /// Cancel a failed reply — entry drops from the failure banner.
+    /// The card for that session may still exist (Mac side never
+    /// resolved it), in which case the user lands back at the
+    /// original card.
     public func cancelPendingReply(_ instructionId: String) {
-        setSessions(
-            SessionEntryStore.cancelFailedReply(
-                previous: sessions,
-                instructionId: instructionId
-            ),
-            reason: "cancelReply"
-        )
+        cancelPendingReplyDirect(instructionId: instructionId)
     }
 
     public func resolveCard(_ cardId: String) async {
         guard isSignedIn else { return }
         do {
             try await deleteRequest("/v1/sync/cards/\(cardId)")
-            setSessions(
-                SessionEntryStore.onCardResolved(
-                    previous: sessions, cardId: cardId
-                ),
-                reason: "resolveCard"
-            )
+            removeCardByCardId(cardId, reason: "resolveCard")
         } catch {
             lastError = "resolveCard failed: \(error.localizedDescription)"
         }
@@ -1030,17 +1058,16 @@ public final class SyncInbox: ObservableObject {
         if !escapeHatch {
             guard loadPhase == .ready && reloadInFlightCount == 0 else { return }
         }
-        for entry in sessions {
-            guard entry.stage == .awaitingResponse,
-                  let stamp = entry.awaitingResponseStampedAt,
-                  now.timeIntervalSince(stamp) > 600
+        // B2 — fail .sending replies older than 10 minutes. The user
+        // sees a "response timeout" failure banner; the chip drops
+        // (failed status is excluded from `activeSessionIds`).
+        for reply in pendingReplies {
+            guard reply.status == .sending,
+                  now.timeIntervalSince(reply.sentAt) > 600
             else { continue }
-            setSessions(
-                SessionEntryStore.markAwaitingResponseTimedOut(
-                    previous: sessions,
-                    sessionId: entry.sessionId
-                ),
-                reason: "timeout"
+            markPendingReplyFailedDirect(
+                instructionId: reply.id,
+                reason: "response timeout"
             )
         }
     }
@@ -1141,23 +1168,13 @@ public final class SyncInbox: ObservableObject {
             //     carousel gains the new card — all in one mutation.
             //   - Brand-new session: insert as .awaitingUser.
             let revStr = card.responseRevision.map(String.init) ?? "nil"
-            setSessions(
-                SessionEntryStore.onCardUpsert(
-                    previous: sessions, card: card
-                ),
-                reason: "ws.upsert(\(card.sessionId.prefix(12)) rev=\(revStr))"
-            )
+            upsertCardDirect(card, reason: "ws.upsert rev=\(revStr)")
             // First WS upsert during cold-start counts as ready —
             // we have at least one real card even if the bootstrap
             // GET hasn't returned yet.
             if loadPhase != .ready { setLoadPhase(.ready) }
         case .cardResolved(let id):
-            setSessions(
-                SessionEntryStore.onCardResolved(
-                    previous: sessions, cardId: id
-                ),
-                reason: "ws.resolved(\(id.prefix(20)))"
-            )
+            removeCardByCardId(id, reason: "ws.resolved")
         case .ping:
             sendPong()
         default:
