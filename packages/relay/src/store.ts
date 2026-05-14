@@ -219,6 +219,21 @@ export class Store {
       .run();
   }
 
+  /// Returns the session_id stored alongside this card, or null if
+  /// no card row matches. Read before resolveCard so the APNS push
+  /// payload can carry sessionId for fast client-side removal.
+  async lookupCardSessionId(
+    userId: string,
+    cardId: string
+  ): Promise<string | null> {
+    const row = await this.env.DB.prepare(
+      `SELECT session_id FROM cards WHERE user_id = ? AND card_id = ? LIMIT 1`
+    )
+      .bind(userId, cardId)
+      .first<{ session_id: string }>();
+    return row?.session_id ?? null;
+  }
+
   /// Returns true if the given user has at least one card or session
   /// row with this session_id. Used as the ownership check before
   /// accepting an instruction targeted at a session.

@@ -102,7 +102,19 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency U
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound, .list])
+        // Relay sends two flavors of push:
+        //   (1) New card available — title/body set, banner shown.
+        //   (2) Card resolved — type="resolved" marker, empty
+        //       alert. We suppress the banner so the inbox just
+        //       silently re-syncs.
+        // Both flavors trigger a reload regardless. APNS is the
+        // wake-the-iPhone signal; the visual is decided here.
+        let info = notification.request.content.userInfo
+        if info["type"] as? String == "resolved" {
+            completionHandler([])
+        } else {
+            completionHandler([.banner, .sound, .list])
+        }
         Task { @MainActor in
             await SyncInbox.shared.reload()
         }
@@ -124,6 +136,18 @@ final class SteerAppDelegate: NSObject, UIApplicationDelegate, @preconcurrency U
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let info = response.notification.request.content.userInfo
+        // Resolved pushes carry no banner, so didReceive will only
+        // fire for them if the user pulls down Notification Center
+        // and taps a stale entry. In that case there's no card to
+        // focus — just reload and let the inbox land on whatever
+        // is current.
+        if info["type"] as? String == "resolved" {
+            Task { @MainActor in
+                await SyncInbox.shared.reload()
+                completionHandler()
+            }
+            return
+        }
         let cardId = info["cardId"] as? String
         let sessionId = info["sessionId"] as? String
         Task { @MainActor in

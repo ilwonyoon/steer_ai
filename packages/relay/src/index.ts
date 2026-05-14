@@ -363,6 +363,11 @@ app.delete("/v1/sync/cards/:cardId", async (c) => {
   const cardId = c.req.param("cardId");
   const userId = c.get("user").userId;
   const store = new Store(c.env);
+  // Capture sessionId from the row before we flip state so the
+  // resolved-push payload can carry it. The iOS client uses this to
+  // remove the matching card from its local carousel without
+  // waiting for the next reload.
+  const sessionId = await store.lookupCardSessionId(userId, cardId);
   await store.resolveCard(userId, cardId);
   // v3 dual-write: card.resolved event. Idempotency key is just the
   // cardId — resolving the same card twice is a no-op, so the event
@@ -376,8 +381,92 @@ app.delete("/v1/sync/cards/:cardId", async (c) => {
     `card.resolved:${cardId}`
   );
   await broadcast(c.env, userId, { type: "card.resolved", cardId });
+  // Symmetry fix: PUT fires WS broadcast + APNS, DELETE used to fire
+  // only WS — which silently dropped the resolve when the iPhone's
+  // WS was half-closed (Cloudflare DOs close idle sockets after
+  // ~5-10 min; iOS suspends URLSession sockets in background; both
+  // happen without the client knowing). Cards then stuck visible
+  // on the carousel until the next scenePhase.active reload or a
+  // foreground APNS for a different card woke the client up.
+  //
+  // Now both PUT and DELETE wake the iPhone via APNS. The push
+  // rides the alert channel for reliability but is delivered with
+  // `silent: true` (no sound, no banner), and the iOS client
+  // suppresses the visual banner when it sees `type: "resolved"`.
+  // The reload that follows pulls the new card list, which no
+  // longer contains the resolved card. Net effect: resolves land
+  // as fast as new cards do.
+  const promise = fanoutResolvedPush(c.env, userId, cardId, sessionId).catch(
+    () => {}
+  );
+  try {
+    c.executionCtx.waitUntil(promise);
+  } catch {
+    // ignore in test runtime
+  }
   return c.json({ ok: true });
 });
+
+async function fanoutResolvedPush(
+  env: Env,
+  userId: string,
+  cardId: string,
+  sessionId: string | null
+): Promise<void> {
+  try {
+    const store = new Store(env);
+    const pruned = await store.pruneStaleDevices(userId, 24 * 60 * 60 * 1000);
+    if (pruned > 0) {
+      console.log(
+        `[apns-resolved] pruned ${pruned} stale device rows for user=${userId}`
+      );
+    }
+    const devices = await store.listDevices(userId);
+    const targets = devices.filter(
+      (d) => d.platform === "ios" && d.apnsToken && d.syncEnabled
+    );
+    console.log(
+      `[apns-resolved] fanout card=${cardId} user=${userId} targets=${targets.length}`
+    );
+    if (targets.length === 0) return;
+    await Promise.all(
+      targets.map(async (d) => {
+        try {
+          const r = await sendAPNSPush(env, {
+            deviceToken: d.apnsToken!,
+            // alert dict must be non-empty for iOS to route the
+            // push through `userNotificationCenter(_:willPresent:)`.
+            // Empty title+body causes the OS to short-circuit
+            // delivery to the app and we never get the chance to
+            // suppress the banner or trigger reload. The client
+            // sees `type: "resolved"` and calls
+            // `completionHandler([])`, so the user never sees
+            // these strings — they only exist to keep the OS
+            // routing path alive.
+            title: "Steer",
+            body: "Updating…",
+            silent: true,
+            apsEnvironment: d.apsEnvironment,
+            customPayload: { type: "resolved", cardId, sessionId },
+          });
+          console.log(
+            `[apns-resolved] sent device=${d.deviceId.slice(0, 8)} ok=${r.ok} status=${r.status}${r.reason ? ` reason=${r.reason}` : ""}`
+          );
+          if (r.status === 410) {
+            await store.deleteDeviceByApnsToken(userId, d.apnsToken!);
+            console.log(
+              `[apns-resolved] dropped dead token device=${d.deviceId.slice(0, 8)}`
+            );
+          }
+        } catch (e) {
+          console.warn(`[apns-resolved] push failed for ${d.deviceId}: ${e}`);
+        }
+      })
+    );
+  } catch (e) {
+    console.warn(`[apns-resolved] fanout error: ${e}`);
+  }
+}
 
 /**
  * POST /v1/sync/instructions

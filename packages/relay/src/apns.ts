@@ -60,6 +60,18 @@ interface PushRequest {
   deviceToken: string;
   title: string;
   body: string;
+  /// When true, the push is delivered as a regular alert (so it
+  /// reaches `userNotificationCenter(_:willPresent:)` reliably and
+  /// is NOT subject to Apple's silent-push throttling) but the iOS
+  /// client is expected to suppress the banner — see the
+  /// `customPayload.type == "resolved"` branch in SteerIOSApp.swift.
+  ///
+  /// Why not a true silent push (content-available=1, no alert)?
+  /// Silent pushes are rate-limited (~2-3/h budget) and may be
+  /// dropped by the OS. We need every card-resolved event to wake
+  /// the iPhone reliably, so we ride the alert channel and tell
+  /// the client to keep the UI quiet.
+  silent?: boolean;
   /// Optional opaque payload the iOS app can read on tap. We embed
   /// the cardId so the InboxView can deep-link to the relevant card.
   customPayload?: Record<string, unknown>;
@@ -120,8 +132,14 @@ export async function sendAPNSPush(env: Env, req: PushRequest): Promise<PushResu
 
   const aps: Record<string, unknown> = {
     alert: { title: req.title, body: req.body },
-    sound: "default",
   };
+  // Silent-style pushes (card.resolved fanout) ride the alert
+  // channel for delivery reliability but should not make any noise:
+  // no sound, no badge bump. The iOS client recognizes the
+  // customPayload marker and suppresses the banner.
+  if (!req.silent) {
+    aps.sound = "default";
+  }
   if (typeof req.badge === "number") {
     aps.badge = req.badge;
   }
