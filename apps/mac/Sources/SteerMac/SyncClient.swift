@@ -505,6 +505,10 @@ public final class SyncClient: ObservableObject {
         let task = urlSession.webSocketTask(with: req)
         webSocketTask = task
         task.resume()
+        // Frame watchdog: reset on connect so a brand-new socket
+        // gets a 60 s grace window before the watchdog can cancel
+        // it for silence (design doc §6).
+        lastFrameReceivedAt = Date()
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task: task)
@@ -516,13 +520,36 @@ public final class SyncClient: ObservableObject {
         // during the exact window an iPhone reply would have been
         // pushed. The relay only sends a single ping on accept and
         // never again; clients didn't send any ping either. Drive
-        // a client-side ping every 30s so Cloudflare's idle timer
+        // a client-side ping every 20s so Cloudflare's idle timer
         // never trips: any pong (or even the bare ping send) keeps
-        // the socket warm. Sized at 30s so we tolerate one missed
-        // ping cycle before Cloudflare's window expires.
+        // the socket warm.
         pingTask?.cancel()
         pingTask = Task { [weak self] in
             await self?.pingLoop(task: task)
+        }
+        // Frame watchdog (design doc §6). Force-cancels the socket
+        // if `lastFrameReceivedAt` falls more than 60 s behind —
+        // catches Cloudflare DO half-close that evades the
+        // application ping.
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            await self?.frameWatchdogLoop(task: task)
+        }
+    }
+
+    private var watchdogTask: Task<Void, Never>?
+    private var lastFrameReceivedAt: Date?
+
+    private func frameWatchdogLoop(task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard task === webSocketTask else { return }
+            let lastFrame = await MainActor.run { lastFrameReceivedAt ?? Date.distantPast }
+            if Date().timeIntervalSince(lastFrame) > 60 {
+                task.cancel(with: .goingAway, reason: nil)
+                return
+            }
         }
     }
 
@@ -571,6 +598,8 @@ public final class SyncClient: ObservableObject {
         while !Task.isCancelled {
             do {
                 let message = try await task.receive()
+                // Frame received — feed the watchdog.
+                await MainActor.run { self.lastFrameReceivedAt = Date() }
                 if reconnectAttempt > 0 { reconnectAttempt = 0 }
                 switch message {
                 case .string(let s):

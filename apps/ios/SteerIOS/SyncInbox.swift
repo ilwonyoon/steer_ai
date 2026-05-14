@@ -81,6 +81,56 @@ public final class SyncInbox: ObservableObject {
         return _eventSeqCounter
     }
 
+    /// Counter of in-flight `reload()` calls. Bool would not be
+    /// re-entrant: bootstrap reload + §6.5 auto-GET, or
+    /// scenePhase.active + manual pull-to-refresh, can overlap. A
+    /// counter is incremented at function entry and decremented in
+    /// `defer`, so the gate is closed for every in-flight HTTP and
+    /// only opens when zero reloads remain (design doc §11.8).
+    private var reloadInFlightCount: Int = 0
+
+    /// First time `loadPhase` transitioned away from `.ready` during
+    /// this session — nil if currently `.ready`. The §5.1
+    /// captive-portal escape hatch fires the timeout watcher anyway
+    /// after `loadPhase != .ready` for >5 minutes consecutively,
+    /// preferring a possibly-spurious `.failed` banner over a
+    /// permanently silent stuck entry (design doc §5.1, §11.7).
+    private var loadPhaseEnteredNotReadyAt: Date?
+
+    /// Real wall-clock of the most recent WebSocket frame we received
+    /// (pong, broadcast, anything). The 60-s frame watchdog reads
+    /// this and force-cancels the socket if no frame has arrived
+    /// within the window — Cloudflare DO half-closes idle sockets
+    /// silently, and the existing ping send/receive don't always
+    /// detect it before the next user-driven send fails. Design
+    /// doc §6.
+    private var lastFrameReceivedAt: Date?
+    private var watchdogTask: Task<Void, Never>?
+    private var timeoutWatcherTask: Task<Void, Never>?
+
+    /// Loud no-op if you forget to call this in a reload site — the
+    /// gate stays closed and the timeout watcher never fires. Use
+    /// the `withReloadInFlight` helper around any GET that should
+    /// gate the watcher.
+    @MainActor
+    private func withReloadInFlight<T>(_ body: () async throws -> T) async rethrows -> T {
+        reloadInFlightCount += 1
+        defer { reloadInFlightCount -= 1 }
+        return try await body()
+    }
+
+    /// `loadPhase` setter that also stamps the escape-hatch clock.
+    /// Use everywhere instead of touching `loadPhase` directly.
+    @MainActor
+    private func setLoadPhase(_ phase: LoadPhase) {
+        if phase == .ready {
+            loadPhaseEnteredNotReadyAt = nil
+        } else if loadPhase == .ready {
+            loadPhaseEnteredNotReadyAt = Date()
+        }
+        loadPhase = phase
+    }
+
     private init() {
         let stored = UserDefaults.standard.string(forKey: "ai.steer.relay.baseURL")
             ?? "https://steer-relay.ilwonyoon-turtleneck.workers.dev"
@@ -111,7 +161,7 @@ public final class SyncInbox: ObservableObject {
             // function) means the UI sees the placeholder from the
             // very first frame, not from whenever refreshMe's first
             // await returns.
-            loadPhase = .bootstrapping
+            setLoadPhase(.bootstrapping)
             Task { await refreshMe() }
         }
         // First-launch demo-auto-enter is deliberately removed:
@@ -464,11 +514,15 @@ public final class SyncInbox: ObservableObject {
         // going to arrive.
         setSessions([])
         status = .signedOut
-        loadPhase = .idle
+        setLoadPhase(.idle)
         webSocketTask?.cancel()
         webSocketTask = nil
         receiveTask?.cancel()
         receiveTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        timeoutWatcherTask?.cancel()
+        timeoutWatcherTask = nil
     }
 
     public func deleteAccount() async {
@@ -536,27 +590,35 @@ public final class SyncInbox: ObservableObject {
 
     public func reload() async {
         guard isSignedIn else { return }
-        if loadPhase == .idle { loadPhase = .bootstrapping }
-        do {
-            let resp: CardListResponse = try await getJSON("/v1/sync/cards")
-            // applyBootstrap preserves any sessions currently in
-            // .awaitingResponse / .failed (the user replied; Mac may
-            // have resolved the original card server-side, and the
-            // GET will lack it — we don't want to drop the entry
-            // until the WS push for the fresh card lands). It also
-            // refreshes content for sessions already in
-            // .awaitingUser and removes ones the relay no longer has.
-            setSessions(
-                SessionEntryStore.applyBootstrap(
-                    previous: sessions, cards: resp.cards
+        if loadPhase == .idle { setLoadPhase(.bootstrapping) }
+        // Wrap the GET in withReloadInFlight so the §5.1 timeout
+        // watcher knows not to fire while a fresh snapshot is on
+        // the wire. The counter is re-entrant, so concurrent
+        // reload() calls (bootstrap + scenePhase.active + manual
+        // refresh) each get their own slot.
+        await withReloadInFlight {
+            do {
+                let resp: CardListResponse = try await getJSON("/v1/sync/cards")
+                // applyBootstrap preserves any sessions currently in
+                // .awaitingResponse / .failed (the user replied; Mac
+                // may have resolved the original card server-side,
+                // and the GET will lack it — we don't want to drop
+                // the entry until the WS push for the fresh card
+                // lands). It also refreshes content for sessions
+                // already in .awaitingUser and removes ones the relay
+                // no longer has.
+                setSessions(
+                    SessionEntryStore.applyBootstrap(
+                        previous: sessions, cards: resp.cards
+                    )
                 )
-            )
-            // First card list landed — UI can leave the cold-start
-            // placeholder, even when the list is empty.
-            loadPhase = .ready
-            lastError = nil
-        } catch {
-            lastError = "Failed to load cards: \(error.localizedDescription)"
+                // First card list landed — UI can leave the cold-
+                // start placeholder, even when the list is empty.
+                setLoadPhase(.ready)
+                lastError = nil
+            } catch {
+                lastError = "Failed to load cards: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -828,6 +890,12 @@ public final class SyncInbox: ObservableObject {
         let task = urlSession.webSocketTask(with: req)
         webSocketTask = task
         task.resume()
+        // Frame watchdog: reset the "last frame" clock at connect
+        // entry so a freshly-opened socket gets a 60 s grace window
+        // before the watchdog can fire. Without this, a brand-new
+        // socket that hasn't yet received its first frame would be
+        // killed by the watchdog the next time it ticks.
+        lastFrameReceivedAt = Date()
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task: task)
@@ -841,6 +909,86 @@ public final class SyncInbox: ObservableObject {
         pingTask?.cancel()
         pingTask = Task { [weak self] in
             await self?.pingLoop(task: task)
+        }
+        // Frame watchdog: if `lastFrameReceivedAt` falls more than
+        // 60 s behind, force-cancel the socket so receiveLoop throws
+        // and reconnect kicks in (design doc §6). Cloudflare DO
+        // half-close sometimes evades the application ping; the
+        // watchdog catches those.
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            await self?.frameWatchdogLoop(task: task)
+        }
+        // §5.1 timeout watcher: lazy-start on first WS connect so
+        // signed-out launches don't burn a polling Task on a stage
+        // they'll never visit.
+        if timeoutWatcherTask == nil {
+            timeoutWatcherTask = Task { [weak self] in
+                await self?.awaitingResponseTimeoutLoop()
+            }
+        }
+    }
+
+    /// Force-cancel the WS task if `lastFrameReceivedAt` is older
+    /// than 60 s. Runs as a sibling Task to the receive loop. Quiet
+    /// when the socket is healthy — the receive loop refreshes the
+    /// timestamp on every frame.
+    private func frameWatchdogLoop(task: URLSessionWebSocketTask) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard task === webSocketTask else { return }
+            let lastFrame = await MainActor.run { lastFrameReceivedAt ?? Date.distantPast }
+            if Date().timeIntervalSince(lastFrame) > 60 {
+                // Socket has gone silent. Tear it down; receiveLoop
+                // throws and the exponential-backoff reconnect path
+                // takes over (same path as pingLoop's force-cancel).
+                task.cancel(with: .goingAway, reason: nil)
+                return
+            }
+        }
+    }
+
+    /// Wakes every 30 s, scans `.awaitingResponse` entries for ones
+    /// older than 10 min, and decays them to `.failed("response
+    /// timeout")`. Gated on `loadPhase == .ready && reloadInFlightCount
+    /// == 0` so a cold-start unlock doesn't fire a 1-frame spurious
+    /// banner before the bootstrap GET lands. 5-min escape hatch
+    /// fires anyway if `loadPhase` has been stuck not-ready for that
+    /// long — captive portal must not pin a chip forever
+    /// (design doc §5.1, §11.6, §11.7, §11.8).
+    private func awaitingResponseTimeoutLoop() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await checkAwaitingResponseTimeouts()
+        }
+    }
+
+    @MainActor
+    private func checkAwaitingResponseTimeouts() {
+        let now = Date()
+        // Captive-portal escape hatch.
+        let escapeHatch: Bool = {
+            guard loadPhase != .ready,
+                  let enteredAt = loadPhaseEnteredNotReadyAt
+            else { return false }
+            return now.timeIntervalSince(enteredAt) > 300
+        }()
+        if !escapeHatch {
+            guard loadPhase == .ready && reloadInFlightCount == 0 else { return }
+        }
+        for entry in sessions {
+            guard entry.stage == .awaitingResponse,
+                  let stamp = entry.awaitingResponseStampedAt,
+                  now.timeIntervalSince(stamp) > 600
+            else { continue }
+            setSessions(
+                SessionEntryStore.markAwaitingResponseTimedOut(
+                    previous: sessions,
+                    sessionId: entry.sessionId
+                )
+            )
         }
     }
 
@@ -898,6 +1046,9 @@ public final class SyncInbox: ObservableObject {
         while !Task.isCancelled {
             do {
                 let message = try await task.receive()
+                // Frame received: feed the watchdog so it doesn't
+                // cancel a healthy socket the next time it ticks.
+                await MainActor.run { self.lastFrameReceivedAt = Date() }
                 // First successful frame after a (re)connect means we
                 // really are connected — reset the attempt counter.
                 if reconnectAttempt > 0 { reconnectAttempt = 0 }
@@ -944,7 +1095,7 @@ public final class SyncInbox: ObservableObject {
             // First WS upsert during cold-start counts as ready —
             // we have at least one real card even if the bootstrap
             // GET hasn't returned yet.
-            if loadPhase != .ready { loadPhase = .ready }
+            if loadPhase != .ready { setLoadPhase(.ready) }
         case .cardResolved(let id):
             setSessions(
                 SessionEntryStore.onCardResolved(

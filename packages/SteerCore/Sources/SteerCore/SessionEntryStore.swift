@@ -60,6 +60,20 @@ public struct SessionEntry: Identifiable, Equatable {
     /// content payload is equal but ordering matters.
     public var lastTouchedSeq: UInt64?
 
+    /// Real wall-clock when `markUserReplied` set the entry to
+    /// `.awaitingResponse`. The §5.1 timeout watcher reads this to
+    /// decide which entries are >10 min stale and need to decay to
+    /// `.failed("response timeout")`. nil for any entry that never
+    /// went through `markUserReplied` or that's been promoted back to
+    /// `.awaitingUser`.
+    ///
+    /// Wall-clock (not monotonic) because iOS suspend pauses
+    /// `mach_absolute_time()` — a 12-min background lock with a
+    /// monotonic clock would never tick past 10 min, and the user's
+    /// stuck reply would never decay. `Date()` keeps counting across
+    /// suspend.
+    public var awaitingResponseStampedAt: Date?
+
     public init(
         sessionId: String,
         card: CardPayload,
@@ -68,7 +82,8 @@ public struct SessionEntry: Identifiable, Equatable {
         lastInstructionId: String? = nil,
         instructedRevision: Int? = nil,
         lastReplyEventSeq: UInt64? = nil,
-        lastTouchedSeq: UInt64? = nil
+        lastTouchedSeq: UInt64? = nil,
+        awaitingResponseStampedAt: Date? = nil
     ) {
         self.sessionId = sessionId
         self.card = card
@@ -78,6 +93,7 @@ public struct SessionEntry: Identifiable, Equatable {
         self.instructedRevision = instructedRevision
         self.lastReplyEventSeq = lastReplyEventSeq
         self.lastTouchedSeq = lastTouchedSeq
+        self.awaitingResponseStampedAt = awaitingResponseStampedAt
     }
 }
 
@@ -222,13 +238,13 @@ public enum SessionEntryStore {
                     isResponse = true
                 }
                 if isResponse {
-                    // Promotion — drop reply text + instructionId
-                    // (they're now stale), but preserve the seq
-                    // stamps so the §2.B race rule (PR-3) can still
-                    // see "this entry's reply came from seq N." A
-                    // future PR can zero them on promotion if the
-                    // race-rule contract changes; for now we keep
-                    // the strict trace.
+                    // Promotion — drop reply text + instructionId +
+                    // awaitingResponseStampedAt (they're now stale),
+                    // but preserve the seq stamps so the §2.B race
+                    // rule (PR-3) can still see "this entry's reply
+                    // came from seq N." Clearing the stamp also
+                    // tells the §5.1 timeout watcher this entry no
+                    // longer needs decay.
                     next[idx] = SessionEntry(
                         sessionId: existing.sessionId,
                         card: card,
@@ -239,7 +255,9 @@ public enum SessionEntryStore {
                 } else {
                     // Pre-response re-upsert from Mac's reload tick
                     // — same revision, refreshed content. Keep stage
-                    // so the chip doesn't flicker.
+                    // so the chip doesn't flicker. Preserve the
+                    // awaitingResponse stamp so the timeout watcher
+                    // keeps counting from the original Send press.
                     next[idx] = SessionEntry(
                         sessionId: existing.sessionId,
                         card: card,
@@ -248,7 +266,8 @@ public enum SessionEntryStore {
                         lastInstructionId: existing.lastInstructionId,
                         instructedRevision: existing.instructedRevision,
                         lastReplyEventSeq: existing.lastReplyEventSeq,
-                        lastTouchedSeq: existing.lastTouchedSeq
+                        lastTouchedSeq: existing.lastTouchedSeq,
+                        awaitingResponseStampedAt: existing.awaitingResponseStampedAt
                     )
                 }
             }
@@ -301,7 +320,8 @@ public enum SessionEntryStore {
         cardId: String,
         text: String,
         instructionId: String,
-        eventSeq: UInt64? = nil
+        eventSeq: UInt64? = nil,
+        now: Date = Date()
     ) -> [SessionEntry] {
         var next = previous
         if let idx = next.firstIndex(where: { $0.card.cardId == cardId }) {
@@ -322,6 +342,13 @@ public enum SessionEntryStore {
                 next[idx].lastReplyEventSeq = eventSeq
                 next[idx].lastTouchedSeq = eventSeq
             }
+            // PR-6 stamp: real wall-clock at the moment the user
+            // pressed Send. The 10-min timeout watcher in
+            // SyncInbox.checkAwaitingResponseTimeouts reads this and
+            // decays the entry to .failed("response timeout") if no
+            // response card arrives in time. Injected so tests can
+            // pass a fixed `now`.
+            next[idx].awaitingResponseStampedAt = now
         }
         return next
     }
@@ -339,6 +366,31 @@ public enum SessionEntryStore {
         }) {
             if case .awaitingResponse = next[idx].stage {
                 next[idx].stage = .failed(reason)
+            }
+        }
+        return next
+    }
+
+    /// 10-minute timeout fired without a response arriving — see
+    /// design doc §5. The host's `SyncInbox.checkAwaitingResponseTimeouts`
+    /// watcher calls this once per stuck session per wake. The entry
+    /// transitions to `.failed("response timeout")` so the user sees
+    /// the same retry banner as a POST failure, and the chip clears.
+    ///
+    /// Idempotent: if the entry has already promoted to
+    /// `.awaitingUser` (the response landed seconds before the
+    /// watcher fired), this is a no-op. If it's in `.failed` for some
+    /// other reason, it stays.
+    public static func markAwaitingResponseTimedOut(
+        previous: [SessionEntry],
+        sessionId: String,
+        reason: String = "response timeout"
+    ) -> [SessionEntry] {
+        var next = previous
+        if let idx = next.firstIndex(where: { $0.sessionId == sessionId }) {
+            if case .awaitingResponse = next[idx].stage {
+                next[idx].stage = .failed(reason)
+                next[idx].awaitingResponseStampedAt = nil
             }
         }
         return next
