@@ -46,13 +46,29 @@ public struct SessionEntry: Identifiable, Equatable {
     /// hashing, no cardId churn. nil while in `.awaitingUser`.
     public var instructedRevision: Int?
 
+    /// Process-monotonic counter (`SyncInbox.nextEventSeq()`) captured
+    /// at the moment the user pressed Send. Lets the §2.B reducer rule
+    /// distinguish "GET fired before the user replied" from "GET fired
+    /// after." nil for entries that never went through
+    /// `markUserReplied`. NOT serialised to the wire; per-device only
+    /// (design doc §1.2, §9 invariant — multi-device contention
+    /// resolves via server-side `updatedAt` / `responseRevision`).
+    public var lastReplyEventSeq: UInt64?
+    /// Process-monotonic counter captured the last time *any* host
+    /// event touched this entry. Currently unused; PR-3 reducer reads
+    /// it to break the §2.A "GET landed first, then WS" race when the
+    /// content payload is equal but ordering matters.
+    public var lastTouchedSeq: UInt64?
+
     public init(
         sessionId: String,
         card: CardPayload,
         stage: SessionStage,
         lastReplyText: String? = nil,
         lastInstructionId: String? = nil,
-        instructedRevision: Int? = nil
+        instructedRevision: Int? = nil,
+        lastReplyEventSeq: UInt64? = nil,
+        lastTouchedSeq: UInt64? = nil
     ) {
         self.sessionId = sessionId
         self.card = card
@@ -60,6 +76,8 @@ public struct SessionEntry: Identifiable, Equatable {
         self.lastReplyText = lastReplyText
         self.lastInstructionId = lastInstructionId
         self.instructedRevision = instructedRevision
+        self.lastReplyEventSeq = lastReplyEventSeq
+        self.lastTouchedSeq = lastTouchedSeq
     }
 }
 
@@ -204,10 +222,19 @@ public enum SessionEntryStore {
                     isResponse = true
                 }
                 if isResponse {
+                    // Promotion — drop reply text + instructionId
+                    // (they're now stale), but preserve the seq
+                    // stamps so the §2.B race rule (PR-3) can still
+                    // see "this entry's reply came from seq N." A
+                    // future PR can zero them on promotion if the
+                    // race-rule contract changes; for now we keep
+                    // the strict trace.
                     next[idx] = SessionEntry(
                         sessionId: existing.sessionId,
                         card: card,
-                        stage: .awaitingUser
+                        stage: .awaitingUser,
+                        lastReplyEventSeq: existing.lastReplyEventSeq,
+                        lastTouchedSeq: existing.lastTouchedSeq
                     )
                 } else {
                     // Pre-response re-upsert from Mac's reload tick
@@ -219,7 +246,9 @@ public enum SessionEntryStore {
                         stage: existing.stage,
                         lastReplyText: existing.lastReplyText,
                         lastInstructionId: existing.lastInstructionId,
-                        instructedRevision: existing.instructedRevision
+                        instructedRevision: existing.instructedRevision,
+                        lastReplyEventSeq: existing.lastReplyEventSeq,
+                        lastTouchedSeq: existing.lastTouchedSeq
                     )
                 }
             }
@@ -271,7 +300,8 @@ public enum SessionEntryStore {
         previous: [SessionEntry],
         cardId: String,
         text: String,
-        instructionId: String
+        instructionId: String,
+        eventSeq: UInt64? = nil
     ) -> [SessionEntry] {
         var next = previous
         if let idx = next.firstIndex(where: { $0.card.cardId == cardId }) {
@@ -283,6 +313,15 @@ public enum SessionEntryStore {
             // "terminal produced its response" — no clock skew,
             // no content hashing.
             next[idx].instructedRevision = next[idx].card.responseRevision ?? 0
+            // PR-2 stamp: capture the host's monotonic seq at reply
+            // time so the §2.B race rule can distinguish "GET fired
+            // before the user replied" from "after." Reducer doesn't
+            // read it yet — that's PR-3 work. The stamp is per-device
+            // (§1.2 invariant); never serialised to the wire.
+            if let eventSeq {
+                next[idx].lastReplyEventSeq = eventSeq
+                next[idx].lastTouchedSeq = eventSeq
+            }
         }
         return next
     }

@@ -57,6 +57,30 @@ public final class SyncInbox: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
 
+    /// Process-monotonic event counter. Every external event the host
+    /// fans into `SessionEntryStore` claims a fresh seq via
+    /// `nextEventSeq()`. The reducer uses it (PR-3) to break the §2.B
+    /// stale-GET race: an entry stamped with `lastReplyEventSeq` that
+    /// is GREATER than a snapshot's `snapshotStartedAtSeq` outlived
+    /// that snapshot and must not be clobbered by it.
+    ///
+    /// Per-device only. NOT serialised to the wire. Multi-device
+    /// contention resolves via server-side `updatedAt` /
+    /// `responseRevision` instead (§9 invariant). Wraps at UInt64.max,
+    /// which at one stamp per second takes ~584 billion years — we
+    /// will not reach it.
+    private var _eventSeqCounter: UInt64 = 0
+
+    /// Returns the next monotonic event seq and bumps the counter.
+    /// Called from every site that fans an external event into the
+    /// reducer (`reload`, WS card.upsert handler, WS card.resolved
+    /// handler, `sendReply`, `retryPendingReply`).
+    @MainActor
+    public func nextEventSeq() -> UInt64 {
+        _eventSeqCounter &+= 1
+        return _eventSeqCounter
+    }
+
     private init() {
         let stored = UserDefaults.standard.string(forKey: "ai.steer.relay.baseURL")
             ?? "https://steer-relay.ilwonyoon-turtleneck.workers.dev"
@@ -684,12 +708,14 @@ public final class SyncInbox: ObservableObject {
         else { return }
 
         let instructionId = UUID().uuidString
+        let seq = nextEventSeq()
         setSessions(
             SessionEntryStore.markUserReplied(
                 previous: sessions,
                 cardId: card.cardId,
                 text: trimmed,
-                instructionId: instructionId
+                instructionId: instructionId,
+                eventSeq: seq
             )
         )
 
@@ -741,13 +767,15 @@ public final class SyncInbox: ObservableObject {
         }) else { return }
         guard let text = entry.lastReplyText else { return }
         let newInstructionId = UUID().uuidString
+        let seq = nextEventSeq()
         // Reuse the same card; just reset stage + bump instruction id.
         setSessions(
             SessionEntryStore.markUserReplied(
                 previous: sessions,
                 cardId: entry.card.cardId,
                 text: text,
-                instructionId: newInstructionId
+                instructionId: newInstructionId,
+                eventSeq: seq
             )
         )
         Task { [weak self] in
