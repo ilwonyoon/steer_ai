@@ -48,13 +48,15 @@ DEVICES=(
 
 # Golden states. Each entry is "label|prompt". The prompt is what
 # the human in front of the simulator needs to do before we capture.
+# The six-shot set matches docs/APP_STORE_SUBMISSION_MARKETING_PACK.md
+# §"Screenshot Set" — the listing is positioned as Steer - Agent Inbox.
 SHOTS=(
-  "1-signin|SignInPrompt screen. Sign out if currently signed in (Settings → Sign Out). Wait for the routing field to settle. Press Enter."
-  "2-onboarding|Sign in with Apple. Wait for the tutorial. Hit send once to advance to the second card. Wait until the typing is roughly halfway. Press Enter."
-  "3-inbox-card|Skip the rest of the tutorial. Make sure you have at least one active card on screen (or pair a Mac with codex/claude stopped). Press Enter."
-  "4-reply-dock|Tap into the reply field on the focused card so the keyboard opens. Type a partial reply like 'Yes, the indentation should be'. Do NOT hit send. Press Enter."
-  "5-empty-connected|Resolve all your cards (reply or wait for them to complete) until the empty state shows 'No waiting actions'. Press Enter."
-  "6-settings|Tap the settings icon (top-left). Make sure the Notifications row shows On and the GitHub mark renders next to 'Report an Issue'. Press Enter."
+  "1-connect-your-mac-agents|SignInPrompt screen: signed out, routing field visible. Sign out if currently signed in (Settings → Sign Out). Make sure Sign in with Apple, Try Demo / Set Up Mac, and legal links are all on screen. Press Enter."
+  "2-only-the-runs-that-need-you|Inbox with one or two waiting cards. Provider icon, project/branch metadata, and short context excerpt visible. Running-count chip stays visible if any. Skip the tutorial first so we see the real card stack. Press Enter."
+  "3-reply-and-unblock|Tap into the reply field on the focused card so the keyboard opens. Type a short draft like 'Use the simpler endpoint.' Do NOT send. Press Enter."
+  "4-all-clear|Connected empty state after every waiting card has been answered. The 'N running' chip is visible and the checkmark/check animation is at its FINAL resting frame. Don't catch a loading spinner. Press Enter."
+  "5-connected-to-your-mac|Mac Sync Status sheet (or Settings connection surface) showing the current Mac relationship. Apple sign-in / account info visible if surfaced from Settings. Press Enter."
+  "6-private-by-default|Settings screen with identity row, Notifications, Report an Issue, Support, Privacy Policy, Terms, and Sign Out all on screen. Press Enter."
 )
 
 for entry in "${DEVICES[@]}"; do
