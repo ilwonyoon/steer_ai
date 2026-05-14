@@ -11,7 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { encodeMessage, createLineDecoder } from "../../agent/src/protocol.js";
 import { socketPath, databasePath } from "../../agent/src/paths.js";
 import { formatPtyInstructionInput } from "./pty_input.js";
-import { extractPtyIdleReport, extractInteractiveModalReport } from "./pty_idle.js";
+import { extractPtyIdleReport } from "./pty_idle.js";
 import { startCodexSessionReader } from "./codex_session_reader.js";
 import { createAgentLink } from "./agent_link.js";
 import { installClaudeHooks, isClaudeHookInstalled, normalizeHookPayload, parseHookInput } from "./hooks.js";
@@ -139,12 +139,6 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   let ptyBuffer = "";
   let idleReportTimer = null;
   let lastIdleReport = "";
-  // G16 — last interactive-modal report we emitted. Modal stays
-  // on screen until the user decides on the Mac side, so we'd
-  // otherwise re-emit the same blocker card every PTY chunk. Hash
-  // the modal text and only emit on first detection / changed
-  // contents.
-  let lastModalReport = "";
   process.stderr.write(`[steer] ${provider} session ${sessionId}\n`);
   process.stderr.write(`[steer] send with: steer send ${sessionId} "your instruction"\n`);
 
@@ -288,38 +282,9 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
   }
 
   function schedulePtyIdleReport(currentProvider) {
+    if (currentProvider !== "claude") return;
     clearTimeout(idleReportTimer);
     idleReportTimer = setTimeout(() => {
-      // G16 — first, check for an interactive modal awaiting the
-      // user's keyboard input on the Mac side. AskUserQuestion,
-      // permission prompts, slash-command pickers: none of them
-      // emit a Stop / Notification hook, so without this sniff
-      // the iPhone has no idea the session is parked. We can't
-      // forward the decision (modal owns its own selection
-      // state), but at least we can tell the user "go to the
-      // Mac and resolve it." See docs/REGRESSION_CONTRACT.md
-      // G16 for the contract.
-      const modal = extractInteractiveModalReport(currentProvider, ptyBuffer);
-      if (modal && modal !== lastModalReport) {
-        lastModalReport = modal;
-        agent.write({
-          type: "output",
-          sessionId,
-          stream: "report",
-          chunk: `[Mac action required]\n${modal}\n`,
-        });
-        agent.write({ type: "state", sessionId, runState: "blocked" });
-        return;
-      }
-      // Modal disappeared (user resolved it on the Mac) — clear
-      // the dedupe so the next time a modal pops, we emit again.
-      if (!modal && lastModalReport) {
-        lastModalReport = "";
-      }
-
-      // Idle-report sniff is claude-only today (codex emits its
-      // final_answer through codex_session_reader instead).
-      if (currentProvider !== "claude") return;
       const report = extractPtyIdleReport(currentProvider, ptyBuffer);
       if (!report) return;
       if (report === lastIdleReport) return;
