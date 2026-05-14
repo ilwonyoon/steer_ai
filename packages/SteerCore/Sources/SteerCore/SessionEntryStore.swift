@@ -119,28 +119,47 @@ public enum SessionEntryStore {
             if let existing = bySession[card.sessionId] {
                 switch existing.stage {
                 case .awaitingResponse:
-                    // The user replied while the WS was unavailable
-                    // (backgrounded, asleep, idle-dropped). When we
-                    // come back online and the relay has a card for
-                    // this session, that card IS the response — the
-                    // chip should transition `.awaitingResponse` →
-                    // `.awaitingUser`. Previously this branch did
-                    // `continue` (keep the in-flight entry, ignore
-                    // the GET), which left the chip pinned at "N
-                    // running" with no card visible on the carousel.
+                    // G15.applyBootstrap — only promote when the
+                    // GET delivers a strictly-newer revision than
+                    // the one the user replied against. If the
+                    // revisions match, this is the *same* card the
+                    // user already replied to (Mac's reload tick
+                    // re-published the pre-reply card, or the GET
+                    // raced with the resolve event) — keeping
+                    // `.awaitingResponse` preserves the chip and
+                    // hides the stale card until the real response
+                    // upsert arrives.
                     //
-                    // We can't perfectly distinguish "this is the
-                    // response" from "Mac re-published the pre-reply
-                    // card before resolving" without the WS resolve
-                    // event. But the latter is a self-correcting
-                    // race (the next WS upsert refreshes us within
-                    // seconds), while the former locks the UI
-                    // indefinitely. Bias toward unsticking.
-                    bySession[card.sessionId] = SessionEntry(
-                        sessionId: card.sessionId,
-                        card: card,
-                        stage: .awaitingUser
-                    )
+                    // The earlier behaviour blindly promoted on
+                    // any GET to "bias toward unsticking" the chip,
+                    // but that broke the user-visible invariant
+                    // (chip drops only when a fresh answer card
+                    // appears). The §5.1 10-minute decay watcher
+                    // in SyncInbox is the real safety net for the
+                    // genuine-stuck case.
+                    let stamp = existing.instructedRevision ?? 0
+                    let incoming = card.responseRevision ?? 0
+                    if incoming > stamp {
+                        bySession[card.sessionId] = SessionEntry(
+                            sessionId: card.sessionId,
+                            card: card,
+                            stage: .awaitingUser,
+                            lastReplyEventSeq: existing.lastReplyEventSeq,
+                            lastTouchedSeq: existing.lastTouchedSeq
+                        )
+                    } else {
+                        bySession[card.sessionId] = SessionEntry(
+                            sessionId: card.sessionId,
+                            card: card,
+                            stage: existing.stage,
+                            lastReplyText: existing.lastReplyText,
+                            lastInstructionId: existing.lastInstructionId,
+                            instructedRevision: existing.instructedRevision,
+                            lastReplyEventSeq: existing.lastReplyEventSeq,
+                            lastTouchedSeq: existing.lastTouchedSeq,
+                            awaitingResponseStampedAt: existing.awaitingResponseStampedAt
+                        )
+                    }
                 case .failed:
                     // User saw a "reply failed" state and the relay
                     // now has a card for this session. Surface the
