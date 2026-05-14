@@ -354,7 +354,16 @@ struct SteerRootView: View {
     }
 
     private func reload() async {
-        let loadedCards = await store.loadCards()
+        // SQL returns ASC by updated_at. Flip to DESC so newest
+        // cards sit on the left of the carousel — matches the iOS
+        // ordering after G17 and the user's mental model "what just
+        // arrived = leftmost." Existing focus is preserved on a
+        // sessionId basis, so the resort doesn't move the user off
+        // whatever card they were reading; only the freshly-added
+        // entry shifts indices.
+        let loadedCards = await store.loadCards().sorted {
+            $0.updatedAt > $1.updatedAt
+        }
         await notifyForNewCards(loadedCards)
         let activeSessionIds = Set(loadedCards.map(\.sessionId))
         // We need ALL live sessions for the iPhone "N running" chip,
@@ -388,16 +397,19 @@ struct SteerRootView: View {
             cards: cardSnapshots
         )
         isLoading = false
-        // Keep the user's focus stable across reloads. If the previously
-        // focused session is gone (resolved / disconnected), fall back to
-        // the most recent card (carousel is sorted oldest→newest, so
-        // .last is the freshest); otherwise leave focus alone so mid-
-        // typing reloads don't yank the user to a different card.
+        // Keep the user's focus stable across reloads. If the
+        // previously focused session is gone (resolved / disconnected),
+        // fall back to the newest card (carousel is now sorted
+        // newest→oldest, so `.first` is the freshest); otherwise leave
+        // focus alone so mid-typing reloads don't yank the user to a
+        // different card. New cards prepend at index 0 but
+        // focusedSessionId stays pinned, so the binding follows the
+        // same card to its new index.
         if let id = focusedSessionId,
            !loadedCards.contains(where: { $0.sessionId == id }) {
-            focusedSessionId = loadedCards.last?.sessionId
+            focusedSessionId = loadedCards.first?.sessionId
         } else if focusedSessionId == nil {
-            focusedSessionId = loadedCards.last?.sessionId
+            focusedSessionId = loadedCards.first?.sessionId
         }
         // Drop drafts for sessions that no longer have a card.
         let liveIds = Set(loadedCards.map(\.sessionId))

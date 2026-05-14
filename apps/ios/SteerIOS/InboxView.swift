@@ -189,6 +189,24 @@ struct InboxView: View {
             // G15 timing diagnostic.
             diagLog.info("InboxView cards → \(newCards.count, privacy: .public)")
             cards = newCards.map { CardPayloadMapping.actionCard(from: $0) }
+            // Pin focus the first time cards show up so prepending a
+            // freshly-pushed card (which now lands at index 0) does
+            // not silently move the user off whatever they were
+            // reading. Without this, focusedSessionId stays nil and
+            // currentIndex's fallback returns 0 — every new APNS
+            // arrival would yank the carousel one card to the right
+            // out from under the user.
+            if focusedSessionId == nil, let first = cards.first {
+                focusedSessionId = first.sessionId
+            }
+            // If the previously focused session disappeared (the
+            // card was resolved by the Mac), drop focus to the new
+            // first card. This is the only case where we move focus
+            // automatically.
+            if let current = focusedSessionId,
+               !cards.contains(where: { $0.sessionId == current }) {
+                focusedSessionId = cards.first?.sessionId
+            }
             // If a deep-link tap arrived before the card showed up
             // (relay round trip), re-honor it once the card lands.
             if let pending = inbox.pendingFocusSessionId,
