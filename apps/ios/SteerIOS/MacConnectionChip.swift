@@ -63,14 +63,30 @@ struct MacConnectionChip: View {
     /// (the SyncInbox `activeSessionIds` set), so we no longer
     /// separately label sending. Failed is the only orthogonal
     /// state — the user has to fix it.
+    ///
+    /// G15.chip — "N running" is iPhone-local (it's the count of
+    /// entries in `.awaitingResponse`, which becomes truthy the
+    /// instant the user taps Send). It must NOT be gated on the
+    /// network presence state, otherwise reply→chip→answer slips
+    /// quietly when the WS happens to be `.connecting` or `.stale`
+    /// during the round-trip. Only `.demo` (sample sandbox) and
+    /// `.neverConnected` (never paired) suppress the count —
+    /// those modes have no real Mac to be running against.
     private var label: String {
         var parts: [String] = []
         if failedCount > 0 { parts.append("\(failedCount) failed") }
-        if case .connected = state, runningCount > 0 {
+        if runningCount > 0, runningSuppressed == false {
             parts.append("\(runningCount) running")
         }
         if parts.isEmpty { return state.label }
         return parts.joined(separator: " · ")
+    }
+
+    private var runningSuppressed: Bool {
+        switch state {
+        case .demo, .neverConnected: return true
+        case .connecting, .connected, .stale, .offline, .error: return false
+        }
     }
 
     /// Failed dominates the dot color — that's the actionable state.
