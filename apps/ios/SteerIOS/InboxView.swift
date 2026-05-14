@@ -265,28 +265,31 @@ struct InboxView: View {
                 detail: "Looking for a paired Steer for Mac…"
             )
         case .neverConnected:
-            // First poll returned and confirmed no paired Mac.
-            // CTAs surface here so the user has an obvious path
-            // forward. The link.badge.plus glyph reads as
-            // "connect something", not "open a terminal" — Steer
-            // doesn't run agents on the phone.
+            // First poll returned and confirmed no paired Mac. CTAs
+            // surface here so the user has an obvious path forward.
+            // The headline mirrors the App Store screenshot set
+            // shot 1 ("Your AI codes. You answer when it asks.")
+            // so a user who saw the listing finds the same line
+            // the moment they first open the app.
             EmptyStateView(
                 icon: "link.badge.plus",
-                message: "Connect your Mac",
-                detail: "Sign in to see agent runs that need your attention.",
+                message: "Your AI codes. You answer when it asks.",
+                detail: "Connect a Mac to see the moments your codex and claude sessions need you.",
                 primaryCTA: ("Set Up Mac", { showsMacSyncStatus = true }),
                 secondaryCTA: ("Try Demo", { inbox.enterDemoMode() })
             )
         case .connected:
             // Mac is reachable. The distinction from .neverConnected
-            // matters: no cards here means *every reply is handled*
-            // and the agents are still running in the background. A
-            // green checkmark + "All clear" frames the empty inbox
-            // as completion, not as "nothing's hooked up".
+            // matters: no cards here means every question has been
+            // answered and the agents are still working in the
+            // background. The marketing pack (see "Screenshot Set"
+            // §"Back To Empty") names this state explicitly as the
+            // product's quiet-by-design moment, so the copy here
+            // mirrors that shot's overlay.
             EmptyStateView(
                 icon: "checkmark.circle.fill",
-                message: "All clear",
-                detail: "Agents are still running."
+                message: "Back to empty.",
+                detail: "Your AI is still building on your Mac.\nThe inbox stays quiet until it has another question."
             )
         case .stale, .offline:
             // No CTA — there's nothing the user can do from the

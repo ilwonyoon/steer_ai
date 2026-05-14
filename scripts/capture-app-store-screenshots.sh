@@ -48,15 +48,15 @@ DEVICES=(
 
 # Golden states. Each entry is "label|prompt". The prompt is what
 # the human in front of the simulator needs to do before we capture.
-# The six-shot set matches docs/APP_STORE_SUBMISSION_MARKETING_PACK.md
-# §"Screenshot Set" — the listing is positioned as Steer - Agent Inbox.
+# The five-shot set matches docs/APP_STORE_SUBMISSION_MARKETING_PACK.md
+# §"Screenshot Set" — the listing is positioned for users who delegate
+# coding to AI agents and only step in to answer questions.
 SHOTS=(
-  "1-connect-your-mac-agents|SignInPrompt screen: signed out, routing field visible. Sign out if currently signed in (Settings → Sign Out). Make sure Sign in with Apple, Try Demo / Set Up Mac, and legal links are all on screen. Press Enter."
-  "2-only-the-runs-that-need-you|Inbox with one or two waiting cards. Provider icon, project/branch metadata, and short context excerpt visible. Running-count chip stays visible if any. Skip the tutorial first so we see the real card stack. Press Enter."
-  "3-reply-and-unblock|Tap into the reply field on the focused card so the keyboard opens. Type a short draft like 'Use the simpler endpoint.' Do NOT send. Press Enter."
-  "4-all-clear|Connected empty state after every waiting card has been answered. The 'N running' chip is visible and the checkmark/check animation is at its FINAL resting frame. Don't catch a loading spinner. Press Enter."
-  "5-connected-to-your-mac|Mac Sync Status sheet (or Settings connection surface) showing the current Mac relationship. Apple sign-in / account info visible if surfaced from Settings. Press Enter."
-  "6-private-by-default|Settings screen with identity row, Notifications, Report an Issue, Support, Privacy Policy, Terms, and Sign Out all on screen. Press Enter."
+  "1-your-ai-codes-you-answer|SignInPrompt screen: signed out. Sign out from Settings → Sign Out if currently signed in. Make sure Sign in with Apple, Try Demo / Set Up Mac, and legal links are all on screen. Press Enter. (Overlay text in post: 'Your AI codes. You answer when it asks.')"
+  "2-phone-shows-up-when-agent-stops|Inbox with one or two waiting cards. Provider glyph, project/branch label, and a short summary excerpt visible. If a running-count chip is on screen, keep it. Skip the tutorial first. Press Enter. (Overlay: 'The phone shows up only when your agent stops.')"
+  "3-answer-like-text|Focused card with the reply field open. Either a suggested-reply chip is highlighted, or a short typed line like 'Use the simpler one.' is in the field. Do NOT send. Press Enter. (Overlay: 'Answer like you'd answer a text.')"
+  "4-back-to-empty|Connected empty state right after the last waiting card has been answered. The N running chip is visible, the checkmark glyph is at its FINAL resting frame, and the rest of the canvas is intentionally empty. Don't catch a loading spinner. Press Enter. (Overlay: 'Back to empty.')"
+  "5-no-code-no-terminal|Settings screen with identity row, Notifications, Report an Issue, Support, Privacy Policy, Terms, Sign Out, and Delete Account visible. Press Enter. (Overlay: 'You don't need to read the code.')"
 )
 
 for entry in "${DEVICES[@]}"; do

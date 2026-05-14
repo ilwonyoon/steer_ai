@@ -209,14 +209,16 @@ struct SteerRootView: View {
             return lastError
         }
         if !liveChips.isEmpty {
-            return "All clear"
+            // Mirrors the App Store screenshot set §"Back To Empty"
+            // — same line on iPhone empty state.
+            return "Back to empty."
         }
         return "No Steer sessions yet"
     }
 
     private var emptyStateDetail: String {
         if !liveChips.isEmpty {
-            return "Agents are still running."
+            return "Your AI is still building on your Mac.\nThe inbox stays quiet until it has another question."
         }
         return "In a terminal:\n  cd ~/your/project\n  steer codex   # or steer claude"
     }

@@ -1,6 +1,6 @@
 # Steer iOS App Store Submission Marketing Pack
 
-Last updated: 2026-05-13  
+Last updated: 2026-05-14
 Audience: App Store Connect submission, App Review, screenshot production, launch copy  
 Primary localization: English (U.S.)
 
@@ -15,31 +15,40 @@ This is the product-marketing source of truth for launching Steer on the iPhone 
 
 ### One-Line Positioning
 
-Steer is an action inbox for AI coding agents: when a local Mac agent stops, asks, or finishes, Steer turns that moment into an iPhone card you can review and reply to.
+Your AI codes. You answer when it asks. Steer is the small iPhone inbox where Mac coding agents bring their questions, and where you tap a suggestion (or type one line) to keep them moving.
+
+### Differentiation In One Sentence
+
+Other apps in this space — CC Pocket, Happy, Mobile IDE — give working developers a way to control coding agents from anywhere. Steer is for the other side: the user who set the agents loose, doesn't intend to read every diff, and only wants to step in when an agent actually has a question.
 
 ### Short Product Story
 
-AI coding agents are useful only when they keep moving. The problem is not starting an agent; the problem is noticing when it stops. Steer watches user-started CLI coding sessions on the Mac and surfaces only the moments that need attention. The iPhone app is the mobile action queue: notifications, cards, context, suggested replies, and a reply composer.
+If you can read and review every line your AI codes, you already have a hundred apps for that. Steer is for the user who delegates the work and only wants to see the AI when it actually has a question to ask.
 
-The iPhone app is not a remote terminal. It does not mirror a shell, expose a prompt, stream the screen, browse the Mac, or launch arbitrary commands. The Mac app owns local capture and local delivery. The iPhone app reviews cards and queues replies back to the user's own Steer-managed sessions.
+The codex and claude sessions stay on your Mac and keep working. The iPhone surface stays empty until one of them stops with a decision worth your attention. A card appears with the question in plain language and a few suggested answers. Tap one of them, or type one short reply. The card disappears, the agent picks up where it stopped, and the inbox goes quiet again.
+
+You do not have to open a terminal. You do not have to read the code. You do not have to remember which session was which. The agent walks up to you with the smallest possible ask.
 
 ### App Review Framing
 
 Use this framing everywhere:
 
-- **Say:** AI action queue, action inbox, waiting agent cards, queue replies, Mac handles local delivery.
-- **Avoid:** remote terminal, remote shell, remote desktop, screen mirror, control your Mac, run commands from iPhone.
-- **Clarify when needed:** Steer syncs small action cards and replies, not full transcripts or a live terminal.
+- **Say:** quiet agent inbox, decision card, the agent stops and asks, suggested reply, your Mac runs the agent locally.
+- **Avoid:** remote terminal, remote shell, remote desktop, screen mirror, control your Mac, run commands from iPhone, mobile IDE.
+- **Clarify when needed:** Steer carries the agent's question and your short reply. The terminal, the code, and the full output never leave the Mac.
+- **Be honest about smallness:** the iPhone surface is deliberately small. There is no live terminal, no log feed, no command palette, no agent sidebar. That is the design.
 
 ### Target User
 
-Primary user: developers using CLI coding agents while they are away from the terminal, context-switching, commuting, or working across rooms.
+Primary user: people who let AI handle most of the coding (vibe coders, non-engineers running coding agents, busy operators who delegate to codex/claude). They are not opening a phone IDE — they want to be left alone unless the agent has an actual question.
 
-Secondary user: early adopters of agentic coding workflows who already understand Claude Code, Codex CLI, Gemini CLI, and terminal-first development.
+Secondary user: developers who run long agent sessions while away from the terminal and want a quieter mobile companion than the existing remote-control apps.
+
+Not the target: power users who want to drive a mobile IDE, scroll live logs, or manage many sessions from the phone. Steer trades those features for a much smaller, quieter inbox surface, and that tradeoff is intentional.
 
 ### Launch Promise
 
-Never let a coding agent sit idle because you missed the moment it needed you.
+Get back to your day. Your agents will come find you when they actually need a decision.
 
 ## App Store Connect Fields
 
@@ -48,7 +57,7 @@ Never let a coding agent sit idle because you missed the moment it needed you.
 | Field | Value |
 |---|---|
 | App Name | `Steer - Agent Inbox` |
-| Subtitle | `Never let AI sit idle` |
+| Subtitle | `Your AI codes. You answer.` |
 | Bundle ID | `ai.steer.ios` |
 | SKU | `STEER_IOS_001` |
 | Primary Category | Developer Tools |
@@ -61,7 +70,7 @@ Never let a coding agent sit idle because you missed the moment it needed you.
 Notes:
 
 - Use `Steer - Agent Inbox` consistently across App Store Connect and launch materials.
-- Keep the subtitle generic. The app name already carries the product name, and Apple advises not duplicating searchable app/company names in keywords.
+- Subtitle `Your AI codes. You answer.` carries the differentiation directly: the user's role is to answer, not to write. Avoids duplicating the searchable app/company name and avoids any phrasing that suggests phone-driven code execution.
 
 ### URLs
 
@@ -78,13 +87,13 @@ Notes:
 Limit: 170 characters. Paste this:
 
 ```text
-Steer turns waiting AI coding agents into iPhone action cards, so you can review context, send a reply, and keep work moving from anywhere.
+Your AI keeps coding on your Mac. When it stops with a question, Steer turns the moment into a card — tap a suggestion or send a short reply. No code reading required.
 ```
 
-Backup variant:
+Backup variant (slightly shorter, more neutral phrasing):
 
 ```text
-When a local coding agent stops, Steer sends a focused iPhone card with the context and reply box you need to keep it moving.
+When your Mac coding agent has a question, Steer brings it to your phone as a small card with a few suggested answers. Tap one, get back to your day.
 ```
 
 ### Keywords
@@ -106,34 +115,47 @@ Rationale:
 Limit: 4,000 characters. Paste this:
 
 ```text
-Steer is an action inbox for AI coding agents running on your Mac.
+Your AI codes. You answer when it asks.
 
-When a local coding agent stops to ask a question, hits a blocker, or finishes a task, Steer turns that moment into a focused iPhone card. Review the context, type a reply, and send it back to the right Mac session without returning to your desk.
+Steer is the quiet inbox where coding agents running on your Mac come to ask questions. When codex or claude stops with a decision it needs from you, Steer turns the moment into a focused iPhone card — usually with a few suggested answers you can tap. When they don't need anything, the inbox stays empty and you get back to your day.
 
 WHY STEER
 
-AI agents are most useful when they keep moving. Steer helps you catch the exact moments that need your input, so long-running coding sessions do not sit idle while you are away from the terminal.
+If you can read and review every line your AI codes, you already have a hundred apps for that. Steer is for the other side: you set the AI loose on the work, it goes off and codes on your Mac, and you only want to step in when it actually has a question.
+
+The category trend is "control your Mac agents from anywhere." Steer is intentionally the opposite shape — most of the time the phone is empty. The point of the product is being undisturbed except for the small moments when an answer from you actually matters.
 
 WHAT YOU CAN DO
 
-• Get notified when a Mac coding session needs attention
-• Review action cards with provider, project, branch, summary, and short output excerpt
-• Send replies back to the matching Steer-managed session
-• Track queued, delivered, failed, and offline states
-• Use Try Demo to explore the full card workflow without setting up a Mac
+• Get notified the moment a codex or claude session on your Mac stops with a question
+• Review the question as a plain-language card with project, branch, and a short context excerpt
+• Reply with one tap on a suggested answer, or type one line yourself
+• Let the agent pick up where it stopped — without going back to your desk
+• Track replies you've already sent and any that need a retry
+• Use Try Demo to walk the full card → reply → empty → next-card loop before connecting a Mac
 • Manage Sign in with Apple, notifications, support links, and account deletion from Settings
 
 HOW IT WORKS
 
-Steer for Mac wraps coding-agent sessions that you explicitly start. The iPhone app receives small action cards and sends replies through the Steer relay. Your Mac handles local session capture and local instruction delivery.
+You run codex or claude in your Mac terminal the way you normally would. Wrap each session with the local `steer` companion (one command at the start of the session). When the agent stops with a question or finishes a task, the question shows up on iPhone as a card. Your reply is queued back into the same Mac terminal session — the agent picks up where it stopped and keeps going.
 
-Steer is not a remote terminal, remote desktop client, or screen mirror. It does not expose a live shell prompt, stream your Mac screen, or let your iPhone browse or launch arbitrary Mac commands.
+WHAT THIS APP DOES NOT DO
+
+Steer is deliberately small. It is not a remote terminal, remote desktop client, screen mirror, or mobile IDE. It does not run code on your phone, does not show a live terminal, does not stream your Mac screen, and does not let your phone browse your Mac. The agent itself stays in the Mac terminal where you started it. Steer only carries the agent's question to your phone and your short reply back. Everything else — the codebase, the full output, the file system — never leaves your Mac.
 
 PRIVACY
 
-Steer uses Sign in with Apple and has no third-party advertising or tracking SDKs. Full transcripts and files stay on your Mac. Only the action-card context needed for review and reply is synced when you enable iPhone Sync.
+Steer uses Sign in with Apple. There are no third-party advertising or tracking SDKs. Full transcripts, source files, and shell access stay on your Mac. Only the small action-card context you need to make a decision is synced through the Steer relay when you enable iPhone Sync. Account and data deletion are available in Settings.
 
-Steer for Mac is required for live cards. The iPhone app includes Try Demo so you can understand the workflow before connecting your own Mac.
+REQUIREMENTS
+
+• A Mac with macOS 15 or later
+• The local `steer` companion installed on the Mac (instructions at the marketing link)
+• codex or claude CLI installed on the Mac
+
+This app is not affiliated with, endorsed by, or associated with Anthropic or OpenAI. Codex and Claude Code are trademarks of their respective owners.
+
+Made by a small team. Feedback: superwedge.labs@gmail.com
 ```
 
 ### What's New
@@ -141,9 +163,9 @@ Steer for Mac is required for live cards. The iPhone app includes Try Demo so yo
 For version 1.0:
 
 ```text
-Initial release.
+First public release.
 
-Steer brings iPhone action cards to local Mac coding agents, with push notifications, focused review context, reply delivery, Try Demo, Sign in with Apple, and account deletion.
+Your codex and claude agents keep coding on your Mac. Steer shows up on your phone only when one of them stops with a question worth your time. Answer with a tap or a short line, then get back to your day.
 ```
 
 ### Review Information
@@ -157,21 +179,23 @@ Paste this into Notes for Review:
 ```text
 Hello App Review team,
 
-Steer is an action inbox for local Mac coding agents. The iPhone app lets a user review synced action cards from their own Mac and send replies that are queued through the Steer relay and delivered by Steer for Mac.
+Steer is a deliberately small iPhone inbox for AI coding agents that run on the user's own Mac (codex CLI and Claude Code CLI). When one of those Mac sessions stops with a question, Steer surfaces the moment as a card on iPhone; the user taps a suggested answer or types one short line. The reply is queued back to the Mac terminal session that asked, and the agent picks up where it left off.
 
-Steer is not a remote terminal, remote desktop client, live shell mirror, or arbitrary command launcher. The iPhone app does not execute commands directly and does not provide a terminal prompt. The Mac app owns local session capture and local instruction delivery.
+The intentional product shape: the iPhone surface stays empty by default. There is no terminal, no live shell, no log feed, no command palette, no remote desktop, no Mac browser. The iPhone never runs code. All execution stays in the Mac terminal where the user started the agent.
+
+Target user note: Steer is positioned for users who delegate most coding to AI agents and only step in to answer questions (often called "vibe coders" / non-engineers running coding agents, but also developers who simply prefer a quieter mobile surface). The design tradeoff is fewer power-user features in exchange for a much smaller, calmer inbox. If the reviewer is comparing to other apps in the category (CC Pocket, Happy, mobile IDE listings), the absence of those power features is intentional — they belong on the Mac, not the phone.
 
 No demo account or prepared Mac is required for review.
 
 Reviewer flow:
 1. Install and open Steer.
 2. On the signed-out screen, tap Try Demo.
-3. Review the sample action cards.
-4. Type a reply and tap Send.
-5. Open Settings from the top-right gear.
-6. Verify Support, Privacy Policy, Terms, Sign Out, and Delete Account surfaces.
+3. Walk through the sample cards in the demo carousel.
+4. Tap into the reply field on a card, type a short line, tap Send. Confirm the card resolves and the inbox returns to its empty state.
+5. Open Settings from the top-left gear icon.
+6. Verify Support, Privacy Policy, Terms, Sign Out, and Delete Account are all reachable.
 
-The demo uses local sample cards and simulated delivery state. Live sync requires the user's own Steer for Mac setup, but live sync is not required to evaluate the iPhone app's core card review and reply workflow.
+The demo uses local sample cards and simulated delivery state. Live sync requires the user's own Mac with the local steer companion installed, but live sync is not required to evaluate the iPhone app's core card → reply → empty loop.
 
 Important limits:
 - No live terminal mirror.
@@ -179,7 +203,7 @@ Important limits:
 - No remote desktop streaming.
 - No Accessibility, Screen Recording, or Input Monitoring permissions.
 - No third-party advertising or tracking SDKs.
-- Live delivery only targets sessions launched and owned by the user's own Steer for Mac setup.
+- Live delivery only targets agent sessions the user launched themselves on their own Mac with the local steer companion.
 
 Privacy Policy:
 https://ilwonyoon.github.io/steer_ai/privacy/
@@ -230,181 +254,171 @@ Current screenshot sizing guidance:
 
 ## Screenshot Set
 
-### 1. Signed-Out Entry
+Five shots. Each one carries a single piece of the product promise and lands one differentiator a "control-your-agent" listing cannot. Together they read as:
 
-State to capture: signed-out SignInPrompt with wordmark, value prop, Sign in with Apple, Try Demo, and legal links visible.
+1. The user's role is to answer, not to write.
+2. The phone is empty by default — it shows up only when an agent stops.
+3. Answering is one tap or one short line, not a command palette.
+4. After every answer the inbox goes quiet again.
+5. There is no terminal, no log feed, no remote shell — that is on purpose.
+
+### 1. Your AI Codes. You Answer When It Asks.
+
+State to capture: signed-out screen. Steer wordmark, Sign in with Apple, Try Demo, legal links. The empty routing field reads as "nothing yet" — that is the point.
 
 Overlay headline:
 
 ```text
-Never let AI sit idle
+Your AI codes. You answer when it asks.
 ```
 
 Overlay subline:
 
 ```text
-Review waiting coding agents from iPhone
+Sign in to connect the codex and claude sessions running on your Mac.
 ```
 
 Why this shot matters:
 
-- Establishes the app promise in the first screenshot.
-- Shows Try Demo before sign-in, which helps App Review and first-time users.
-- Shows legal links are accessible without authentication.
+- States the role split up front: AI writes, you answer.
+- Names codex and claude so App Review knows exactly what is being controlled.
+- Shows Sign in with Apple and legal links are reachable before any live data.
 
 Avoid:
 
-- Cropping out Try Demo.
-- Showing only the logo/login screen without product context.
+- "Connect your Mac" without the role split — that frames Steer as a generic setup app.
+- Copy that suggests the user will write or run code from the phone.
 
-### 2. Action Card Inbox
+### 2. The Phone Shows Up Only When Your Agent Stops.
 
-State to capture: demo or live inbox with one card focused, provider icon visible, project/branch metadata visible, and short terminal excerpt visible.
+State to capture: live or demo inbox with one or two waiting cards. Provider glyph, project/branch label, short summary excerpt. If a running-count chip is visible, keep it visible.
 
 Overlay headline:
 
 ```text
-One card for every waiting agent
+The phone shows up only when your agent stops.
 ```
 
 Overlay subline:
 
 ```text
-See the context without opening a terminal
+One card per moment. No logs to scroll, no live terminal to watch.
 ```
 
 Why this shot matters:
 
-- Explains the core product shape: card stack, not chat and not screen mirroring.
-- Shows that the iPhone app is useful and native.
+- Carries the deliberate-quiet differentiator that no remote-control app advertises.
+- Shows the card surface is small on purpose.
+- Names "no logs, no live terminal" so App Review reads the framing twice.
 
 Avoid:
 
-- Dense terminal-like output filling the screen.
-- Raw logs that look like a live shell.
+- A screen that fills the canvas with terminal-shaped output.
+- More than two cards on screen — that suggests a feed, not an inbox.
 
-### 3. Reply Composer
+### 3. Answer Like You'd Answer A Text.
 
-State to capture: reply field focused with keyboard open and a short draft typed, such as `Use the simpler endpoint.` Do not send yet.
+State to capture: focused card with the reply field open. Either a suggested-reply chip is highlighted, or a short typed line such as `Use the simpler one.` is present. Do not send.
 
 Overlay headline:
 
 ```text
-Reply from anywhere
+Answer like you'd answer a text.
 ```
 
 Overlay subline:
 
 ```text
-Send the next instruction back to your Mac session
+Tap a suggested answer, or send one short line. The agent picks up where it stopped.
 ```
 
 Why this shot matters:
 
-- Demonstrates the primary action.
-- Makes it clear the iPhone app queues a reply rather than exposing a remote prompt.
+- The reply UI is the actual product — make it look like a messaging surface, not a command palette.
+- Shows the "no code reading required" promise without saying it: the user is sending plain English.
+- Frames the reply as a queued instruction to the existing Mac session, never as a remote command.
 
 Avoid:
 
-- Phrases like "run command" or "control your Mac."
+- Phrases like "run command", "control your Mac", "execute".
+- A reply that itself looks like a shell command.
 
-### 4. Delivery State
+### 4. Back To Empty.
 
-State to capture: a card or chip showing queued/delivered/running/offline state. If using demo mode, capture the simulated queued/delivered state after tapping Send.
+State to capture: connected empty state right after the last waiting card has been answered. The N running chip is visible, the checkmark glyph is at its resting frame, and the rest of the canvas is intentionally empty.
 
 Overlay headline:
 
 ```text
-Know what happened next
+Back to empty.
 ```
 
 Overlay subline:
 
 ```text
-Queued, delivered, failed, and offline states stay visible
+Your AI is still building on your Mac. The inbox stays quiet until it has another question.
 ```
 
 Why this shot matters:
 
-- Shows trust and reliability.
-- Reduces reviewer confusion about what happens after a reply is sent.
+- This is the clearest UX delta versus every other listing in the category.
+- Turns the empty state into a positive product value, not a "feature missing" signal.
+- Makes the loop explicit: answer → empty → next question, never a busy dashboard.
 
 Avoid:
 
-- Showing an ambiguous spinner with no status text.
+- A blank empty state without the running-count chip or checkmark.
+- A loading spinner that reads like the app is still fetching.
 
-### 5. No Waiting Actions
+### 5. You Don't Need To Read The Code.
 
-State to capture: connected empty state: `No waiting actions` with the Mac connection chip visible.
+State to capture: Settings screen with identity row, Notifications, Report an Issue, Support, Privacy Policy, Terms, Sign Out, and Delete Account visible. Keep the layout calm — this slide is a summary, not a feature menu.
 
 Overlay headline:
 
 ```text
-Quiet when nothing needs you
+You don't need to read the code.
 ```
 
 Overlay subline:
 
 ```text
-Steer only surfaces moments that need attention
+Steer turns agent questions into plain-language cards. The terminal stays on your Mac, where it belongs.
 ```
 
 Why this shot matters:
 
-- Communicates restraint and avoids "always-on terminal monitor" framing.
-- Shows the app has a complete empty state.
+- Final slide states the differentiator a reviewer or new user might still be unsure about: no code reading, no terminal exposure.
+- Combines the privacy/account surface with the closing message so support, legal, and the differentiator share a single shot.
+- Sets the expectation about what is and is not on the iPhone in one sentence.
 
 Avoid:
 
-- Empty state copy that implies the iPhone can start Mac setup by itself.
+- Cropping out Support, Privacy Policy, or Delete Account.
+- Adding a separate "Connected to your Mac" shot — the Mac relationship is already covered in shots 1 and 2.
 
-### 6. Settings And Privacy
+## Optional Sixth Screenshot
 
-State to capture: Settings screen with identity row, Notifications, Report an Issue, Support, Privacy Policy, Terms, and Sign Out visible.
+Use only if the five-shot set leaves the "what happens after I tap Send" question genuinely open. Most users will not need it.
+
+State to capture: a card or chip showing queued, delivered, or failed state. In demo mode this is the simulated queued/delivered state right after tapping Send.
 
 Overlay headline:
 
 ```text
-Private by default
+Know what happened to your reply.
 ```
 
 Overlay subline:
 
 ```text
-No ads, no tracking, account controls built in
+Queued, delivered, failed, offline — every state stays visible.
 ```
 
 Why this shot matters:
 
-- Supports App Review privacy expectations.
-- Shows support/legal/account controls are easy to find.
-
-Avoid:
-
-- Cropping out Support or Privacy Policy.
-
-## Optional Seventh Screenshot
-
-Use only if the first six feel too abstract.
-
-State to capture: Mac Sync Status sheet in demo or no-Mac mode.
-
-Overlay headline:
-
-```text
-Built for your own Mac
-```
-
-Overlay subline:
-
-```text
-Live cards appear after you enable iPhone Sync
-```
-
-Why this shot matters:
-
-- Makes the companion-app dependency transparent.
-- Helps prevent rejection for unclear external requirements.
+- Shows trust and reliability without claiming live remote control.
+- Helps if the reviewer asks "what happens after Send" but the demo flow already covers it.
 
 ## Screenshot Filename Plan
 
@@ -412,12 +426,11 @@ Use this structure:
 
 ```text
 apps/ios/build/screenshots/app-store/6.9/
-  01-signed-out-entry.png
-  02-action-card-inbox.png
-  03-reply-composer.png
-  04-delivery-state.png
-  05-no-waiting-actions.png
-  06-settings-privacy.png
+  01-your-ai-codes-you-answer.png
+  02-phone-shows-up-when-agent-stops.png
+  03-answer-like-text.png
+  04-back-to-empty.png
+  05-no-code-no-terminal.png
 
 apps/ios/build/screenshots/app-store/6.5/
   optional, only if manually produced
@@ -443,34 +456,36 @@ If producing a v1.1 app preview later, use this sequence:
 
 The product page should read in this order:
 
-1. Your AI is waiting.
-2. Steer turns that waiting moment into an iPhone card.
-3. You reply from anywhere.
-4. Your Mac delivers the reply locally.
-5. Nothing is tracked; full work stays on your Mac.
+1. Your AI is coding on your Mac.
+2. Most of the time you should not have to look at the phone.
+3. When the AI hits a question only you can answer, Steer brings the moment to you.
+4. You answer in plain language — one tap or one line.
+5. The agent picks up. The inbox goes quiet again.
 
-Do not lead with implementation details, wrappers, relay architecture, or provider-specific names. Mention providers only after the core promise is clear.
+Do not lead with implementation details, wrappers, or relay architecture. Mention codex and claude by name only after the role split (your AI codes / you answer) is clear, so readers anchor on the UX before the integration.
 
 ## Launch Announcement Copy
 
 ### Short Social Post
 
 ```text
-Launching Steer for iPhone.
+Steer for iPhone is out.
 
-It turns waiting AI coding agents on your Mac into focused iPhone action cards, so you can review context, send a reply, and keep work moving without returning to your desk.
+Your AI keeps coding on your Mac. Steer is the small phone inbox where it comes to ask questions when it actually needs one. Tap a suggested answer, or send one short line, and the agent picks up where it stopped.
+
+For the people who let the AI write, and just want to answer when it asks.
 ```
 
 ### Longer Launch Post
 
 ```text
-Steer for iPhone is live.
+Steer for iPhone is live today.
 
-The idea is simple: AI coding agents should not sit idle just because you missed the moment they asked a question.
+There is already a whole category of "control your coding agent from your phone" apps. Steer is built for the other shape on purpose: the user who set the AI loose, doesn't intend to read every diff, and only wants to step in when the agent actually has a question.
 
-Steer watches the coding-agent sessions you explicitly start on your Mac. When one stops, asks, or finishes, your iPhone gets a focused action card with the context you need and a reply box to keep it moving.
+Your codex or claude sessions keep running on your Mac. Your phone stays empty until one of them stops with a decision only you can make. A card shows up with the question in plain language and a few suggested replies. Tap one, or type a short line, and the agent picks up where it left off.
 
-It is not a remote terminal or screen mirror. Your Mac owns the local session. Your iPhone is the action inbox.
+It is not a remote terminal. It is not a mobile IDE. It is an inbox that is quiet by design and only shows up when an answer from you actually matters.
 
 No ads. No tracking. Sign in with Apple. Try Demo included.
 ```
@@ -478,7 +493,7 @@ No ads. No tracking. Sign in with Apple. Try Demo included.
 ### Press / Directory Blurb
 
 ```text
-Steer is an iPhone action inbox for AI coding agents running on your Mac. It turns waiting agent moments into focused cards with context, notifications, and reply delivery, helping developers keep long-running CLI coding sessions moving from anywhere.
+Steer is the quiet iPhone inbox for AI coding agents running on your Mac. When a codex or claude session stops with a question, Steer turns the moment into a plain-language card with suggested replies. Tap one, or send a short line, and the agent picks up where it stopped — no terminal, no remote shell, no log feed.
 ```
 
 ## Rejection Risk Controls
@@ -524,6 +539,17 @@ Mitigation:
 - Review notes explicitly mention Delete Account.
 - Support and Privacy pages are public.
 
+### Risk: Reviewer Compares Against CC Pocket / Happy / Mobile IDE Listings
+
+Reviewers familiar with the category may expect Steer to offer the same "control everything from your phone" surface those apps advertise. Steer's deliberately small surface can read as "missing features" if framed wrong.
+
+Mitigation:
+
+- Description and screenshots lead with the role split: AI codes, user answers. The smallness is the product, not a gap.
+- Description includes an explicit "What this app does NOT do" section so reviewers find the framing twice.
+- Try Demo flow walks the full card → reply → empty → next-card loop. The empty state is the point, not a bug.
+- Review notes include the target-user note (vibe coders / delegators) so the reviewer understands the design tradeoff.
+
 ## Final Submission Checklist
 
 - [ ] Confirm App Store Connect app name and subtitle fit character limits.
@@ -531,7 +557,7 @@ Mitigation:
 - [ ] Use the safe keyword list without third-party names.
 - [ ] Paste Review Notes from this file.
 - [ ] Enter App Privacy answers from `docs/legal/APP_STORE_PRIVACY_LABELS.md`.
-- [ ] Upload six 6.9-inch iPhone screenshots.
+- [ ] Upload five 6.9-inch iPhone screenshots (sixth optional only if the reply-state card is needed).
 - [ ] Confirm Support, Marketing, Privacy, Terms URLs return 200.
 - [ ] Confirm `.ipa` uses production APNS and App Store distribution signing.
 - [ ] Run TestFlight on a real device.
