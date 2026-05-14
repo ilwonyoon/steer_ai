@@ -287,7 +287,17 @@ async function fanoutPush(env: Env, userId: string, card: CardPayload): Promise<
       `[apns] fanout card=${card.cardId} user=${userId} total_devices=${devices.length} targets=${targets.length}`
     );
     if (targets.length === 0) return;
-    const title = card.title || "Steer";
+    // The notification title is the project name (parent/last
+    // folder, e.g. "Documents/Steer_ai") rather than the classifier
+    // headline ("claude needs unblock") — users want to see which
+    // repo they're being paged from, not the verdict text. The
+    // verdict + summary live in the body. Falls back to card.title
+    // if the older Mac client didn't ship payload.project.
+    const project =
+      typeof card.payload?.project === "string" && card.payload.project.length > 0
+        ? card.payload.project
+        : undefined;
+    const title = project || card.title || "Steer";
     const bodyText = card.summary || card.actionPrompt || "";
     // Map the card's provider (set by SteerCardMapping on Mac) to the
     // asset name the iOS NSE will look up in its bundle. We deliberately
