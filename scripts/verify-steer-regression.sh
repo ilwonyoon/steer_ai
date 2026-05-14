@@ -8,6 +8,10 @@ cd "$ROOT_DIR"
 npm test
 npm run test:integration
 swift build --package-path apps/mac
+# G15 — PTY flood durability stress smoke. Real wrapper, real
+# PTY, isolated STEER_HOME. Fails fast if the session snapshot
+# can't survive ~500 PTY chunks alongside a real user + report.
+FLOOD_SECONDS="${FLOOD_SECONDS:-10}" bash scripts/stress-pty-flood.sh
 scripts/build-mac-app.sh
 
 cat <<'EOF'
