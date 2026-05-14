@@ -289,7 +289,7 @@ struct InboxView: View {
             EmptyStateView(
                 icon: "checkmark.circle.fill",
                 message: "Back to empty.",
-                detail: "Your AI is still building on your Mac.\nThe inbox stays quiet until it has another question."
+                detail: "Your AI is still building on your Mac. The inbox stays quiet until it has another question."
             )
         case .stale, .offline:
             // No CTA — there's nothing the user can do from the
@@ -646,6 +646,12 @@ private struct EmptyStateView: View {
     let icon: String
     let message: String
     let detail: String
+    /// True only when `detail` is a literal shell command the user is
+    /// expected to copy (e.g. the "steer codex" setup hint). Plain
+    /// English copy reads as a quote of a CLI when monospaced and the
+    /// line breaks look mechanical — keep the readable variant unless
+    /// we're explicitly showing a command.
+    var detailIsCommand: Bool = false
     var primaryCTA: (label: String, action: () -> Void)? = nil
     var secondaryCTA: (label: String, action: () -> Void)? = nil
 
@@ -669,15 +675,18 @@ private struct EmptyStateView: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(SteerColors.secondaryInk)
                 .multilineTextAlignment(.center)
-            // Shell snippet stays monospaced — it's literal commands
-            // the user copies. Headline above is SF body weight per
-            // iOS HIG.
+            // Shell snippets stay monospaced (literal commands the
+            // user copies); plain English uses the default SF body
+            // font so the wrap looks natural and the line-breaks
+            // don't read as mechanical.
             Text(detail)
-                .font(.system(size: 14, design: .monospaced))
+                .font(detailIsCommand
+                      ? .system(size: 14, design: .monospaced)
+                      : .system(size: 15))
                 .foregroundStyle(SteerColors.tertiaryInk)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 32)
             if primaryCTA != nil || secondaryCTA != nil {
                 VStack(spacing: 8) {
                     if let primary = primaryCTA {

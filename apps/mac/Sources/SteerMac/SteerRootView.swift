@@ -955,6 +955,15 @@ private struct EmptyStateView: View {
             : SteerColors.tertiaryInk
     }
 
+    /// "no sessions yet" detail is a literal shell snippet
+    /// (`steer codex`) the user copies; everything else is plain
+    /// English that should wrap naturally in SF body. Sniff the
+    /// content rather than threading a new parameter through —
+    /// only the setup hint contains a newline + `steer ` prefix.
+    private var detailIsCommand: Bool {
+        detail.contains("steer codex") || detail.contains("steer claude")
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
@@ -963,13 +972,14 @@ private struct EmptyStateView: View {
             Text(message)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(SteerColors.secondaryInk)
-            // Onboarding command line stays monospaced — it's literal
-            // shell text the user will copy. Display copy is SF.
             Text(detail)
-                .font(.system(size: 12, design: .monospaced))
+                .font(detailIsCommand
+                      ? .system(size: 12, design: .monospaced)
+                      : .system(size: 13))
                 .foregroundStyle(SteerColors.tertiaryInk)
-                .multilineTextAlignment(.leading)
+                .multilineTextAlignment(detailIsCommand ? .leading : .center)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, detailIsCommand ? 0 : 28)
         }
         .frame(maxWidth: .infinity, maxHeight: 540)
         .background(SteerColors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
