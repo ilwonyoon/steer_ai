@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-14 (G15 sync layer collapse + v0.2.0 Mac DMG release)
+Last updated: 2026-05-14 (G17 — APNS as sync source of truth: new card + resolve both wake the iPhone)
 
 ## Purpose
 
@@ -630,8 +630,25 @@ Learned:
 Next:
 
 - App Store Connect submission flow (user-driven): upload `.ipa` via Xcode Organizer, attach 5 screenshots, paste metadata from `docs/APP_STORE_SUBMISSION_MARKETING_PACK.md`, submit for review.
-- iPhone background card-resolve race: when WS is disconnected and the user resolves a card from the Mac, the iPhone may briefly show a stale card until the next scenePhase.active reload reissues the bootstrap GET. Followup PR.
 - Relay event-log clients: the v3 `events` table is dual-write only; both clients still read legacy card/instruction routes. Switching them over is a separate hardening pass, not launch-critical.
+
+### 2026-05-14 (PM): G17 — APNS as sync source of truth (card.upsert + card.resolved symmetry)
+
+Completed:
+
+- **APNS-trigger reload for new cards (`29e041b`)** — `userNotificationCenter(_:willPresent:)` now calls `SyncInbox.shared.reload()` for every push. Foreground iPhone with the inbox open used to require a WS upsert that frequently never arrived (Cloudflare DO half-close + iOS URLSession suspend silently lose broadcasts); the APNS arrival itself is now the wake signal. Validated on device: opening a new `steer claude` on Mac surfaces the card in ~1 s, matching the cold-start path. Same call is mirrored in `didReceive` so tap-from-lock-screen also pulls the latest set rather than racing the WS push.
+- **APNS-trigger resolve for closed cards (`b6a2316`)** — relay `DELETE /v1/sync/cards/:cardId` now fans out an APNS push in addition to the WS `card.resolved` broadcast. The push carries `customPayload.type = "resolved"` plus `cardId`/`sessionId`. iOS `willPresent` sees the marker and calls `completionHandler([])` (no banner, no sound), then runs the same reload as the new-card path. Both `PUT` and `DELETE` now have identical fan-out shape, so the iPhone never falls behind the Mac on session close regardless of WS health. New helpers: `store.lookupCardSessionId()`, `apns.PushRequest.silent`, `index.fanoutResolvedPush()`. Validated on device: killing `steer claude` removes the matching card from the carousel within ~1-2 s, silently.
+- **Newest-card-left ordering (`af175b7`)** — `upsertCardDirect` inserts new cards at index 0 instead of appending, and `applyBootstrapDirect` sorts by `updatedAt` DESC. `focusedSessionId` is already a sessionId lookup, so a freshly-arrived card lands on the left without moving the user's focus.
+
+Learned:
+
+- The PUT path always fanned out via APNS; the DELETE path silently relied on WS only. That asymmetry — not a WebSocket bug per se — was the actual cause of "Mac chip drops immediately but the iPhone card lingers." Fixing the asymmetry obsoletes a whole class of WS-stickiness fixes we were sketching.
+- An APNS push with `alert: { title: "", body: "" }` short-circuits OS delivery to the app — `willPresent` doesn't fire. The fix is to keep a non-empty alert (we send `"Steer / Updating…"`) and rely on the iOS client to call `completionHandler([])` once it sees the resolve marker. The user never reads the placeholder strings; they only exist to satisfy the OS routing path.
+- A true silent push (`apns-push-type: background`, `content-available: 1`, no alert) is throttled to ~2-3 per hour and isn't safe for a user who closes five terminals in a row. Riding the alert channel with silent semantics on the client side is the right trade.
+
+Next:
+
+- WebSocket can now be downgraded from "primary sync channel" to "fast-path optimization." Not removing it yet (it still lowers latency when alive), but a future cleanup pass can simplify SyncInbox by treating APNS+GET as the contract and WS as a latency boost. Not launch-critical.
 
 ## Open Questions
 
