@@ -106,7 +106,7 @@ export class Store {
   ): Promise<{ inserted: boolean; changed: boolean; becameActive: boolean }> {
     const existing = await this.env.DB.prepare(
       `SELECT session_id, category, priority, title, summary,
-              action_prompt, payload_json, state
+              action_prompt, payload_json, state, response_revision
        FROM cards WHERE card_id = ? AND user_id = ? LIMIT 1`
     )
       .bind(card.cardId, userId)
@@ -119,9 +119,11 @@ export class Store {
         action_prompt: string | null;
         payload_json: string;
         state: string;
+        response_revision: number | null;
       }>();
     const inserted = existing == null;
     const incomingPayload = JSON.stringify(card.payload ?? {});
+    const incomingRevision = card.responseRevision ?? 0;
     const changed =
       inserted ||
       existing.session_id !== card.sessionId ||
@@ -131,7 +133,8 @@ export class Store {
       existing.summary !== card.summary ||
       (existing.action_prompt ?? null) !== (card.actionPrompt ?? null) ||
       existing.payload_json !== incomingPayload ||
-      existing.state !== card.state;
+      existing.state !== card.state ||
+      (existing.response_revision ?? 0) !== incomingRevision;
     // True when the card is reaching state="active" for the first
     // time in this upsert: either it's a brand-new row OR the
     // previous stored state was something else (typically "done"
@@ -144,9 +147,10 @@ export class Store {
     await this.env.DB.prepare(
       `INSERT INTO cards (
          card_id, user_id, session_id, category, priority, title, summary,
-         action_prompt, payload_json, state, created_at, updated_at
+         action_prompt, payload_json, state, created_at, updated_at,
+         response_revision
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(card_id) DO UPDATE SET
          category = excluded.category,
          priority = excluded.priority,
@@ -155,7 +159,8 @@ export class Store {
          action_prompt = excluded.action_prompt,
          payload_json = excluded.payload_json,
          state = excluded.state,
-         updated_at = excluded.updated_at`
+         updated_at = excluded.updated_at,
+         response_revision = excluded.response_revision`
     )
       .bind(
         card.cardId,
@@ -169,7 +174,8 @@ export class Store {
         incomingPayload,
         card.state,
         card.createdAt,
-        card.updatedAt
+        card.updatedAt,
+        incomingRevision
       )
       .run();
     return { inserted, changed, becameActive };
@@ -178,7 +184,8 @@ export class Store {
   async listActiveCards(userId: string, sinceUpdatedAt = 0): Promise<CardPayload[]> {
     const rs = await this.env.DB.prepare(
       `SELECT card_id, session_id, category, priority, title, summary,
-              action_prompt, payload_json, state, created_at, updated_at
+              action_prompt, payload_json, state, created_at, updated_at,
+              response_revision
        FROM cards
        WHERE user_id = ? AND state = 'active' AND updated_at > ?
        ORDER BY updated_at ASC
@@ -199,6 +206,7 @@ export class Store {
       state: row.state as "active" | "done",
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
+      responseRevision: (row.response_revision as number | null) ?? 0,
     }));
   }
 
