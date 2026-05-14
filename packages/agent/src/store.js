@@ -79,18 +79,37 @@ export function createStore(filePath = databasePath) {
     /// after awaiting_response_since. Atomic: increments AND clears
     /// the marker in one statement so a second concurrent refresh
     /// can't double-bump.
+    ///
+    /// G15 — source of truth is the session-snapshot column
+    /// (last_trusted_at) rather than transcript_entries, so PTY
+    /// flood can't suppress the bump by evicting the report row.
     bumpResponseRevisionIfReady: db.prepare(`
       UPDATE sessions
       SET last_response_revision = last_response_revision + 1,
           awaiting_response_since = NULL
       WHERE id = ?
         AND awaiting_response_since IS NOT NULL
-        AND EXISTS (
-          SELECT 1 FROM transcript_entries
-          WHERE session_id = ?
-            AND stream IN ('report', 'stdout', 'stderr')
-            AND timestamp > sessions.awaiting_response_since
-        )
+        AND last_trusted_at IS NOT NULL
+        AND last_trusted_at > awaiting_response_since
+    `),
+    /// G15 — session snapshot columns updated alongside
+    /// transcript_entries inserts. Survives the per-session cap.
+    updateSessionUserSnapshot: db.prepare(`
+      UPDATE sessions
+      SET last_user_text = ?, last_user_at = ?
+      WHERE id = ?
+    `),
+    updateSessionTrustedSnapshot: db.prepare(`
+      UPDATE sessions
+      SET last_trusted_text = ?, last_trusted_at = ?
+      WHERE id = ?
+    `),
+    selectSessionForRefresh: db.prepare(`
+      SELECT id, provider, adapter_kind, command, cwd, run_state,
+             last_user_at, last_user_text,
+             last_trusted_at, last_trusted_text
+      FROM sessions
+      WHERE id = ?
     `),
     /// Read the current revision for publishing.
     selectResponseRevision: db.prepare(`
@@ -245,6 +264,17 @@ export function createStore(filePath = databasePath) {
       const timestamp = new Date().toISOString();
       statements.insertTranscriptEntry.run(randomUUID(), sessionId, timestamp, stream, chunk);
 
+      // G15 — mirror trusted / user chunks into the session
+      // snapshot columns so the classifier never loses them to
+      // the per-session transcript cap under PTY repaint flood.
+      // PTY and system chunks are not authoritative; they only
+      // feed the terminal-excerpt scrub fallback.
+      if (stream === "user") {
+        statements.updateSessionUserSnapshot.run(chunk, timestamp, sessionId);
+      } else if (stream === "report" || stream === "stdout" || stream === "stderr") {
+        statements.updateSessionTrustedSnapshot.run(chunk, timestamp, sessionId);
+      }
+
       // S2 — the `messages` table is dropped (migration 0003). The
       // classifier, Mac UI, and iPhone all read from
       // action_cards + transcript_entries + sessions; messages was
@@ -385,15 +415,45 @@ export function createStore(filePath = databasePath) {
     // card row carries the post-bump revision in the same write
     // transaction. iPhone sees one consistent upsert with the new
     // revision and atomically swaps stage.
-    statements.bumpResponseRevisionIfReady.run(sessionId, sessionId);
+    statements.bumpResponseRevisionIfReady.run(sessionId);
 
-    const session = statements.selectSession.get(sessionId);
+    const session = statements.selectSessionForRefresh.get(sessionId);
     if (!session) return;
 
-    const trusted = statements.selectRecentTrustedEntries.all(sessionId);
-    const users = statements.selectRecentUserEntries.all(sessionId);
-    const pty = trusted.length === 0 ? statements.selectRecentPtyEntries.all(sessionId) : [];
-    const entries = [...trusted, ...users, ...pty].sort((a, b) => a.rid - b.rid);
+    // G15 — the classifier's source of truth for "what was the
+    // last user line, what was the last trusted output" is the
+    // session-snapshot columns, not transcript_entries. The
+    // 100-row cap evicts those rows under PTY flood; the snapshot
+    // survives. We forge synthetic entries from the snapshot
+    // columns so the classifier keeps its current interface.
+    const synthetic = [];
+    if (session.last_user_at && session.last_user_text) {
+      synthetic.push({
+        stream: "user",
+        chunk: session.last_user_text,
+        timestamp: session.last_user_at,
+        rid: 0,
+      });
+    }
+    if (session.last_trusted_at && session.last_trusted_text) {
+      synthetic.push({
+        stream: "report",
+        chunk: session.last_trusted_text,
+        timestamp: session.last_trusted_at,
+        // rid ordering must reflect real arrival. A user line at
+        // T1 followed by a trusted reply at T2 means rid_user <
+        // rid_trusted. We compare timestamps to assign ordering.
+        rid: session.last_user_at && session.last_user_at >= session.last_trusted_at ? -1 : 1,
+      });
+    }
+
+    // PTY screen scrub is still allowed as a tertiary fallback —
+    // mirrors pre-G15 behavior when no user/trusted is present.
+    const pty = synthetic.length === 0
+      ? statements.selectRecentPtyEntries.all(sessionId)
+      : [];
+
+    const entries = [...synthetic, ...pty].sort((a, b) => a.rid - b.rid);
     const { rawText, displayLines, card } = classifyTranscript({ session, entries });
     const now = new Date().toISOString();
     const excerptId = `excerpt-${sessionId}`;
