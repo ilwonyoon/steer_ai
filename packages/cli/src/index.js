@@ -285,15 +285,19 @@ async function wrapPtyProvider(provider, childCommand, childArgs) {
     if (currentProvider !== "claude") return;
     clearTimeout(idleReportTimer);
     idleReportTimer = setTimeout(() => {
+      // Detect "the TUI is idle" only — never publish the PTY screen
+      // itself as a `report` stream. Claude TUI repaint is split-pane
+      // + status bar + wrap, so feeding it through the classifier
+      // turned cards into the jumbled body the user saw (the agent
+      // treats `report` as trusted, and the screen scrape is NOT
+      // trusted). Trusted card bodies come from the Claude Stop hook
+      // (`hook_event`) or Codex's `turn/completed`; if the hook isn't
+      // wired, the card stays at the last trusted body / "running"
+      // rather than showing garbled terminal paint.
       const report = extractPtyIdleReport(currentProvider, ptyBuffer);
       if (!report) return;
       if (report === lastIdleReport) return;
-      if (lastIdleReport && lastIdleReport.length > report.length && lastIdleReport.startsWith(report)) {
-        return;
-      }
-
       lastIdleReport = report;
-      agent.write({ type: "output", sessionId, stream: "report", chunk: `${report}\n` });
       agent.write({ type: "state", sessionId, runState: "waiting" });
     }, 900);
     idleReportTimer.unref?.();

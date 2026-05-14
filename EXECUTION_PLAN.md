@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-14 (G17 — APNS as sync source of truth: new card + resolve both wake the iPhone)
+Last updated: 2026-05-14 (G18 — PTY idle path no longer poisons card bodies; trusted bodies = Stop hook / turn-completed only)
 
 ## Purpose
 
@@ -631,6 +631,22 @@ Next:
 
 - App Store Connect submission flow (user-driven): upload `.ipa` via Xcode Organizer, attach 5 screenshots, paste metadata from `docs/APP_STORE_SUBMISSION_MARKETING_PACK.md`, submit for review.
 - Relay event-log clients: the v3 `events` table is dual-write only; both clients still read legacy card/instruction routes. Switching them over is a separate hardening pass, not launch-critical.
+
+### 2026-05-14 (PM): G18 — Stop the Claude PTY idle path from publishing screen scrapes as `report`
+
+Completed:
+
+- **`schedulePtyIdleReport` no longer emits a `report` stream.** The Claude TUI idle detector used to grab the last 120k bytes of PTY buffer, run them through `extractPtyIdleReport`, and publish the result as `stream: "report"` — which the agent treats as trusted. Long-lived sessions accumulated split-pane diff views, status bars (`▶▶ automode on · 1 shell · ← for agent…`), and wrap-broken code lines in the buffer; the classifier then chose this as the active card body, and the user saw garbled paragraphs (`id:'hai-opening',tsx)` etc.). The idle detector now flips `runState` to `"waiting"` only; the body comes from the Stop hook or stays at the last trusted text. `packages/cli/src/index.js` `schedulePtyIdleReport`.
+- **Regression guard** — new `packages/cli/test/pty_idle_no_report_stream.test.js` parses the source of `schedulePtyIdleReport` and fails if any future change reintroduces a `stream: "report"` write there, while also asserting the function still flips `runState: "waiting"` so the idle signal itself isn't lost. Runs in the default `npm test` suite (no integration gate needed).
+
+Learned:
+
+- `CLASSIFIER_CONTRACT.md` already said "raw PTY = NOT trusted" — the regression was that the wrapper was *re-laundering* PTY data through the `report` stream label, so the classifier's contract-level filter saw nothing wrong. The fix lives in the wrapper, not the classifier: trusted streams must originate from actually-trusted sources (Claude Stop hook, Codex JSON-RPC), never from screen scrapes the wrapper relabelled.
+- "This session only" was a true clue. `ptyBuffer = (ptyBuffer + data).slice(-120_000)` is per-session and grows over time; a fresh session's buffer is short and clean, but a long-running session accumulates many distinct repaints, so the idle scrape gets worse with age. Single-session bug reports for "the body looks corrupted" should now point straight at this path.
+
+Next:
+
+- The Claude Stop hook remains the only trusted body emitter for Claude PTY sessions. If `steer install-claude-hooks` hasn't been run, the card body for a Claude session may stay blank between turns — that's the trade-off (blank > garbled). Document this in `docs/CLASSIFIER_CONTRACT.md` if it surfaces again in feedback.
 
 ### 2026-05-14 (PM): G17 — APNS as sync source of truth (card.upsert + card.resolved symmetry)
 
