@@ -1,5 +1,8 @@
 import SwiftUI
+import os.log
 import SteerCore
+
+private let chipLog = Logger(subsystem: "ai.steer.ios", category: "g15")
 
 /// Single capsule chip at the top of InboxView that surfaces ALL
 /// connection-related signals — Mac presence, in-flight replies,
@@ -52,6 +55,16 @@ struct MacConnectionChip: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Mac connection: \(label).")
         .onAppear { connectingPulse = true }
+        // G15 timing diagnostic — render each time runningCount or
+        // failedCount changes, so we can see in Console.app whether
+        // the chip is reaching a different value at a different
+        // tick than the carousel.
+        .onChange(of: runningCount) { _, n in
+            chipLog.info("chip runningCount → \(n, privacy: .public) (label=\(label, privacy: .public))")
+        }
+        .onChange(of: failedCount) { _, n in
+            chipLog.info("chip failedCount → \(n, privacy: .public) (label=\(label, privacy: .public))")
+        }
     }
 
     private var isConnecting: Bool {

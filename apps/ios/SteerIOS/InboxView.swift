@@ -186,6 +186,8 @@ struct InboxView: View {
             }
         }
         .onReceive(inbox.$cards) { newCards in
+            // G15 timing diagnostic.
+            diagLog.info("InboxView cards → \(newCards.count, privacy: .public)")
             cards = newCards.map { CardPayloadMapping.actionCard(from: $0) }
             // If a deep-link tap arrived before the card showed up
             // (relay round trip), re-honor it once the card lands.

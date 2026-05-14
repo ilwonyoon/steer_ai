@@ -2,7 +2,14 @@ import Foundation
 import AuthenticationServices
 import UIKit
 import UserNotifications
+import os.log
 import SteerCore
+
+/// G15 timing diagnostic. Streams setSessions ticks to Console.app
+/// (filter subsystem=ai.steer.ios, category=g15). Each line shows
+/// the chip count and card count for the same tick, so we can
+/// see whether a sub-second window exists where they disagree.
+private let g15Log = Logger(subsystem: "ai.steer.ios", category: "g15")
 
 /// iOS counterpart of the Mac SyncClient. Same wire shape (relay
 /// REST + WebSocket against /v1), same Sign in with Apple flow, same
@@ -512,7 +519,7 @@ public final class SyncInbox: ObservableObject {
         // long ago. The chip can never recover on its own because
         // the cardUpsert that would clear those entries is never
         // going to arrive.
-        setSessions([])
+        setSessions([], reason: "signOut")
         status = .signedOut
         setLoadPhase(.idle)
         webSocketTask?.cancel()
@@ -610,7 +617,8 @@ public final class SyncInbox: ObservableObject {
                 setSessions(
                     SessionEntryStore.applyBootstrap(
                         previous: sessions, cards: resp.cards
-                    )
+                    ),
+                    reason: "bootstrap"
                 )
                 // First card list landed — UI can leave the cold-
                 // start placeholder, even when the list is empty.
@@ -714,24 +722,63 @@ public final class SyncInbox: ObservableObject {
     /// projected as PendingReply rows. Old UI bindings consume this.
     @Published public private(set) var pendingReplies: [PendingReply] = []
 
-    /// Sessions in `.awaitingResponse`. The chip count is exactly
-    /// this set's size — derived from `sessions`, not from polling
-    /// the relay.
+    /// Sessions where the user has a reply in flight that hasn't
+    /// been answered yet.
+    ///
+    /// G15.A — derive this from the card stream rather than the
+    /// `SessionEntry.stage` state machine. Invariant the user gave:
+    ///   "Card disappears (I sent a reply) → 1 running.
+    ///    Card reappears (new answer arrived) → 1 running gone."
+    /// Translating directly: a session contributes to the chip iff
+    ///   (a) the user sent a reply (we have a PendingReply for it),
+    ///   (b) there is currently no visible card for that session.
+    /// `failed` replies stay on `pendingReplies` but DO show a
+    /// failure banner separately — they must NOT add to the
+    /// running count.
+    /// `disconnected` sessions have no card AND no pendingReply →
+    /// naturally contribute 0.
     public var activeSessionIds: Set<String> {
-        Set(SessionEntryStore.awaitingResponseEntries(in: sessions)
-            .map(\.sessionId))
+        let visibleCardSessions = Set(cards.map(\.sessionId))
+        return Set(
+            pendingReplies
+                .filter {
+                    if case .failed = $0.status { return false }
+                    return true
+                }
+                .map(\.sessionId)
+                .filter { !visibleCardSessions.contains($0) }
+        )
     }
 
     /// Single mutation funnel. Recomputes the derived projections in
     /// the same tick the source changes — UI never sees a state where
     /// the chip and the carousel disagree.
-    private func setSessions(_ next: [SessionEntry]) {
+    private func setSessions(_ next: [SessionEntry], reason: String = "?") {
         sessions = next
         cards = SessionEntryStore.awaitingUserEntries(in: next).map(\.card)
         pendingReplies = (
             SessionEntryStore.awaitingResponseEntries(in: next)
             + SessionEntryStore.failedEntries(in: next)
         ).compactMap(makePendingReply(from:))
+
+        // G15 timing diagnostic. Logs are routed to Console.app
+        // (subsystem ai.steer.ios, category g15). The single line
+        // captures chip+card+pending counts derived from the SAME
+        // entries snapshot — if Console shows a window where chip
+        // and card disagree, that's a real bug. Stage-by-stage list
+        // makes the chip↔card linkage obvious.
+        let stages = next.map { entry -> String in
+            let stage: String
+            switch entry.stage {
+            case .awaitingUser:     stage = "user"
+            case .awaitingResponse: stage = "resp"
+            case .failed:           stage = "fail"
+            }
+            let rev = entry.card.responseRevision.map(String.init) ?? "nil"
+            let stamp = entry.instructedRevision.map(String.init) ?? "nil"
+            return "\(entry.sessionId.prefix(12))[\(stage) rev=\(rev) stamp=\(stamp)]"
+        }
+        g15Log.info("setSessions reason=\(reason, privacy: .public) chip=\(self.activeSessionIds.count, privacy: .public) cards=\(self.cards.count, privacy: .public) pend=\(self.pendingReplies.count, privacy: .public) | \(stages.joined(separator: " "), privacy: .public)")
     }
 
     private func makePendingReply(from entry: SessionEntry) -> PendingReply? {
@@ -778,7 +825,8 @@ public final class SyncInbox: ObservableObject {
                 text: trimmed,
                 instructionId: instructionId,
                 eventSeq: seq
-            )
+            ),
+            reason: "sendReply"
         )
 
         Task { [weak self] in
@@ -816,7 +864,8 @@ public final class SyncInbox: ObservableObject {
                     previous: sessions,
                     instructionId: instructionId,
                     reason: error.localizedDescription
-                )
+                ),
+                reason: "replyFailed"
             )
         }
     }
@@ -838,7 +887,8 @@ public final class SyncInbox: ObservableObject {
                 text: text,
                 instructionId: newInstructionId,
                 eventSeq: seq
-            )
+            ),
+            reason: "retryReply"
         )
         Task { [weak self] in
             await self?.postReply(
@@ -860,7 +910,8 @@ public final class SyncInbox: ObservableObject {
             SessionEntryStore.cancelFailedReply(
                 previous: sessions,
                 instructionId: instructionId
-            )
+            ),
+            reason: "cancelReply"
         )
     }
 
@@ -871,7 +922,8 @@ public final class SyncInbox: ObservableObject {
             setSessions(
                 SessionEntryStore.onCardResolved(
                     previous: sessions, cardId: cardId
-                )
+                ),
+                reason: "resolveCard"
             )
         } catch {
             lastError = "resolveCard failed: \(error.localizedDescription)"
@@ -987,7 +1039,8 @@ public final class SyncInbox: ObservableObject {
                 SessionEntryStore.markAwaitingResponseTimedOut(
                     previous: sessions,
                     sessionId: entry.sessionId
-                )
+                ),
+                reason: "timeout"
             )
         }
     }
@@ -1087,10 +1140,12 @@ public final class SyncInbox: ObservableObject {
             //     resets to .awaitingUser, chip count drops by one,
             //     carousel gains the new card — all in one mutation.
             //   - Brand-new session: insert as .awaitingUser.
+            let revStr = card.responseRevision.map(String.init) ?? "nil"
             setSessions(
                 SessionEntryStore.onCardUpsert(
                     previous: sessions, card: card
-                )
+                ),
+                reason: "ws.upsert(\(card.sessionId.prefix(12)) rev=\(revStr))"
             )
             // First WS upsert during cold-start counts as ready —
             // we have at least one real card even if the bootstrap
@@ -1100,7 +1155,8 @@ public final class SyncInbox: ObservableObject {
             setSessions(
                 SessionEntryStore.onCardResolved(
                     previous: sessions, cardId: id
-                )
+                ),
+                reason: "ws.resolved(\(id.prefix(20)))"
             )
         case .ping:
             sendPong()
