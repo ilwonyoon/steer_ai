@@ -349,6 +349,11 @@ private struct LabeledRow: View {
 
 private struct RunningReplyRow: View {
     let reply: SyncInbox.PendingReply
+    // Ticks once a second so the elapsed chip on the right updates
+    // without waiting for an upstream pendingReplies change. Light:
+    // only this view re-renders.
+    @State private var now: Date = Date()
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: 10) {
@@ -356,7 +361,12 @@ private struct RunningReplyRow: View {
                 .fill(SteerColors.running)
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
-                Text(reply.cardTitle)
+                // Project folder (cwd basename) so this row reads the
+                // same as the card header on the inbox carousel. The
+                // old `cardTitle` was "Claude Code · claude is waiting"
+                // which carries no per-session signal when several
+                // sessions are running at once.
+                Text(reply.project)
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -369,19 +379,30 @@ private struct RunningReplyRow: View {
                     .lineLimit(2)
             }
             Spacer()
-            Image(systemName: statusIcon)
-                .font(.system(size: 12))
-                .foregroundStyle(SteerColors.tertiaryInk)
+            // Elapsed-since-sent chip ("3s", "42s", "2m", "1h"). More
+            // useful than a static paperplane icon — the user can see
+            // at a glance which sessions are taking forever.
+            Text(elapsed)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(SteerColors.secondaryInk)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(SteerColors.subtleFill, in: Capsule())
         }
         .padding(.vertical, 2)
+        .onReceive(tick) { now = $0 }
     }
 
-    private var statusIcon: String {
-        switch reply.status {
-        case .sending: return "paperplane.fill"
-        case .injected: return "hourglass"
-        case .failed: return "exclamationmark.triangle.fill"
-        }
+    private var elapsed: String {
+        Self.formatElapsed(now.timeIntervalSince(reply.sentAt))
+    }
+
+    static func formatElapsed(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds))
+        if s < 60 { return "\(s)s" }
+        if s < 3600 { return "\(s / 60)m" }
+        if s < 86400 { return "\(s / 3600)h" }
+        return "\(s / 86400)d"
     }
 }
 
@@ -397,7 +418,7 @@ private struct PendingReplyRow: View {
                 .foregroundStyle(statusColor)
                 .padding(.top, 3)
             VStack(alignment: .leading, spacing: 3) {
-                Text(reply.cardTitle)
+                Text(reply.project)
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
                 Text(reply.text)

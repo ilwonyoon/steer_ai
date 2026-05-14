@@ -699,6 +699,7 @@ public final class SyncInbox: ObservableObject {
         public let cardId: String
         public let sessionId: String
         public let cardTitle: String
+        public let project: String
         public let text: String
         public let sentAt: Date
         public var status: Status
@@ -863,12 +864,18 @@ public final class SyncInbox: ObservableObject {
         let seq = nextEventSeq()
         // B1 — canonical optimistic transition: append a PendingReply
         // and remove the card the user just answered in one tick.
+        // project name comes from the free-form payload bag (the
+        // Mac-side mapping owns the canonical decode). Falls back to
+        // the card title when an older payload didn't carry it so the
+        // row never renders blank.
+        let projectName = CardPayloadMapping.actionCard(from: card).project
         appendPendingReply(
             PendingReply(
                 id: instructionId,
                 cardId: card.cardId,
                 sessionId: card.sessionId,
                 cardTitle: card.title,
+                project: projectName,
                 text: trimmed,
                 sentAt: Date(),
                 status: .sending
@@ -928,6 +935,7 @@ public final class SyncInbox: ObservableObject {
                 cardId: prev.cardId,
                 sessionId: prev.sessionId,
                 cardTitle: prev.cardTitle,
+                project: prev.project,
                 text: prev.text,
                 sentAt: Date(),
                 status: .sending
