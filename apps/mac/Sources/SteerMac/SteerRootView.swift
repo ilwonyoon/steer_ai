@@ -67,12 +67,19 @@ struct SteerRootView: View {
 
     /// Count of sessions the user kicked off (an instruction was
     /// successfully injected) that are still live and have not yet
-    /// produced a card. Drives the top "N running" pill. The decay
-    /// logic in reload() guarantees this only contains sessions
-    /// in the active instruction-processing window — see that
-    /// comment for the full membership rules.
+    /// produced a card. Drives the top "N running" pill.
+    ///
+    /// Matches iPhone's G15.A invariant exactly:
+    ///   running = sessions the user replied to AND no card visible.
+    /// `instructedSessions` is the "user-replied" record; subtracting
+    /// `cards.sessionId` collapses the chip the instant the terminal
+    /// produces a fresh card. The previous `InstructedSessionDecay`
+    /// state machine inferred this from card timestamps and could
+    /// drift if the decay rule had a hole — cards-derive removes
+    /// that surface.
     private var instructedRunningCount: Int {
-        instructedSessions.count
+        let activeCardSessions = Set(cards.map(\.sessionId))
+        return instructedSessions.keys.filter { !activeCardSessions.contains($0) }.count
     }
 
     /// Newest iOS device snapshot polled from /v1/sync/devices, or
