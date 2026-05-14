@@ -758,15 +758,18 @@ public final class SyncInbox: ObservableObject {
     // These helpers mutate the canonical arrays directly so future
     // entry points don't have to thread SessionEntry.
 
-    /// Upsert a card from WS / bootstrap. Same sessionId? replace.
-    /// New? append. The reply (if any) for that session is satisfied —
-    /// remove from pendingReplies in the SAME tick so chip and
-    /// carousel commit together.
+    /// Upsert a card from WS / bootstrap. Same sessionId? replace
+    /// in place (focus stays on whatever the user was looking at).
+    /// New? insert at the front of the carousel so the freshly
+    /// notified card sits on the left, matching the user's mental
+    /// model that newest-arrived = leftmost. Focus is NOT moved —
+    /// `focusedSessionId` stays pinned so a notification mid-typing
+    /// doesn't yank the user off the card they were composing on.
     private func upsertCardDirect(_ card: CardPayload, reason: String) {
         if let idx = cards.firstIndex(where: { $0.sessionId == card.sessionId }) {
             cards[idx] = card
         } else {
-            cards.append(card)
+            cards.insert(card, at: 0)
         }
         // The arrival of any card for `card.sessionId` clears any
         // .sending reply on that session. Failed replies stay so the
@@ -826,9 +829,12 @@ public final class SyncInbox: ObservableObject {
     /// pendingReplies stay; if a card with the same sessionId arrives,
     /// upsertCardDirect already removes the matching reply.
     private func applyBootstrapDirect(_ apiCards: [CardPayload]) {
-        // Sort by updatedAt asc so newest answers float to the bottom
-        // of the carousel (matches the pre-B1 ordering).
-        cards = apiCards.sorted { $0.updatedAt < $1.updatedAt }
+        // Sort by updatedAt DESC so newest cards land on the left
+        // (carousel index 0). Mirrors the per-card upsert path
+        // which inserts at index 0 — a freshly-pushed card sits
+        // next to the user's current focus instead of disappearing
+        // off the right edge.
+        cards = apiCards.sorted { $0.updatedAt > $1.updatedAt }
         // Any reply whose card landed in the bootstrap is satisfied.
         let bootstrapSessions = Set(apiCards.map(\.sessionId))
         pendingReplies.removeAll { reply in
