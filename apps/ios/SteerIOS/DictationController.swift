@@ -248,25 +248,38 @@ final class DictationController: ObservableObject {
 
         Self.recordTrail("beginRecognition: creating recognitionTask")
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            // Hop to the main actor for any @Published mutation; the
-            // callback fires on a private SFSpeechRecognizer queue.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if let result {
-                    let recognized = result.bestTranscription.formattedString
-                    self.publishPartial(recognized: recognized)
+            // Callback runs on a private SFSpeechRecognizer queue. We
+            // trace entry BEFORE touching `result` so a crash inside
+            // bestTranscription access shows up in the trail.
+            Self.recordTrail("recognitionTask cb: enter")
+            if let error {
+                let ns = error as NSError
+                Self.recordTrail("recognitionTask cb: error d=\(ns.domain) c=\(ns.code)")
+            }
+            if let result {
+                Self.recordTrail("recognitionTask cb: result isFinal=\(result.isFinal)")
+                // Read the transcription text on this queue (it's a
+                // value type at this point) so the main-actor hop
+                // only carries a String, not a foreign reference.
+                let recognized = result.bestTranscription.formattedString
+                Self.recordTrail("recognitionTask cb: transcript len=\(recognized.count)")
+                Task { @MainActor [weak self] in
+                    self?.publishPartial(recognized: recognized)
                 }
-                if let error {
-                    // Apple buries a benign "Recognition request was
-                    // canceled" inside the same callback when we
-                    // call .finish(). Don't surface those to the user.
-                    let ns = error as NSError
-                    if ns.domain == "kAFAssistantErrorDomain", ns.code == 1110 { return }
+            }
+            // Filter benign "request canceled" so we don't flap the
+            // state machine on stop().
+            if let error {
+                let ns = error as NSError
+                if ns.domain == "kAFAssistantErrorDomain", ns.code == 1110 { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
                     if self.state == .listening {
                         dictationLog.notice("recognition error: \(error.localizedDescription, privacy: .public)")
                     }
                 }
             }
+            _ = self  // silence unused warning; closure does retain self
         }
     }
 
