@@ -9,12 +9,20 @@ struct SteerIOSApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if targetEnvironment(simulator)
+            // Spike branch only: simulator builds boot straight into
+            // the isolated dictation test surface so we don't have
+            // to sign in / connect / drive a card just to verify
+            // the recognizer wiring.
+            DictationTestView()
+            #else
             RootView(inbox: inbox)
                 .task {
                     if !SyncInbox.fixtureModeEnabled {
                         await inbox.refreshMe()
                     }
                 }
+            #endif
         }
     }
 }
