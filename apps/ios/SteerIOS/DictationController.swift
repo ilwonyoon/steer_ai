@@ -79,6 +79,12 @@ final class DictationController: ObservableObject {
             return
         }
 
+        // Just after the system permission prompt dismisses, the
+        // audio session's hardware route hasn't fully settled yet —
+        // installTap can crash on a stale/empty format. One frame
+        // (~50ms) is enough for the OS to flip the route up.
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
         // Recognizer might be nil if the locale isn't supported; fall
         // back to en-US in that case (design doc Decisions §locale).
         if recognizer == nil {
@@ -139,47 +145,43 @@ final class DictationController: ObservableObject {
     // MARK: - Engine
 
     private func beginRecognition(recognizer: SFSpeechRecognizer) throws {
+        // Reset any previous engine state. If a prior start() failed
+        // mid-flight, the engine could still have a stale tap or
+        // running state — reset clears that without throwing.
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.reset()
+
         let session = AVAudioSession.sharedInstance()
-        // .measurement mode disables a chunk of audio processing
-        // (including .duckOthers compatibility) — Apple's own
-        // SpeechRecognizer sample uses .record + default mode.
-        // The default category options are fine; we don't need
-        // duck/mix because we're not playing audio simultaneously.
-        try session.setCategory(.record, mode: .default, options: [])
+        // .record + .default — Apple's SpeechRecognizer sample shape.
+        // `.allowBluetooth` keeps AirPods working without forcing the
+        // route change UI.
+        try session.setCategory(.record, mode: .default, options: [.allowBluetooth])
         try session.setActive(true, options: [.notifyOthersOnDeactivation])
 
         let request = SFSpeechAudioBufferRecognitionRequest()
-        // Partial results are the whole point — they're what drives
-        // the streaming UX in ReplyDock.
         request.shouldReportPartialResults = true
-        // Let the system decide on-device vs. network. Forcing
-        // requiresOnDeviceRecognition = true when the on-device
-        // model hasn't downloaded yet throws immediately on
-        // recognitionTask startup. The user can be offline; the
-        // Step 7 watchdog will catch the "no result for 5 s" case.
         self.request = request
 
         let inputNode = audioEngine.inputNode
-        // Use the input node's native format — passing a custom
-        // format that doesn't match the hardware also crashes
-        // installTap on some devices.
+        // Reading inputFormat BEFORE prepare() can return a 0-channel
+        // / 0-rate format on first launch right after permission was
+        // granted (hardware route still settling). Call prepare()
+        // first; that primes the route. Then read the live format.
+        audioEngine.prepare()
         let format = inputNode.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else {
+        guard format.channelCount > 0, format.sampleRate > 0 else {
             throw NSError(
                 domain: "ai.steer.dictation",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Microphone returned an invalid sample rate."]
+                userInfo: [NSLocalizedDescriptionKey: "Microphone not ready. Try again in a moment."]
             )
         }
-        // Remove any previous tap before installing a new one — if
-        // the previous start failed mid-flight, the tap could
-        // linger and `installTap` would throw "already exists".
-        inputNode.removeTap(onBus: 0)
+
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
             request?.append(buffer)
         }
 
-        audioEngine.prepare()
         try audioEngine.start()
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
