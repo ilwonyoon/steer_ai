@@ -40,8 +40,20 @@ struct ReplyDock: View {
                 .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(SteerColors.softSeparator, lineWidth: 1)
+                        .stroke(borderStroke, lineWidth: borderWidth)
                 }
+            // Top-left "Listening…" badge with a pulsing dot. Sits
+            // above the TextField as a non-interactive overlay so
+            // the user has an unmistakable "I'm hearing you"
+            // signal — the swap mic→stop icon alone wasn't
+            // strong enough.
+            if dictation.state == .listening {
+                ListeningBadge()
+                    .padding(.leading, 12)
+                    .padding(.top, 6)
+                    .allowsHitTesting(false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
             HStack(spacing: 6) {
                 micButton
                 if showSend {
@@ -92,6 +104,13 @@ struct ReplyDock: View {
                 Text("Steer needs Microphone and Speech Recognition permissions to dictate replies. Enable both in Settings, then tap the mic again.")
             }
         )
+    }
+
+    private var borderStroke: Color {
+        dictation.state == .listening ? Color.accentColor : SteerColors.softSeparator
+    }
+    private var borderWidth: CGFloat {
+        dictation.state == .listening ? 1.5 : 1
     }
 
     private var trimmedReply: String {
@@ -204,5 +223,42 @@ struct ReplyDock: View {
         .accessibilityIdentifier("reply-send")
         .transition(.scale.combined(with: .opacity))
         .accessibilityLabel("Send reply")
+    }
+}
+
+/// Small "Listening…" badge with a pulsing dot, overlaid on top of
+/// the TextField while dictation is live. Non-interactive — taps
+/// fall through to the underlying field. The badge alone provides
+/// a much stronger "I'm hearing you" signal than the icon swap.
+private struct ListeningBadge: View {
+    var body: some View {
+        HStack(spacing: 5) {
+            PulsingDot()
+            Text("Listening…")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(SteerColors.secondaryInk)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+}
+
+/// Pulsing red dot — universal "live mic" affordance.
+private struct PulsingDot: View {
+    @State private var pulse: Bool = false
+
+    var body: some View {
+        Circle()
+            .fill(Color.red)
+            .frame(width: 6, height: 6)
+            .scaleEffect(pulse ? 1.0 : 0.55)
+            .opacity(pulse ? 1.0 : 0.35)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
+            .accessibilityHidden(true)
     }
 }

@@ -186,8 +186,13 @@ final class DictationController: ObservableObject {
                 isFinal = result.isFinal
             }
             let errorMessage: String? = (error as NSError?).flatMap { ns in
-                // Filter the benign "request canceled" from .cancel()/.finish().
+                // Filter benign "request canceled" codes that fire
+                // whenever we (or the user) call stop() — these are
+                // the recognizer winding down cleanly, not failures.
+                //   - kAFAssistantErrorDomain 1110: AssistantServices side
+                //   - kLSRErrorDomain        301:  Local recognizer side
                 if ns.domain == "kAFAssistantErrorDomain", ns.code == 1110 { return nil }
+                if ns.domain == "kLSRErrorDomain", ns.code == 301 { return nil }
                 return "Recognizer error: \(ns.domain) \(ns.code) — \(ns.localizedDescription)"
             }
             Task { @MainActor [weak self] in
