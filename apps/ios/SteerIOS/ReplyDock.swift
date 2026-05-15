@@ -34,6 +34,7 @@ struct ReplyDock: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
         ZStack(alignment: .bottomTrailing) {
             textInput
                 .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -49,6 +50,15 @@ struct ReplyDock: View {
             }
             .padding(.trailing, 8)
             .padding(.bottom, 8)
+        }
+        if case .failed(let reason) = dictation.state, !reason.isEmpty {
+            Text(reason)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(SteerColors.blocked)
+                .padding(.horizontal, 6)
+                .padding(.top, 2)
+                .lineLimit(3)
+        }
         }
         .animation(.easeOut(duration: 0.16), value: canSend)
         .animation(.easeOut(duration: 0.16), value: dictation.state)

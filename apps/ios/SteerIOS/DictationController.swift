@@ -185,13 +185,23 @@ final class DictationController: ObservableObject {
                 recognizedText = result.bestTranscription.formattedString
                 isFinal = result.isFinal
             }
-            let shouldStop = (error != nil) || isFinal
+            let errorMessage: String? = (error as NSError?).flatMap { ns in
+                // Filter the benign "request canceled" from .cancel()/.finish().
+                if ns.domain == "kAFAssistantErrorDomain", ns.code == 1110 { return nil }
+                return "Recognizer error: \(ns.domain) \(ns.code) — \(ns.localizedDescription)"
+            }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let recognizedText {
                     self.publishPartial(recognized: recognizedText)
                 }
-                if shouldStop {
+                if let errorMessage {
+                    // Surface the recognizer's real error so we can
+                    // see it in the test UI instead of silently
+                    // bouncing back to .idle.
+                    self.state = .failed(errorMessage)
+                    self.stop()
+                } else if isFinal {
                     self.stop()
                 }
             }
