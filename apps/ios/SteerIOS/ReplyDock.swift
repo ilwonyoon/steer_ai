@@ -7,6 +7,7 @@ import SwiftUI
 ///   - 13pt monospaced placeholder ("reply to this session")
 ///   - chip row above input
 ///   - floating bottom-right send button that appears only when canSend
+///   - in-card mic button (v2) driven by `DictationController`
 struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
@@ -28,6 +29,10 @@ struct ReplyDock: View {
     @Environment(\.onboardingAllowEmptySend) private var envAllowEmpty: Bool
     @FocusState private var fallbackFocus: Bool
 
+    @StateObject private var dictation = DictationController()
+    @State private var showDeniedAlert: Bool = false
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             textInput
@@ -36,11 +41,47 @@ struct ReplyDock: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(SteerColors.softSeparator, lineWidth: 1)
                 }
-            if canSend {
-                sendButton
+            HStack(spacing: 6) {
+                micButton
+                if showSend {
+                    sendButton
+                }
             }
+            .padding(.trailing, 8)
+            .padding(.bottom, 8)
         }
         .animation(.easeOut(duration: 0.16), value: canSend)
+        .animation(.easeOut(duration: 0.16), value: dictation.state)
+        .onChange(of: dictation.partialText) { _, newValue in
+            // The controller is the writer while listening; mirror
+            // its composed string into the reply binding so the
+            // transcript appears live in the TextField.
+            if dictation.state == .listening {
+                reply = newValue
+            }
+        }
+        .onChange(of: dictation.state) { _, newState in
+            if newState == .denied {
+                showDeniedAlert = true
+            }
+        }
+        .onDisappear { dictation.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active && dictation.state == .listening {
+                dictation.stop()
+            }
+        }
+        .alert(
+            "Microphone access required",
+            isPresented: $showDeniedAlert,
+            actions: {
+                Button("Open Settings") { dictation.openSettings() }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: {
+                Text("Steer needs Microphone and Speech Recognition permissions to dictate replies. Enable both in Settings, then tap the mic again.")
+            }
+        )
     }
 
     private var trimmedReply: String {
@@ -51,24 +92,23 @@ struct ReplyDock: View {
         if effectiveAllowEmpty { return true }
         return !trimmedReply.isEmpty
     }
+    /// Send is hidden while dictation is running — pressing send on
+    /// a half-recognized transcript is the worst failure mode.
+    private var showSend: Bool {
+        canSend && dictation.state != .listening
+    }
 
     private func submit() {
-        // allowEmptySend (param or env) lets the onboarding card
-        // advance on a blank send; real cards still require text.
         let text = trimmedReply
         if !effectiveAllowEmpty && text.isEmpty { return }
         onSend(text)
         reply = ""
-        // Drop the keyboard so the carousel reappears immediately
-        // after sending — matches Mac's "send and move on" feel.
         externalFocus?.wrappedValue = false
         fallbackFocus = false
     }
 
     @ViewBuilder
     private var textInput: some View {
-        // iOS body weight: 17pt SF Text. Reply input is a chat field
-        // — keep it SF (was monospaced and read like a terminal).
         let base = TextField(placeholder ?? "Reply to this session", text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 17))
@@ -76,19 +116,69 @@ struct ReplyDock: View {
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
             .padding(.leading, 14)
-            .padding(.trailing, 46)
+            .padding(.trailing, showSend ? 84 : 46)
             .padding(.vertical, 12)
             .frame(minHeight: 48)
 
-        // Dismiss paths: tap outside the card, send-and-clear, or
-        // the system swipe-down gesture inside the terminal scroll.
-        // We deliberately don't add a keyboard accessory toolbar
-        // because InboxView isn't inside a NavigationStack and the
-        // resulting "Done" button floats awkwardly.
         if let externalFocus {
             base.focused(externalFocus)
         } else {
             base.focused($fallbackFocus)
+        }
+    }
+
+    private var micButton: some View {
+        Button(action: handleMicTap) {
+            Image(systemName: micIconName)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(micIconColor)
+                .frame(width: 32, height: 32)
+                .background(micBackground, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("reply-mic")
+        .accessibilityLabel(dictation.state == .listening ? "Stop dictation" : "Start dictation")
+        .disabled(dictation.state == .requestingPermission)
+    }
+
+    private var micIconName: String {
+        switch dictation.state {
+        case .listening: return "stop.fill"
+        case .requestingPermission: return "hourglass"
+        default: return "mic.fill"
+        }
+    }
+    private var micIconColor: Color {
+        switch dictation.state {
+        case .listening: return .white
+        case .denied: return SteerColors.blocked
+        default: return SteerColors.secondaryInk
+        }
+    }
+    private var micBackground: Color {
+        dictation.state == .listening ? Color.accentColor : SteerColors.subtleFill
+    }
+
+    private func handleMicTap() {
+        switch dictation.state {
+        case .idle, .failed:
+            Task { @MainActor in
+                let result = await dictation.requestAuthorizations()
+                guard result == .authorized else {
+                    // The state machine flips to .denied via the alert
+                    // sink — we just need to set it.
+                    dictation.objectWillChange.send()
+                    showDeniedAlert = true
+                    return
+                }
+                dictation.start(appendingTo: reply)
+            }
+        case .listening:
+            dictation.stop()
+        case .denied:
+            showDeniedAlert = true
+        case .requestingPermission:
+            break
         }
     }
 
@@ -102,8 +192,6 @@ struct ReplyDock: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("reply-send")
-        .padding(.trailing, 8)
-        .padding(.bottom, 8)
         .transition(.scale.combined(with: .opacity))
         .accessibilityLabel("Send reply")
     }
