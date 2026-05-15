@@ -37,7 +37,13 @@ final class DictationController: ObservableObject {
 
     private var baseText: String = ""
 
-    private let audioEngine = AVAudioEngine()
+    /// The engine is created lazily on each start() so its inputNode
+    /// reflects whatever audio route exists AFTER the mic permission
+    /// prompt resolves. A long-lived AVAudioEngine that was
+    /// instantiated before the prompt ran could have an inputNode
+    /// pinned to a pre-permission stub route; installTap on that
+    /// node throws an Obj-C NSException that Swift can't catch.
+    private var audioEngine: AVAudioEngine? = nil
     private var recognizer: SFSpeechRecognizer? = nil
     private var request: SFSpeechAudioBufferRecognitionRequest? = nil
     private var recognitionTask: SFSpeechRecognitionTask? = nil
@@ -115,9 +121,12 @@ final class DictationController: ObservableObject {
         request?.endAudio()
         request = nil
 
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
+        if let engine = audioEngine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            engine.inputNode.removeTap(onBus: 0)
+            audioEngine = nil
         }
 
         // Restore the shared audio session so notification sounds
@@ -145,12 +154,18 @@ final class DictationController: ObservableObject {
     // MARK: - Engine
 
     private func beginRecognition(recognizer: SFSpeechRecognizer) throws {
-        // Reset any previous engine state. If a prior start() failed
-        // mid-flight, the engine could still have a stale tap or
-        // running state — reset clears that without throwing.
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.reset()
+        // Discard any prior engine entirely. inputNode is lazily
+        // bound to whatever route was current when the AVAudioEngine
+        // was constructed; the only reliable way to pick up the
+        // post-permission route is to build a fresh engine here.
+        // (Calling `.reset()` on a long-lived engine doesn't rebind
+        // the input route — Apple's docs are explicit about that.)
+        if let prior = audioEngine {
+            prior.stop()
+            prior.inputNode.removeTap(onBus: 0)
+        }
+        let engine = AVAudioEngine()
+        self.audioEngine = engine
 
         let session = AVAudioSession.sharedInstance()
         // .record + .default — Apple's SpeechRecognizer sample shape.
@@ -163,13 +178,11 @@ final class DictationController: ObservableObject {
         request.shouldReportPartialResults = true
         self.request = request
 
-        let inputNode = audioEngine.inputNode
-        // Reading inputFormat BEFORE prepare() can return a 0-channel
-        // / 0-rate format on first launch right after permission was
-        // granted (hardware route still settling). Call prepare()
-        // first; that primes the route. Then read the live format.
-        audioEngine.prepare()
-        let format = inputNode.outputFormat(forBus: 0)
+        // Read the input format BEFORE installing the tap. The format
+        // must be valid (non-zero channels + sample rate) or
+        // installTap raises an NSException that crashes the process.
+        let inputNode = engine.inputNode
+        let format = inputNode.inputFormat(forBus: 0)
         guard format.channelCount > 0, format.sampleRate > 0 else {
             throw NSError(
                 domain: "ai.steer.dictation",
@@ -182,7 +195,8 @@ final class DictationController: ObservableObject {
             request?.append(buffer)
         }
 
-        try audioEngine.start()
+        engine.prepare()
+        try engine.start()
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             // Hop to the main actor for any @Published mutation; the
