@@ -7,8 +7,6 @@ import SwiftUI
 ///   - 13pt monospaced placeholder ("reply to this session")
 ///   - chip row above input
 ///   - floating bottom-right send button that appears only when canSend
-///   - in-card mic button (Step 3) that streams SFSpeechRecognizer
-///     partials into the same `reply` binding
 struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
@@ -30,94 +28,19 @@ struct ReplyDock: View {
     @Environment(\.onboardingAllowEmptySend) private var envAllowEmpty: Bool
     @FocusState private var fallbackFocus: Bool
 
-    /// Voice-reply controller. @StateObject so swiping to a
-    /// different card destroys the engine instead of reusing it
-    /// (each card gets its own clean controller).
-    @StateObject private var dictation = DictationController()
-    @State private var showDeniedAlert: Bool = false
-    @State private var crashTrailText: String? = nil
-    @Environment(\.scenePhase) private var scenePhase
-
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             textInput
                 .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(borderColor, lineWidth: borderWidth)
+                        .stroke(SteerColors.softSeparator, lineWidth: 1)
                 }
-            HStack(spacing: 6) {
-                micButton
-                if showSend {
-                    sendButton
-                }
+            if canSend {
+                sendButton
             }
-            .padding(.trailing, 8)
-            .padding(.bottom, 8)
         }
         .animation(.easeOut(duration: 0.16), value: canSend)
-        .animation(.easeOut(duration: 0.16), value: dictation.state)
-        .onChange(of: dictation.partialText) { _, newValue in
-            // While listening, the controller is the writer; mirror
-            // its composed string (baseText + recognized) into the
-            // reply binding so the user sees the transcript live.
-            // When idle, partialText stops updating, and the user's
-            // typing wins as normal.
-            if dictation.state == .listening {
-                reply = newValue
-            }
-        }
-        .onChange(of: dictation.state) { _, newState in
-            if newState == .denied {
-                showDeniedAlert = true
-            }
-        }
-        .alert(
-            "Microphone access required",
-            isPresented: $showDeniedAlert,
-            actions: {
-                Button("Open Settings") { dictation.openSettings() }
-                Button("Cancel", role: .cancel) {}
-            },
-            message: {
-                Text("Steer needs Microphone and Speech Recognition permissions to dictate replies. Enable both in Settings, then tap the mic again.")
-            }
-        )
-        // Tear the engine down on (a) card swap — @StateObject is
-        // dropped with the view, and (b) app background — iOS will
-        // suspend audio anyway, and we want the recognizer fully
-        // unwound so it doesn't drain battery or hold the mic.
-        .onDisappear { dictation.stop() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active && dictation.state == .listening {
-                dictation.stop()
-            }
-        }
-        .onAppear {
-            // Surface the breadcrumb a previous launch left behind
-            // if dictation crashed mid-flight. Temporary debug aid;
-            // remove once we've nailed the crash.
-            if let trail = DictationController.drainTrail() {
-                crashTrailText = trail
-            }
-        }
-        .alert(
-            "Dictation crash trail",
-            isPresented: Binding(
-                get: { crashTrailText != nil },
-                set: { if !$0 { crashTrailText = nil } }
-            ),
-            actions: {
-                Button("Copy") {
-                    if let t = crashTrailText { UIPasteboard.general.string = t }
-                    crashTrailText = nil
-                }
-                Button("Dismiss", role: .cancel) { crashTrailText = nil }
-            },
-            message: {
-                Text(crashTrailText ?? "")
-            }
-        )
     }
 
     private var trimmedReply: String {
@@ -127,19 +50,6 @@ struct ReplyDock: View {
     private var canSend: Bool {
         if effectiveAllowEmpty { return true }
         return !trimmedReply.isEmpty
-    }
-    /// Hide the send button while dictation is live — sending a
-    /// half-recognized transcript by accident is the worst failure
-    /// mode here. User taps stop, sees the final text, then sends.
-    private var showSend: Bool {
-        canSend && dictation.state != .listening
-    }
-
-    private var borderColor: Color {
-        dictation.state == .listening ? Color.accentColor : SteerColors.softSeparator
-    }
-    private var borderWidth: CGFloat {
-        dictation.state == .listening ? 1.5 : 1
     }
 
     private func submit() {
@@ -157,24 +67,6 @@ struct ReplyDock: View {
 
     @ViewBuilder
     private var textInput: some View {
-        // Keep the TextField mounted at all times. Swapping the
-        // entire input out for a different view while dictation
-        // flips the focus state was crashing SwiftUI mid-publish.
-        // Instead we layer a translucent indicator on top while
-        // listening — the TextField stays in the tree, focus
-        // state stays valid, and the user still gets a clear
-        // "live mic" affordance.
-        ZStack(alignment: .topLeading) {
-            editableField
-            if dictation.state == .listening {
-                listeningBadge
-                    .allowsHitTesting(false)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var editableField: some View {
         // iOS body weight: 17pt SF Text. Reply input is a chat field
         // — keep it SF (was monospaced and read like a terminal).
         let base = TextField(placeholder ?? "Reply to this session", text: $reply, axis: .vertical)
@@ -184,9 +76,7 @@ struct ReplyDock: View {
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
             .padding(.leading, 14)
-            // Reserve space for mic + (maybe) send button + the
-            // small listening dot we overlay on the left edge.
-            .padding(.trailing, showSend ? 84 : 46)
+            .padding(.trailing, 46)
             .padding(.vertical, 12)
             .frame(minHeight: 48)
 
@@ -202,74 +92,6 @@ struct ReplyDock: View {
         }
     }
 
-    /// "Live mic" indicator overlaid on top of the TextField while
-    /// dictation is active. Non-interactive (allowsHitTesting=false
-    /// at the parent) so taps still pass through to the field.
-    private var listeningBadge: some View {
-        HStack(spacing: 6) {
-            PulsingDot()
-            Text("Listening…")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(SteerColors.secondaryInk)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(.ultraThinMaterial, in: Capsule())
-        .padding(.leading, 12)
-        .padding(.top, 4)
-    }
-
-    private var micButton: some View {
-        Button(action: handleMicTap) {
-            Image(systemName: micIconName)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(micIconColor)
-                .frame(width: 32, height: 32)
-                .background(micBackground, in: Circle())
-                .overlay {
-                    if dictation.state == .listening {
-                        Circle()
-                            .stroke(Color.accentColor, lineWidth: 1.5)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("reply-mic")
-        .accessibilityLabel(dictation.state == .listening ? "Stop dictation" : "Start dictation")
-        .transition(.scale.combined(with: .opacity))
-    }
-
-    private var micIconName: String {
-        switch dictation.state {
-        case .listening: return "stop.fill"
-        case .requestingPermission: return "mic"
-        default: return "mic.fill"
-        }
-    }
-    private var micIconColor: Color {
-        switch dictation.state {
-        case .listening: return .white
-        case .denied, .failed: return SteerColors.blocked
-        default: return SteerColors.secondaryInk
-        }
-    }
-    private var micBackground: Color {
-        dictation.state == .listening ? Color.accentColor : SteerColors.subtleFill
-    }
-
-    private func handleMicTap() {
-        switch dictation.state {
-        case .idle, .failed:
-            Task { await dictation.start(appendingTo: reply) }
-        case .listening:
-            dictation.stop()
-        case .denied:
-            showDeniedAlert = true
-        case .requestingPermission:
-            break
-        }
-    }
-
     private var sendButton: some View {
         Button(action: submit) {
             Image(systemName: "arrow.up")
@@ -280,29 +102,9 @@ struct ReplyDock: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("reply-send")
+        .padding(.trailing, 8)
+        .padding(.bottom, 8)
         .transition(.scale.combined(with: .opacity))
         .accessibilityLabel("Send reply")
     }
 }
-
-/// Pulsing red dot used as the "I'm listening" indicator while
-/// dictation is live. Matches the visual register iOS uses for
-/// FaceTime recording and the system dictation tray.
-private struct PulsingDot: View {
-    @State private var pulse: Bool = false
-
-    var body: some View {
-        Circle()
-            .fill(Color.red)
-            .frame(width: 8, height: 8)
-            .scaleEffect(pulse ? 1.0 : 0.55)
-            .opacity(pulse ? 1.0 : 0.35)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    pulse = true
-                }
-            }
-            .accessibilityHidden(true)
-    }
-}
-

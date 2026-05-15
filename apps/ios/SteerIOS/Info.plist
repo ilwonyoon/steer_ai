@@ -20,10 +20,6 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Steer uses the mic to capture spoken replies you dictate inside an action card.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Steer transcribes your speech so you can reply to AI sessions hands-free. Recognition runs on-device when supported.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
