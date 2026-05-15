@@ -225,7 +225,7 @@ struct MacSyncStatusView: View {
                     }
                 }
             }
-            .navigationTitle("Mac Sync Status")
+            .navigationTitle("Your Mac")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
