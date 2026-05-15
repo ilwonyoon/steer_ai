@@ -343,12 +343,12 @@ xcrun altool --upload-app \
 | iPad 13" | 2064 × 2752 | optional (iPad 미지원 시 skip) |
 
 촬영 대상 (사용자 골든 셋):
-1. SignInPrompt (앱 아이콘 + 워드마크 + Apple 버튼 + RoutingFieldView 애니메이션 한 프레임)
-2. Onboarding 1번 카드 (text streaming 중간 프레임)
-3. Inbox에 카드 하나 (`.connected` 상태, claude/codex 아이콘)
-4. 카드 reply flow (ReplyDock open + 사용자 입력 일부)
-5. Empty state `.connected` ("No waiting actions")
-6. Settings (Notifications toggle ON + GitHub mark + Privacy/Terms 표시)
+1. Connect your Mac agents — pre-connection/signed-out empty state + Sign in with Apple + Try Demo/Set Up Mac
+2. Only the runs that need you — waiting/actionable agent inbox card (`.connected`, provider/project/branch visible)
+3. Reply and unblock — ReplyDock open + 짧은 사용자 입력 draft
+4. All clear — connected empty state after answering all cards, `N running` visible, check animation final frame
+5. Connected to your Mac — Mac Sync Status/connection chip or Settings account connection surface
+6. Settings and privacy — Notifications toggle ON + Support/Privacy/Terms + account controls
 
 ---
 

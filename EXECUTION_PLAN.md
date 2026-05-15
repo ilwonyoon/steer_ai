@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-14 (G18 — PTY idle path no longer poisons card bodies; trusted bodies = Stop hook / turn-completed only)
+Last updated: 2026-05-14 (PM polish — Your Mac sheet copy + Running rows show project + elapsed)
 
 ## Purpose
 
@@ -631,6 +631,17 @@ Next:
 
 - App Store Connect submission flow (user-driven): upload `.ipa` via Xcode Organizer, attach 5 screenshots, paste metadata from `docs/APP_STORE_SUBMISSION_MARKETING_PACK.md`, submit for review.
 - Relay event-log clients: the v3 `events` table is dual-write only; both clients still read legacy card/instruction routes. Switching them over is a separate hardening pass, not launch-critical.
+
+### 2026-05-14 (PM): polish — Your Mac sheet + Running rows
+
+Completed:
+
+- **Running rows reread as project + elapsed pill (`c68d3c8`)** — the per-row title is now the cwd basename (matches the inbox card header) instead of the generic `"Claude Code · claude is waiting"` which was identical for every Claude row. The trailing icon is replaced with a monospaced elapsed pill (`3s` → `42s` → `2m` → `1h`) that updates once a second on its own timer, so the user can see at a glance which session has been sitting longest. `PendingReply` gained a `project` field populated via `CardPayloadMapping`.
+- **Sheet title → `Your Mac` (`f09c814`)** — the navigationTitle on the MacConnectionChip sheet drops "Sync Status" jargon. The chip itself is the only entry point (Settings has no separate menu item) so a single label change covers both surfaces. The umbrella still hosts State / Running / Mac meta sections.
+
+Learned:
+
+- The chip+sheet duo is the only Mac affordance surfaced from the inbox; aligning its row layout to the carousel card header is what makes "this row = this card" obvious. The elapsed pill is what would have answered the user's earlier "왜 응답이 안 오지" instinct without opening the actual session.
 
 ### 2026-05-14 (PM): G18 — Stop the Claude PTY idle path from publishing screen scrapes as `report`
 

@@ -193,12 +193,12 @@
 - [ ] 🙋 캡처 결과 시각 검수 — 픽셀 깨짐, 텍스트 truncate, 알림 mockup 진짜 알림인지 확인 (App Store Review 2.3.3)
 
 촬영 대상 6장:
-1. SignInPrompt (앱 아이콘 + 워드마크 + Apple 버튼 + RoutingFieldView)
-2. Onboarding 카드 1 (text streaming 중간)
-3. Inbox에 카드 (`.connected` 상태)
-4. Reply flow (ReplyDock open)
-5. Empty state `.connected` ("No waiting actions")
-6. Settings (Notifications toggle + GitHub mark + 링크)
+1. Connect your Mac agents — pre-connection/signed-out empty state + Sign in with Apple + Try Demo/Set Up Mac
+2. Only the runs that need you — waiting/actionable agent inbox card (`.connected` 상태, provider/project/branch visible)
+3. Reply and unblock — ReplyDock open + 짧은 사용자 입력 draft
+4. All clear — connected empty state after answering all cards, `N running` visible, check animation final frame
+5. Connected to your Mac — Mac Sync Status/connection chip or Settings account connection surface
+6. Settings and privacy — Notifications toggle + Support/Privacy/Terms + account controls
 
 ---
 
