@@ -27,7 +27,13 @@ enum SteerCardMapping {
                 // Forward it on the wire so iOS uses the same hue
                 // instead of bucketing by category — keeps the two
                 // clients visually consistent for the same session.
-                "accentHue": AnyCodable(card.accentHue)
+                "accentHue": AnyCodable(card.accentHue),
+                // Stage 1 emoji: Mac's deterministic default or the
+                // sessions.emoji override (Stage 2). Either way the
+                // iPhone uses this verbatim — it never re-derives,
+                // so the two clients can never disagree on which
+                // glyph to render for the same session.
+                "emoji": AnyCodable(card.emoji)
             ],
             state: cardState(card.state),
             createdAt: timestampMs(now),
@@ -72,7 +78,10 @@ extension CardPayload {
         hasher.combine(responseRevision)
         // payload is [String: AnyCodable]; AnyCodable is Hashable.
         // Canonicalize key order so dictionary iteration order
-        // doesn't change the hash across re-encodes.
+        // doesn't change the hash across re-encodes. Stage 2 will
+        // mutate `payload["emoji"]` when the user overrides the
+        // glyph, and the fingerprint must change so the next
+        // diffCardsForPublish tick republishes the new value.
         if let payload {
             for key in payload.keys.sorted() {
                 hasher.combine(key)

@@ -96,7 +96,7 @@ struct SessionHeader<Card: CardDisplayable>: View {
     var body: some View {
         HStack(alignment: .top) {
             HStack(spacing: 8) {
-                ProviderMark(provider: card.provider)
+                ProjectMark(emoji: card.emoji)
 
                 VStack(alignment: .leading, spacing: 2) {
                     // iOS HIG body: 17pt SF Text. Project name is the
@@ -169,5 +169,27 @@ struct ProviderMark: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .accessibilityLabel(provider.displayName)
+    }
+}
+
+/// Project emoji marker. Stage 1 — informational only; the glyph
+/// is computed by Mac (deterministic from cwd OR Stage 2 override)
+/// and forwarded verbatim through the relay payload. Stage 2 will
+/// make this tappable so the user can open an emoji picker, but
+/// the rendering contract stays the same.
+struct ProjectMark: View {
+    let emoji: String
+    var size: CGFloat = 24
+
+    var body: some View {
+        Text(emoji)
+            // Emoji glyphs render visually smaller than their font
+            // size, so 0.78× keeps the disc visually balanced
+            // against the previous provider art (Mac mirrors this
+            // multiplier so the two clients look the same).
+            .font(.system(size: size * 0.78))
+            .frame(width: size, height: size)
+            .background(SteerColors.subtleFill, in: Circle())
+            .accessibilityLabel("Project marker \(emoji)")
     }
 }

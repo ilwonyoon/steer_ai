@@ -98,6 +98,7 @@ private struct ActionCardRow: Decodable {
     let displayLinesJSON: String?
     let updatedAt: String
     let responseRevision: Int?
+    let emoji: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -116,6 +117,7 @@ private struct ActionCardRow: Decodable {
         case displayLinesJSON = "display_lines_json"
         case updatedAt = "updated_at"
         case responseRevision = "response_revision"
+        case emoji
     }
 }
 
@@ -143,7 +145,8 @@ private func loadActionCards(databaseURL: URL) throws -> [ActionCard] {
           ac.options_json,
           te.display_lines_json,
           ac.updated_at,
-          s.last_response_revision AS response_revision
+          s.last_response_revision AS response_revision,
+          s.emoji AS emoji
         FROM action_cards ac
         JOIN sessions s ON s.id = ac.session_id
         LEFT JOIN terminal_excerpts te ON te.id = ac.terminal_excerpt_id
@@ -309,7 +312,8 @@ private func makeCard(row: ActionCardRow) -> ActionCard {
         branchLabel: gitBranchLabel(for: row.cwd),
         thread: [],
         updatedAt: parseISODate(row.updatedAt) ?? Date(),
-        responseRevision: row.responseRevision ?? 0
+        responseRevision: row.responseRevision ?? 0,
+        emoji: row.emoji
     )
 }
 

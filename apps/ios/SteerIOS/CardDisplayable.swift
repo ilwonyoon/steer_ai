@@ -32,6 +32,12 @@ protocol CardDisplayable {
     /// bottom strip. The full-card body uses `terminalLines`.
     var title: String { get }
     var summary: String { get }
+    /// Project emoji — replaces the provider mark on the card
+    /// header. Always set: real cards inherit it from the Mac
+    /// payload (deterministic default OR Stage 2 override),
+    /// onboarding cards pick a fixed sample so the demo card
+    /// renders with the same visual structure.
+    var emoji: String { get }
 }
 
 extension ActionCard: CardDisplayable {}
@@ -47,4 +53,10 @@ extension OnboardingCard: CardDisplayable {
     /// fight real cards' more saturated colors when both render
     /// in close succession during demo flow).
     var accentHue: Double { 28 }
+    /// Onboarding cards aren't tied to a real cwd; pin a single
+    /// glyph that reads as "your project" without implying any
+    /// specific tool. 🛠 (hammer-and-wrench) sits inside the
+    /// dev-friendly pool so the visual register matches real
+    /// cards the user will see next.
+    var emoji: String { "🛠" }
 }

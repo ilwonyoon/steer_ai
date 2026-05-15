@@ -122,6 +122,11 @@ struct ActionCard: Identifiable {
     let accentHue: Double
     let branchLabel: String?
     var thread: [ThreadMessage]
+    /// Display emoji for the project (Stage 1: deterministic from
+    /// cwd basename; Stage 2: per-session override). Mac is the
+    /// single source of truth — it ships the resolved value in the
+    /// card payload so the iPhone never re-derives.
+    let emoji: String
 
     init(
         id: String = UUID().uuidString,
@@ -138,7 +143,8 @@ struct ActionCard: Identifiable {
         category: String = "",
         accentHue: Double = 0,
         branchLabel: String? = nil,
-        thread: [ThreadMessage] = []
+        thread: [ThreadMessage] = [],
+        emoji: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId.isEmpty ? id : sessionId
@@ -155,5 +161,6 @@ struct ActionCard: Identifiable {
         self.accentHue = accentHue
         self.branchLabel = branchLabel
         self.thread = thread
+        self.emoji = emoji ?? ProjectEmoji.emoji(for: project)
     }
 }

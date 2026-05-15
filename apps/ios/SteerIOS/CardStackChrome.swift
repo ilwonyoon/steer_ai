@@ -175,7 +175,7 @@ struct CompactActionCardView<Card: CardDisplayable>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                ProviderMark(provider: card.provider, size: 14)
+                ProjectMark(emoji: card.emoji, size: 14)
                 Text(card.project)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(SteerColors.ink)

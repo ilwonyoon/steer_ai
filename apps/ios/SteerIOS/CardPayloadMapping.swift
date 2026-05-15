@@ -10,6 +10,12 @@ enum CardPayloadMapping {
         let branchLabel = stringValue(card.payload?["branchLabel"]?.value)
         let chips = stringArrayValue(card.payload?["options"]?.value) ?? []
         let lines = stringArrayValue(card.payload?["terminalLines"]?.value) ?? []
+        // Mac sends the resolved emoji (deterministic default OR
+        // Stage 2 user override) in the payload. We treat it as
+        // verbatim; if absent (older payload) the ActionCard init
+        // falls back to ProjectEmoji.emoji(for: project) so we
+        // never render a blank circle.
+        let emoji = stringValue(card.payload?["emoji"]?.value)
 
         return ActionCard(
             id: card.cardId,
@@ -30,7 +36,8 @@ enum CardPayloadMapping {
             // that don't carry an accentHue yet.
             accentHue: doubleValue(card.payload?["accentHue"]?.value) ?? hue(for: card.category),
             branchLabel: (branchLabel?.isEmpty == false) ? branchLabel : nil,
-            thread: []
+            thread: [],
+            emoji: emoji
         )
     }
 

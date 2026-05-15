@@ -136,6 +136,10 @@ struct ActionCard: Identifiable {
     /// SessionEntryStore uses it as the unambiguous "new response"
     /// signal that drives the chip → carousel transition.
     let responseRevision: Int
+    /// Display emoji for the project. NULL in SQLite → use the
+    /// deterministic `ProjectEmoji.emoji(for: project)`. Stage 2
+    /// will let the user override this on a per-session basis.
+    let emoji: String
 
     init(
         id: String = UUID().uuidString,
@@ -155,7 +159,8 @@ struct ActionCard: Identifiable {
         branchLabel: String? = nil,
         thread: [ThreadMessage],
         updatedAt: Date = Date(),
-        responseRevision: Int = 0
+        responseRevision: Int = 0,
+        emoji: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId.isEmpty ? id : sessionId
@@ -175,6 +180,7 @@ struct ActionCard: Identifiable {
         self.thread = thread
         self.updatedAt = updatedAt
         self.responseRevision = responseRevision
+        self.emoji = emoji ?? ProjectEmoji.emoji(for: project)
     }
 }
 

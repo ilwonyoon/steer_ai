@@ -52,7 +52,7 @@ struct SessionHeader: View {
     var body: some View {
         HStack(alignment: .top) {
             HStack(spacing: 8) {
-                ProviderMark(provider: card.provider)
+                ProjectMark(emoji: card.emoji)
 
                 VStack(alignment: .leading, spacing: 2) {
                     // macOS HIG body weight: 13–14pt SF Text. The
@@ -121,5 +121,27 @@ struct ProviderMark: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .accessibilityLabel(provider.displayName)
+    }
+}
+
+/// Project emoji marker for a card. Stage 1 — purely informational
+/// (deterministic emoji from cwd basename). Stage 2 will make this
+/// interactive so the user can override the glyph per session;
+/// keeping the View name `ProjectMark` (not `ProviderMark`) reflects
+/// the new identity model: the card represents a project location,
+/// not which CLI happens to be open in it.
+struct ProjectMark: View {
+    let emoji: String
+    var size: CGFloat = 24
+
+    var body: some View {
+        Text(emoji)
+            // Emoji glyphs render at ~0.7× the requested font size
+            // before clipping in a Circle, so the visible weight
+            // matches the previous Image-based mark.
+            .font(.system(size: size * 0.78))
+            .frame(width: size, height: size)
+            .background(SteerColors.subtleFill, in: Circle())
+            .accessibilityLabel("Project marker \(emoji)")
     }
 }

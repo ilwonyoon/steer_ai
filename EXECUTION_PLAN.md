@@ -1,6 +1,6 @@
 # Steer Execution Plan
 
-Last updated: 2026-05-14 (PM polish — Your Mac sheet copy + Running rows show project + elapsed)
+Last updated: 2026-05-15 (Project emoji — Stage 1 deterministic mark replaces provider art)
 
 ## Purpose
 
@@ -631,6 +631,23 @@ Next:
 
 - App Store Connect submission flow (user-driven): upload `.ipa` via Xcode Organizer, attach 5 screenshots, paste metadata from `docs/APP_STORE_SUBMISSION_MARKETING_PACK.md`, submit for review.
 - Relay event-log clients: the v3 `events` table is dual-write only; both clients still read legacy card/instruction routes. Switching them over is a separate hardening pass, not launch-critical.
+
+### 2026-05-15: Project emoji — Stage 1 (deterministic mark)
+
+Completed:
+
+- **Project emoji replaces provider art on the card header.** Each card now opens with the project's emoji (deterministic from cwd basename via FNV-1a → frozen 45-glyph pool), not the Claude/Codex logo. The user said the provider mark "didn't carry weight" — emoji per project gives the carousel an at-a-glance personality without losing provider context (still shown as a small chip on the second line). Cross-platform invariant: Node (`packages/agent/src/project_emoji.js`) and Swift (`apps/{mac,ios}/.../ProjectEmoji.swift`) implement the same hash + pool; the unit tests on both sides assert a shared fixture set so the iPhone and Mac never disagree on a project's default glyph.
+- **`sessions.emoji TEXT NULL` migration (0009).** Reserves the slot for Stage 2's per-session override. Stage 1 leaves every row NULL; the classifier and card payload fall back to the deterministic default. Mac is the single writer when Stage 2 ships, matching the existing wrapper/agent/app boundary.
+- **Card payload carries `emoji` verbatim.** Mac's `SteerCardMapping` stamps the resolved value (default OR override) into the payload bag. iPhone reads it raw — never recomputes — so a Stage 2 user override on Mac propagates correctly to the iPhone without the iPhone needing local override storage.
+
+Learned:
+
+- Duplicating the emoji pool + hash across Node and two Swift files is the right trade. Putting it in `SteerCore` would force the iOS app and the Node agent to share a transport, and they don't speak Swift to each other. The shared fixture vectors (`CROSS_PLATFORM_FIXTURES` in the JS test, `ProjectEmojiTests` in Swift) lock the parity contract instead.
+- FNV-1a was picked specifically because Swift can reproduce it in 5 lines (`hash &*` on a 32-bit UInt). Any hash with weirder bit operations (DJB2, SHA-prefix) would have been one more thing to keep aligned across two implementations.
+
+Next:
+
+- Stage 2: tap on iOS / click on Mac opens the emoji picker; selection PATCHes `/v1/sync/sessions/:id/emoji`, Mac agent writes to `sessions.emoji`, fanout brings the override back to both clients. Not launch-critical — first IPA shipped without it.
 
 ### 2026-05-14 (PM): polish — Your Mac sheet + Running rows
 

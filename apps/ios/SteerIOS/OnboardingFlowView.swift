@@ -254,6 +254,7 @@ private struct RenderableOnboardingCard: CardDisplayable, Identifiable {
     var age: String { "" }
     var branchLabel: String? { nil }
     var accentHue: Double { 28 }
+    var emoji: String { "🛠" }
 }
 
 /// Dead-state copy of the real HeaderBar so the onboarding screen
