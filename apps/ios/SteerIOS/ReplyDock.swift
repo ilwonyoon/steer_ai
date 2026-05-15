@@ -35,6 +35,7 @@ struct ReplyDock: View {
     /// (each card gets its own clean controller).
     @StateObject private var dictation = DictationController()
     @State private var showDeniedAlert: Bool = false
+    @State private var crashTrailText: String? = nil
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -92,6 +93,31 @@ struct ReplyDock: View {
                 dictation.stop()
             }
         }
+        .onAppear {
+            // Surface the breadcrumb a previous launch left behind
+            // if dictation crashed mid-flight. Temporary debug aid;
+            // remove once we've nailed the crash.
+            if let trail = DictationController.drainTrail() {
+                crashTrailText = trail
+            }
+        }
+        .alert(
+            "Dictation crash trail",
+            isPresented: Binding(
+                get: { crashTrailText != nil },
+                set: { if !$0 { crashTrailText = nil } }
+            ),
+            actions: {
+                Button("Copy") {
+                    if let t = crashTrailText { UIPasteboard.general.string = t }
+                    crashTrailText = nil
+                }
+                Button("Dismiss", role: .cancel) { crashTrailText = nil }
+            },
+            message: {
+                Text(crashTrailText ?? "")
+            }
+        )
     }
 
     private var trimmedReply: String {

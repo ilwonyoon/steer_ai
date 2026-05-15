@@ -69,8 +69,16 @@ final class DictationController: ObservableObject {
 
         state = .requestingPermission
 
+        // Crash-trail: persist each step to UserDefaults so a hard
+        // crash (Obj-C NSException, audio engine fault) leaves a
+        // breadcrumb the next launch can surface. The key is read
+        // in ReplyDock.onAppear; once we've shown it, it's cleared.
+        Self.recordTrail("start: entered")
+
         // 1) Speech recognition authorization.
+        Self.recordTrail("start: awaiting speech auth")
         let speechStatus = await Self.requestSpeechAuthorization()
+        Self.recordTrail("start: speech auth = \(speechStatus.rawValue)")
         guard speechStatus == .authorized else {
             dictationLog.notice("speech auth denied status=\(String(describing: speechStatus), privacy: .public)")
             state = .denied
@@ -78,7 +86,9 @@ final class DictationController: ObservableObject {
         }
 
         // 2) Microphone authorization.
+        Self.recordTrail("start: awaiting mic auth")
         let micGranted = await Self.requestMicAuthorization()
+        Self.recordTrail("start: mic auth = \(micGranted)")
         guard micGranted else {
             dictationLog.notice("mic auth denied")
             state = .denied
@@ -89,27 +99,61 @@ final class DictationController: ObservableObject {
         // audio session's hardware route hasn't fully settled yet —
         // installTap can crash on a stale/empty format. One frame
         // (~50ms) is enough for the OS to flip the route up.
+        Self.recordTrail("start: route settle sleep")
         try? await Task.sleep(nanoseconds: 50_000_000)
 
         // Recognizer might be nil if the locale isn't supported; fall
         // back to en-US in that case (design doc Decisions §locale).
+        Self.recordTrail("start: building recognizer")
         if recognizer == nil {
             recognizer = SFSpeechRecognizer(locale: Locale.current)
                 ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         }
         guard let recognizer, recognizer.isAvailable else {
+            Self.recordTrail("start: recognizer not available")
             state = .failed("Speech recognizer is not available right now.")
             return
         }
+        Self.recordTrail("start: recognizer ok (locale=\(recognizer.locale.identifier))")
 
         do {
             try beginRecognition(recognizer: recognizer)
+            Self.recordTrail("start: beginRecognition returned")
             installInterruptionObserverIfNeeded()
+            Self.recordTrail("start: complete (.listening)")
             state = .listening
         } catch {
+            Self.recordTrail("start: beginRecognition threw: \(error.localizedDescription)")
             dictationLog.error("dictation start failed: \(error.localizedDescription, privacy: .public)")
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// Crash trail. Written synchronously to UserDefaults so even an
+    /// abrupt termination preserves the last reached step.
+    private static func recordTrail(_ message: String) {
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let entry = "\(ts) \(message)"
+        let key = "ai.steer.ios.dictation.trail"
+        let defaults = UserDefaults.standard
+        var lines = defaults.stringArray(forKey: key) ?? []
+        lines.append(entry)
+        // Cap so the array doesn't grow forever on success paths.
+        if lines.count > 50 { lines.removeFirst(lines.count - 50) }
+        defaults.set(lines, forKey: key)
+        defaults.synchronize()
+        dictationLog.notice("\(entry, privacy: .public)")
+    }
+
+    /// Drains the crash trail collected since last read. Returns the
+    /// concatenated string and clears it. ReplyDock surfaces this
+    /// next launch when a previous run died mid-mic.
+    static func drainTrail() -> String? {
+        let key = "ai.steer.ios.dictation.trail"
+        let defaults = UserDefaults.standard
+        guard let lines = defaults.stringArray(forKey: key), !lines.isEmpty else { return nil }
+        defaults.removeObject(forKey: key)
+        return lines.joined(separator: "\n")
     }
 
     /// Stop listening. Safe to call from any state — no-op if not
@@ -158,31 +202,31 @@ final class DictationController: ObservableObject {
         // bound to whatever route was current when the AVAudioEngine
         // was constructed; the only reliable way to pick up the
         // post-permission route is to build a fresh engine here.
-        // (Calling `.reset()` on a long-lived engine doesn't rebind
-        // the input route — Apple's docs are explicit about that.)
+        Self.recordTrail("beginRecognition: discarding prior engine")
         if let prior = audioEngine {
             prior.stop()
             prior.inputNode.removeTap(onBus: 0)
         }
+
+        Self.recordTrail("beginRecognition: building engine")
         let engine = AVAudioEngine()
         self.audioEngine = engine
 
+        Self.recordTrail("beginRecognition: setting session category")
         let session = AVAudioSession.sharedInstance()
-        // .record + .default — Apple's SpeechRecognizer sample shape.
-        // `.allowBluetooth` keeps AirPods working without forcing the
-        // route change UI.
         try session.setCategory(.record, mode: .default, options: [.allowBluetooth])
+        Self.recordTrail("beginRecognition: activating session")
         try session.setActive(true, options: [.notifyOthersOnDeactivation])
 
+        Self.recordTrail("beginRecognition: building request")
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         self.request = request
 
-        // Read the input format BEFORE installing the tap. The format
-        // must be valid (non-zero channels + sample rate) or
-        // installTap raises an NSException that crashes the process.
+        Self.recordTrail("beginRecognition: reading inputFormat")
         let inputNode = engine.inputNode
         let format = inputNode.inputFormat(forBus: 0)
+        Self.recordTrail("beginRecognition: format ch=\(format.channelCount) sr=\(format.sampleRate)")
         guard format.channelCount > 0, format.sampleRate > 0 else {
             throw NSError(
                 domain: "ai.steer.dictation",
@@ -191,13 +235,18 @@ final class DictationController: ObservableObject {
             )
         }
 
+        Self.recordTrail("beginRecognition: installTap")
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
             request?.append(buffer)
         }
 
+        Self.recordTrail("beginRecognition: prepare()")
         engine.prepare()
+        Self.recordTrail("beginRecognition: start()")
         try engine.start()
+        Self.recordTrail("beginRecognition: engine running")
 
+        Self.recordTrail("beginRecognition: creating recognitionTask")
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             // Hop to the main actor for any @Published mutation; the
             // callback fires on a private SFSpeechRecognizer queue.
