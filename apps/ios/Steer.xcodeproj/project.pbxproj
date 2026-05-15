@@ -11,6 +11,7 @@
 		0308823DE24A005E11ABF1ED /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0001A236298D657692E8531D /* DetailView.swift */; };
 		05285BD23BDD04888929B775 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18199CFE823CF880E1C94476 /* InboxView.swift */; };
 		54B0AFDE48A53A4758F392D0 /* ProjectEmoji.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D72822B1AA1112828E363DF /* ProjectEmoji.swift */; };
+		056E3913F4860C8E116AF539 /* DictationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09AE7E875088107BBD1BA67 /* DictationController.swift */; };
 		1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */; };
 		25141EFD1F1AA6799143027A /* RoutingFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D3716EC47CCE9DC786899A2 /* RoutingFieldView.swift */; };
 		3CEF2917FE715ADC7EC23C2E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EAEF116995AC4FE59BB6135E /* Assets.xcassets */; };
@@ -65,6 +66,7 @@
 		14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardObserver.swift; sourceTree = "<group>"; };
 		18199CFE823CF880E1C94476 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
 		4D72822B1AA1112828E363DF /* ProjectEmoji.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectEmoji.swift; sourceTree = "<group>"; };
+		B09AE7E875088107BBD1BA67 /* DictationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationController.swift; sourceTree = "<group>"; };
 		25011DE39A71D10907B4E14F /* TerminalExcerptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalExcerptView.swift; sourceTree = "<group>"; };
 		2DD8134A0919FD30B77CE4F2 /* StressFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StressFlowUITests.swift; sourceTree = "<group>"; };
 		36B391F7B1C395484A445D38 /* ReplyDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyDock.swift; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 				80FF53CDA98888BCA8F11FF2 /* DevicePresenceObserver.swift */,
 				18199CFE823CF880E1C94476 /* InboxView.swift */,
 				4D72822B1AA1112828E363DF /* ProjectEmoji.swift */,
+				B09AE7E875088107BBD1BA67 /* DictationController.swift */,
 				400608C9A7F07651B1E30B67 /* Info.plist */,
 				9CF868AE7D9804924DD0B4DA /* IOSDeviceModel.swift */,
 				14F1D810DD6F8012C7158C69 /* KeyboardObserver.swift */,
@@ -356,6 +359,7 @@
 				543EFCA3684DA845C2A274D9 /* DevicePresenceObserver.swift in Sources */,
 				05285BD23BDD04888929B775 /* InboxView.swift in Sources */,
 				54B0AFDE48A53A4758F392D0 /* ProjectEmoji.swift in Sources */,
+				056E3913F4860C8E116AF539 /* DictationController.swift in Sources */,
 				CF7CBD850AEC568258E54417 /* IOSDeviceModel.swift in Sources */,
 				1557923B5D053BFC1F02A04D /* KeyboardObserver.swift in Sources */,
 				4E38EB87A53B6A1569704524 /* MacConnectionChip.swift in Sources */,
