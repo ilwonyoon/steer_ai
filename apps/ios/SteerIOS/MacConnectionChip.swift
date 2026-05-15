@@ -202,7 +202,7 @@ struct MacSyncStatusView: View {
                     Section {
                         LabeledRow(label: "Display name", value: mac.displayName ?? "—")
                         LabeledRow(label: "Device class", value: mac.deviceClass ?? "Mac")
-                        LabeledRow(label: "App version", value: mac.appVersion ?? "—", monospaced: true)
+                        LabeledRow(label: "App version", value: displayAppVersion(mac.appVersion), monospaced: true)
                         LabeledRow(label: "iPhone Sync", value: mac.syncEnabled ? "Enabled" : "Disabled")
                         LabeledRow(label: "Last seen", value: relative(mac.lastSeenAt))
                     } header: {
@@ -327,6 +327,17 @@ struct MacSyncStatusView: View {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .short
         return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Trim the internal `-dogfood` suffix that `refresh-dogfood.sh`
+    /// stamps onto CFBundleShortVersionString for local Mac builds.
+    /// Release builds (release-mac.sh / DMG) don't carry it, so this
+    /// is a no-op for shipped users. We keep the build number "(NNN)"
+    /// suffix in either case so the iPhone still shows something
+    /// actionable when sync looks off.
+    private func displayAppVersion(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "—" }
+        return raw.replacingOccurrences(of: "-dogfood", with: "")
     }
 }
 
