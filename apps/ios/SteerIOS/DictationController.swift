@@ -140,25 +140,37 @@ final class DictationController: ObservableObject {
 
     private func beginRecognition(recognizer: SFSpeechRecognizer) throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        // .measurement mode disables a chunk of audio processing
+        // (including .duckOthers compatibility) — Apple's own
+        // SpeechRecognizer sample uses .record + default mode.
+        // The default category options are fine; we don't need
+        // duck/mix because we're not playing audio simultaneously.
+        try session.setCategory(.record, mode: .default, options: [])
         try session.setActive(true, options: [.notifyOthersOnDeactivation])
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         // Partial results are the whole point — they're what drives
         // the streaming UX in ReplyDock.
         request.shouldReportPartialResults = true
-        // Prefer on-device when the locale supports it. The system
-        // silently falls back to network otherwise; we don't try to
-        // gate based on online state here. The watchdog in Step 7
-        // catches "offline + network-only locale" via empty-result
-        // timeout.
-        if recognizer.supportsOnDeviceRecognition {
-            request.requiresOnDeviceRecognition = true
-        }
+        // Let the system decide on-device vs. network. Forcing
+        // requiresOnDeviceRecognition = true when the on-device
+        // model hasn't downloaded yet throws immediately on
+        // recognitionTask startup. The user can be offline; the
+        // Step 7 watchdog will catch the "no result for 5 s" case.
         self.request = request
 
         let inputNode = audioEngine.inputNode
+        // Use the input node's native format — passing a custom
+        // format that doesn't match the hardware also crashes
+        // installTap on some devices.
         let format = inputNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0 else {
+            throw NSError(
+                domain: "ai.steer.dictation",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Microphone returned an invalid sample rate."]
+            )
+        }
         // Remove any previous tap before installing a new one — if
         // the previous start failed mid-flight, the tap could
         // linger and `installTap` would throw "already exists".
@@ -232,20 +244,29 @@ final class DictationController: ObservableObject {
     }
 
     // MARK: - Authorization helpers (nonisolated wrappers)
+    //
+    // These run as detached tasks so awaiting them never parks the
+    // main actor on a callback that is itself trying to hop back to
+    // main. Without `.detached`, the Speech prompt and main were
+    // racing on the same actor and the first mic tap froze the UI.
 
     private static func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
-        await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status)
+        await Task.detached {
+            await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status)
+                }
             }
-        }
+        }.value
     }
 
     private static func requestMicAuthorization() async -> Bool {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            AVAudioApplication.requestRecordPermission { granted in
-                continuation.resume(returning: granted)
+        await Task.detached {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                AVAudioApplication.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
             }
-        }
+        }.value
     }
 }
