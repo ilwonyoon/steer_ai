@@ -243,17 +243,16 @@ final class DictationController: ObservableObject {
 
         Self.recordTrail("beginRecognition: setting session category")
         let session = AVAudioSession.sharedInstance()
-        // -10875 (kAudioUnitErr_InvalidParameter) on engine.start()
-        // shows up when a prior audio session is still active —
-        // either ours from a previous attempt or another app's. The
-        // fix is to fully deactivate the shared session before
-        // re-configuring it, so the next setActive(true) gets a
-        // clean route. setActive(false) is safe to call even when
-        // we never activated; deactivation just no-ops in that case.
+        // Deactivate any prior session before reconfiguring — this
+        // fixed an earlier -10875 caused by a stale category sitting
+        // on the shared instance.
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
-        try session.setCategory(.playAndRecord,
-                                mode: .measurement,
-                                options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
+        // Minimal record-only config. Matches the Apple
+        // SpeechRecognizer sample shape; the extra options
+        // (.measurement / .defaultToSpeaker / .duckOthers) were
+        // suspected of preventing input buffers from flowing to
+        // the tap callback.
+        try session.setCategory(.record, mode: .default, options: [])
         Self.recordTrail("beginRecognition: activating session")
         try session.setActive(true, options: [.notifyOthersOnDeactivation])
 
@@ -275,17 +274,13 @@ final class DictationController: ObservableObject {
         }
 
         Self.recordTrail("beginRecognition: installTap")
-        // Wrap the append call in a tiny static helper. Anything
-        // crashy here is an Obj-C NSException (format mismatch,
-        // request released between frames) — record the entry so a
-        // crash on the audio thread shows up in the trail.
+        // Audio thread is real-time priority — DO NOT touch
+        // UserDefaults, Obj-C runtime hashes, or anything that
+        // could lock. That includes recordTrail(). The previous
+        // attempt to log the first buffer here was itself the
+        // crash trigger.
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
-            guard let r = request else { return }
-            // Audio thread — keep work minimal. The recordTrail call
-            // here is intentionally one-shot via a dispatch token so
-            // we don't fill UserDefaults at 100 fps.
-            Self.recordFirstBufferOnce()
-            r.append(buffer)
+            request?.append(buffer)
         }
 
         Self.recordTrail("beginRecognition: prepare()")
@@ -297,28 +292,20 @@ final class DictationController: ObservableObject {
         Self.recordTrail("beginRecognition: creating recognitionTask")
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             // Callback runs on a private SFSpeechRecognizer queue. We
-            // trace entry BEFORE touching `result` so a crash inside
-            // bestTranscription access shows up in the trail.
-            Self.recordTrail("recognitionTask cb: enter")
-            if let error {
-                let ns = error as NSError
-                Self.recordTrail("recognitionTask cb: error d=\(ns.domain) c=\(ns.code)")
-            }
+            // deliberately do not record trail entries from here —
+            // even a tiny bit of UserDefaults synchronization on a
+            // background queue compounds with audio-thread
+            // contention and was masking real signal.
             if let result {
-                Self.recordTrail("recognitionTask cb: result isFinal=\(result.isFinal)")
-                // Read the transcription text on this queue (it's a
-                // value type at this point) so the main-actor hop
-                // only carries a String, not a foreign reference.
                 let recognized = result.bestTranscription.formattedString
-                Self.recordTrail("recognitionTask cb: transcript len=\(recognized.count)")
                 Task { @MainActor [weak self] in
                     self?.publishPartial(recognized: recognized)
                 }
             }
-            // Filter benign "request canceled" so we don't flap the
-            // state machine on stop().
             if let error {
                 let ns = error as NSError
+                // Filter the benign "request canceled" Apple raises
+                // when we call .finish() on stop().
                 if ns.domain == "kAFAssistantErrorDomain", ns.code == 1110 { return }
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -327,7 +314,6 @@ final class DictationController: ObservableObject {
                     }
                 }
             }
-            _ = self  // silence unused warning; closure does retain self
         }
     }
 
