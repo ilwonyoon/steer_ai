@@ -156,6 +156,27 @@ final class DictationController: ObservableObject {
         return lines.joined(separator: "\n")
     }
 
+    /// First-buffer breadcrumb. Called from the audio thread on
+    /// every tap callback; we only record the very first one so
+    /// the trail proves the tap callback is firing (or, by its
+    /// absence, that the engine crashed before producing audio).
+    private static let firstBufferLock = NSLock()
+    nonisolated(unsafe) private static var firstBufferRecorded = false
+    static func recordFirstBufferOnce() {
+        firstBufferLock.lock()
+        defer { firstBufferLock.unlock() }
+        guard !firstBufferRecorded else { return }
+        firstBufferRecorded = true
+        recordTrail("installTap cb: first audio buffer")
+    }
+
+    /// Reset for a fresh session.
+    private static func resetFirstBufferFlag() {
+        firstBufferLock.lock()
+        defer { firstBufferLock.unlock() }
+        firstBufferRecorded = false
+    }
+
     /// Stop listening. Safe to call from any state — no-op if not
     /// listening. Cleans up audio engine + recognizer in one shot.
     func stop() {
@@ -210,7 +231,15 @@ final class DictationController: ObservableObject {
 
         Self.recordTrail("beginRecognition: building engine")
         let engine = AVAudioEngine()
+        // Force mainMixerNode lazy init NOW. Some iOS versions
+        // crash inside the first installTap callback if mainMixer
+        // hasn't been touched before start() — the engine's graph
+        // isn't fully constructed and the input bus has no
+        // downstream destination. Reading the property creates it.
+        _ = engine.mainMixerNode
         self.audioEngine = engine
+
+        Self.resetFirstBufferFlag()
 
         Self.recordTrail("beginRecognition: setting session category")
         let session = AVAudioSession.sharedInstance()
@@ -236,8 +265,17 @@ final class DictationController: ObservableObject {
         }
 
         Self.recordTrail("beginRecognition: installTap")
+        // Wrap the append call in a tiny static helper. Anything
+        // crashy here is an Obj-C NSException (format mismatch,
+        // request released between frames) — record the entry so a
+        // crash on the audio thread shows up in the trail.
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
-            request?.append(buffer)
+            guard let r = request else { return }
+            // Audio thread — keep work minimal. The recordTrail call
+            // here is intentionally one-shot via a dispatch token so
+            // we don't fill UserDefaults at 100 fps.
+            Self.recordFirstBufferOnce()
+            r.append(buffer)
         }
 
         Self.recordTrail("beginRecognition: prepare()")
