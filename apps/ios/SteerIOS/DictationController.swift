@@ -243,7 +243,17 @@ final class DictationController: ObservableObject {
 
         Self.recordTrail("beginRecognition: setting session category")
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default, options: [.allowBluetooth])
+        // -10875 (kAudioUnitErr_InvalidParameter) on engine.start()
+        // shows up when a prior audio session is still active —
+        // either ours from a previous attempt or another app's. The
+        // fix is to fully deactivate the shared session before
+        // re-configuring it, so the next setActive(true) gets a
+        // clean route. setActive(false) is safe to call even when
+        // we never activated; deactivation just no-ops in that case.
+        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        try session.setCategory(.playAndRecord,
+                                mode: .measurement,
+                                options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
         Self.recordTrail("beginRecognition: activating session")
         try session.setActive(true, options: [.notifyOthersOnDeactivation])
 

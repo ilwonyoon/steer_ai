@@ -157,6 +157,21 @@ struct ReplyDock: View {
 
     @ViewBuilder
     private var textInput: some View {
+        // While listening we swap the TextField for a Text overlay
+        // so the user can see the reply transcript update without
+        // the keyboard or the cursor jumping around. Native-style
+        // pulsing dot anchors the visual "I'm hearing you" signal.
+        ZStack(alignment: .topLeading) {
+            if dictation.state == .listening {
+                listeningOverlay
+            } else {
+                editableField
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editableField: some View {
         // iOS body weight: 17pt SF Text. Reply input is a chat field
         // — keep it SF (was monospaced and read like a terminal).
         let base = TextField(placeholder ?? "Reply to this session", text: $reply, axis: .vertical)
@@ -171,7 +186,6 @@ struct ReplyDock: View {
             .padding(.trailing, showSend ? 84 : 46)
             .padding(.vertical, 12)
             .frame(minHeight: 48)
-            .disabled(dictation.state == .listening)
 
         // Dismiss paths: tap outside the card, send-and-clear, or
         // the system swipe-down gesture inside the terminal scroll.
@@ -183,6 +197,33 @@ struct ReplyDock: View {
         } else {
             base.focused($fallbackFocus)
         }
+    }
+
+    /// Apple-native dictation feedback. A small pulsing red dot
+    /// (the universal "live mic" affordance) and the streamed
+    /// transcript with a subtle cursor caret at the tail so the
+    /// user sees motion even before the first word lands.
+    private var listeningOverlay: some View {
+        HStack(alignment: .top, spacing: 8) {
+            PulsingDot()
+                .padding(.top, 18)
+            Group {
+                if reply.isEmpty {
+                    Text("Listening…")
+                        .foregroundStyle(SteerColors.secondaryInk)
+                        .italic()
+                } else {
+                    (Text(reply) + Text(" |"))
+                        .foregroundStyle(SteerColors.ink)
+                }
+            }
+            .font(.system(size: 17))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 46)
+            .padding(.vertical, 12)
+        }
+        .padding(.leading, 14)
+        .frame(minHeight: 48, alignment: .topLeading)
     }
 
     private var micButton: some View {
@@ -250,3 +291,25 @@ struct ReplyDock: View {
         .accessibilityLabel("Send reply")
     }
 }
+
+/// Pulsing red dot used as the "I'm listening" indicator while
+/// dictation is live. Matches the visual register iOS uses for
+/// FaceTime recording and the system dictation tray.
+private struct PulsingDot: View {
+    @State private var pulse: Bool = false
+
+    var body: some View {
+        Circle()
+            .fill(Color.red)
+            .frame(width: 8, height: 8)
+            .scaleEffect(pulse ? 1.0 : 0.55)
+            .opacity(pulse ? 1.0 : 0.35)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
