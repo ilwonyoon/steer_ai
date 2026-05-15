@@ -1,16 +1,22 @@
+import AVFoundation
 import Foundation
+import OSLog
+import Speech
 import SwiftUI
+import UIKit
+
+private let dictationLog = Logger(subsystem: "ai.steer.ios", category: "dictation")
 
 /// Voice-reply controller for ReplyDock. Wraps SFSpeechRecognizer +
 /// AVAudioEngine so the user can tap a mic icon inside the input
 /// field, speak, and see the transcript stream into the same `reply`
 /// binding the send button consumes.
 ///
-/// Step 1: skeleton only — state enum + empty observable surface so
-/// the rest of the build wiring (Info.plist usage strings, pbxproj
-/// reference) lands without functional changes. Step 2 fills in the
-/// engine, recognizer, and permission flow. See
-/// `docs/IOS_DICTATION_DESIGN.md` for the full step plan.
+/// Lifecycle is owned per-card: the ReplyDock owns this via
+/// `@StateObject`, so swiping the carousel to a different card
+/// tears the controller (and the audio engine) down cleanly.
+///
+/// See docs/IOS_DICTATION_DESIGN.md for the full design.
 @MainActor
 final class DictationController: ObservableObject {
     enum State: Equatable {
@@ -23,10 +29,223 @@ final class DictationController: ObservableObject {
 
     @Published private(set) var state: State = .idle
 
-    /// The live partial transcript. Empty when not listening; on
-    /// stop, holds the final string. ReplyDock will observe this
-    /// and fold it into the `reply` binding starting in Step 4.
+    /// The live transcript composed with the base text the user
+    /// already had in the field. While `.listening`, this updates
+    /// on every partial; on stop, it holds the final string.
+    /// ReplyDock folds this into the `reply` binding in Step 4.
     @Published private(set) var partialText: String = ""
 
+    private var baseText: String = ""
+
+    private let audioEngine = AVAudioEngine()
+    private var recognizer: SFSpeechRecognizer? = nil
+    private var request: SFSpeechAudioBufferRecognitionRequest? = nil
+    private var recognitionTask: SFSpeechRecognitionTask? = nil
+    private var interruptionObserver: NSObjectProtocol? = nil
+
     init() {}
+
+    // deinit is intentionally NOT used for engine teardown. Under
+    // Swift 6 strict concurrency it's nonisolated and can't touch
+    // main-actor state. Callers must invoke `stop()` explicitly
+    // (ReplyDock does this from `.onDisappear`). The audio engine
+    // will also clean itself up when the process exits.
+
+    // MARK: - Public API
+
+    /// Tap on the mic button. Asks for permission the first time;
+    /// subsequent taps start listening immediately. If we're
+    /// already listening, this is a no-op (use `stop()` to end).
+    func start(appendingTo baseText: String) async {
+        guard state != .listening, state != .requestingPermission else { return }
+        self.baseText = baseText
+        self.partialText = baseText
+
+        state = .requestingPermission
+
+        // 1) Speech recognition authorization.
+        let speechStatus = await Self.requestSpeechAuthorization()
+        guard speechStatus == .authorized else {
+            dictationLog.notice("speech auth denied status=\(String(describing: speechStatus), privacy: .public)")
+            state = .denied
+            return
+        }
+
+        // 2) Microphone authorization.
+        let micGranted = await Self.requestMicAuthorization()
+        guard micGranted else {
+            dictationLog.notice("mic auth denied")
+            state = .denied
+            return
+        }
+
+        // Recognizer might be nil if the locale isn't supported; fall
+        // back to en-US in that case (design doc Decisions §locale).
+        if recognizer == nil {
+            recognizer = SFSpeechRecognizer(locale: Locale.current)
+                ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        }
+        guard let recognizer, recognizer.isAvailable else {
+            state = .failed("Speech recognizer is not available right now.")
+            return
+        }
+
+        do {
+            try beginRecognition(recognizer: recognizer)
+            installInterruptionObserverIfNeeded()
+            state = .listening
+        } catch {
+            dictationLog.error("dictation start failed: \(error.localizedDescription, privacy: .public)")
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Stop listening. Safe to call from any state — no-op if not
+    /// listening. Cleans up audio engine + recognizer in one shot.
+    func stop() {
+        recognitionTask?.finish()
+        recognitionTask = nil
+
+        request?.endAudio()
+        request = nil
+
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+
+        // Restore the shared audio session so notification sounds
+        // / future TTS in the rest of the app aren't muted.
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+
+        if let obs = interruptionObserver {
+            NotificationCenter.default.removeObserver(obs)
+            interruptionObserver = nil
+        }
+
+        if state == .listening || state == .requestingPermission {
+            state = .idle
+        }
+    }
+
+    /// Used by ReplyDock when the user taps the alert's "Open
+    /// Settings" button after a denied state.
+    func openSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    // MARK: - Engine
+
+    private func beginRecognition(recognizer: SFSpeechRecognizer) throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try session.setActive(true, options: [.notifyOthersOnDeactivation])
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        // Partial results are the whole point — they're what drives
+        // the streaming UX in ReplyDock.
+        request.shouldReportPartialResults = true
+        // Prefer on-device when the locale supports it. The system
+        // silently falls back to network otherwise; we don't try to
+        // gate based on online state here. The watchdog in Step 7
+        // catches "offline + network-only locale" via empty-result
+        // timeout.
+        if recognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
+        self.request = request
+
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        // Remove any previous tap before installing a new one — if
+        // the previous start failed mid-flight, the tap could
+        // linger and `installTap` would throw "already exists".
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
+            request?.append(buffer)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            // Hop to the main actor for any @Published mutation; the
+            // callback fires on a private SFSpeechRecognizer queue.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let result {
+                    let recognized = result.bestTranscription.formattedString
+                    self.publishPartial(recognized: recognized)
+                }
+                if let error {
+                    // Apple buries a benign "Recognition request was
+                    // canceled" inside the same callback when we
+                    // call .finish(). Don't surface those to the user.
+                    let ns = error as NSError
+                    if ns.domain == "kAFAssistantErrorDomain", ns.code == 1110 { return }
+                    if self.state == .listening {
+                        dictationLog.notice("recognition error: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func publishPartial(recognized: String) {
+        let trimmed = recognized.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            partialText = baseText
+            return
+        }
+        if baseText.isEmpty {
+            partialText = trimmed
+        } else {
+            // Single space separator between what the user typed
+            // before they hit mic and what they spoke after.
+            partialText = baseText + " " + trimmed
+        }
+    }
+
+    // MARK: - Interruptions (phone call, etc.)
+
+    private func installInterruptionObserverIfNeeded() {
+        guard interruptionObserver == nil else { return }
+        let center = NotificationCenter.default
+        interruptionObserver = center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+                return
+            }
+            // Both .began and .ended drop us to idle. We deliberately
+            // do not auto-resume on .ended — design decision.
+            if type == .began || type == .ended {
+                Task { @MainActor in self.stop() }
+            }
+        }
+    }
+
+    // MARK: - Authorization helpers (nonisolated wrappers)
+
+    private static func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
+    }
+
+    private static func requestMicAuthorization() async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            AVAudioApplication.requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
 }

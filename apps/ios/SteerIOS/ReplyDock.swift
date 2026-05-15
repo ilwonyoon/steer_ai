@@ -7,6 +7,8 @@ import SwiftUI
 ///   - 13pt monospaced placeholder ("reply to this session")
 ///   - chip row above input
 ///   - floating bottom-right send button that appears only when canSend
+///   - in-card mic button (Step 3) that streams SFSpeechRecognizer
+///     partials into the same `reply` binding
 struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
@@ -28,19 +30,68 @@ struct ReplyDock: View {
     @Environment(\.onboardingAllowEmptySend) private var envAllowEmpty: Bool
     @FocusState private var fallbackFocus: Bool
 
+    /// Voice-reply controller. @StateObject so swiping to a
+    /// different card destroys the engine instead of reusing it
+    /// (each card gets its own clean controller).
+    @StateObject private var dictation = DictationController()
+    @State private var showDeniedAlert: Bool = false
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             textInput
                 .background(tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(SteerColors.softSeparator, lineWidth: 1)
+                        .stroke(borderColor, lineWidth: borderWidth)
                 }
-            if canSend {
-                sendButton
+            HStack(spacing: 6) {
+                micButton
+                if showSend {
+                    sendButton
+                }
             }
+            .padding(.trailing, 8)
+            .padding(.bottom, 8)
         }
         .animation(.easeOut(duration: 0.16), value: canSend)
+        .animation(.easeOut(duration: 0.16), value: dictation.state)
+        .onChange(of: dictation.partialText) { _, newValue in
+            // While listening, the controller is the writer; mirror
+            // its composed string (baseText + recognized) into the
+            // reply binding so the user sees the transcript live.
+            // When idle, partialText stops updating, and the user's
+            // typing wins as normal.
+            if dictation.state == .listening {
+                reply = newValue
+            }
+        }
+        .onChange(of: dictation.state) { _, newState in
+            if newState == .denied {
+                showDeniedAlert = true
+            }
+        }
+        .alert(
+            "Microphone access required",
+            isPresented: $showDeniedAlert,
+            actions: {
+                Button("Open Settings") { dictation.openSettings() }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: {
+                Text("Steer needs Microphone and Speech Recognition permissions to dictate replies. Enable both in Settings, then tap the mic again.")
+            }
+        )
+        // Tear the engine down on (a) card swap — @StateObject is
+        // dropped with the view, and (b) app background — iOS will
+        // suspend audio anyway, and we want the recognizer fully
+        // unwound so it doesn't drain battery or hold the mic.
+        .onDisappear { dictation.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active && dictation.state == .listening {
+                dictation.stop()
+            }
+        }
     }
 
     private var trimmedReply: String {
@@ -50,6 +101,19 @@ struct ReplyDock: View {
     private var canSend: Bool {
         if effectiveAllowEmpty { return true }
         return !trimmedReply.isEmpty
+    }
+    /// Hide the send button while dictation is live — sending a
+    /// half-recognized transcript by accident is the worst failure
+    /// mode here. User taps stop, sees the final text, then sends.
+    private var showSend: Bool {
+        canSend && dictation.state != .listening
+    }
+
+    private var borderColor: Color {
+        dictation.state == .listening ? Color.accentColor : SteerColors.softSeparator
+    }
+    private var borderWidth: CGFloat {
+        dictation.state == .listening ? 1.5 : 1
     }
 
     private func submit() {
@@ -76,9 +140,12 @@ struct ReplyDock: View {
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
             .padding(.leading, 14)
-            .padding(.trailing, 46)
+            // Reserve space for mic + (maybe) send button. Mic is
+            // always there; send appears alongside it when canSend.
+            .padding(.trailing, showSend ? 84 : 46)
             .padding(.vertical, 12)
             .frame(minHeight: 48)
+            .disabled(dictation.state == .listening)
 
         // Dismiss paths: tap outside the card, send-and-clear, or
         // the system swipe-down gesture inside the terminal scroll.
@@ -92,6 +159,57 @@ struct ReplyDock: View {
         }
     }
 
+    private var micButton: some View {
+        Button(action: handleMicTap) {
+            Image(systemName: micIconName)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(micIconColor)
+                .frame(width: 32, height: 32)
+                .background(micBackground, in: Circle())
+                .overlay {
+                    if dictation.state == .listening {
+                        Circle()
+                            .stroke(Color.accentColor, lineWidth: 1.5)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("reply-mic")
+        .accessibilityLabel(dictation.state == .listening ? "Stop dictation" : "Start dictation")
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    private var micIconName: String {
+        switch dictation.state {
+        case .listening: return "stop.fill"
+        case .requestingPermission: return "mic"
+        default: return "mic.fill"
+        }
+    }
+    private var micIconColor: Color {
+        switch dictation.state {
+        case .listening: return .white
+        case .denied, .failed: return SteerColors.blocked
+        default: return SteerColors.secondaryInk
+        }
+    }
+    private var micBackground: Color {
+        dictation.state == .listening ? Color.accentColor : SteerColors.subtleFill
+    }
+
+    private func handleMicTap() {
+        switch dictation.state {
+        case .idle, .failed:
+            Task { await dictation.start(appendingTo: reply) }
+        case .listening:
+            dictation.stop()
+        case .denied:
+            showDeniedAlert = true
+        case .requestingPermission:
+            break
+        }
+    }
+
     private var sendButton: some View {
         Button(action: submit) {
             Image(systemName: "arrow.up")
@@ -102,8 +220,6 @@ struct ReplyDock: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("reply-send")
-        .padding(.trailing, 8)
-        .padding(.bottom, 8)
         .transition(.scale.combined(with: .opacity))
         .accessibilityLabel("Send reply")
     }
