@@ -155,26 +155,44 @@ final class DictationController: ObservableObject {
             )
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak request] buffer, _ in
-            request?.append(buffer)
+        // The tap callback fires on AVAudio's RealtimeMessenger
+        // queue. Without `@Sendable` + a capture list that avoids
+        // any actor-isolated state, the closure inherits the
+        // enclosing class's @MainActor isolation and Swift's
+        // runtime trips an isolation check on every buffer
+        // delivery — that was the second crash. Capture only the
+        // request (a Sendable Apple class for this purpose) and
+        // mark the closure @Sendable to make the lack of
+        // main-actor work explicit.
+        let requestRef = request
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { @Sendable buffer, _ in
+            requestRef.append(buffer)
         }
 
         audioEngine.prepare()
         try audioEngine.start()
 
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
+        // Same Sendable shape as the installTap closure. The
+        // recognizer dispatches this on its own background queue
+        // (com.apple.Speech.Task.Internal). Hopping back to
+        // @MainActor for the actual @Published mutation is fine —
+        // that's what Task { @MainActor … } is for. The callback
+        // itself just reads value types and schedules the hop.
+        recognitionTask = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
+            var recognizedText: String? = nil
             var isFinal = false
             if let result {
-                let recognized = result.bestTranscription.formattedString
+                recognizedText = result.bestTranscription.formattedString
                 isFinal = result.isFinal
-                Task { @MainActor [weak self] in
-                    self?.publishPartial(recognized: recognized)
-                }
             }
-            if error != nil || isFinal {
-                Task { @MainActor [weak self] in
-                    self?.stop()
+            let shouldStop = (error != nil) || isFinal
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let recognizedText {
+                    self.publishPartial(recognized: recognizedText)
+                }
+                if shouldStop {
+                    self.stop()
                 }
             }
         }
