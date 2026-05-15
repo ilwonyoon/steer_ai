@@ -194,8 +194,16 @@ final class DictationController: ObservableObject {
     }
 
     // MARK: - Authorization helpers
+    //
+    // These MUST be nonisolated. Without `nonisolated`, the @MainActor
+    // attribute on the enclosing class makes the continuation.resume
+    // call inherit main-actor isolation, and TCC dispatches the
+    // permission callback on a background queue. The mismatch trips
+    // _swift_task_checkIsolatedSwift → SIGTRAP, which is exactly the
+    // crash we hit on the first mic tap. (Confirmed via simulator
+    // crash report: thread 2, _dispatch_assert_queue_fail.)
 
-    private static func requestSpeechAuthorization() async -> Bool {
+    private nonisolated static func requestSpeechAuthorization() async -> Bool {
         await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)
@@ -203,7 +211,7 @@ final class DictationController: ObservableObject {
         }
     }
 
-    private static func requestMicAuthorization() async -> Bool {
+    private nonisolated static func requestMicAuthorization() async -> Bool {
         await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             AVAudioApplication.requestRecordPermission { granted in
                 continuation.resume(returning: granted)
