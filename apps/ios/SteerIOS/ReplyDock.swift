@@ -157,15 +157,18 @@ struct ReplyDock: View {
 
     @ViewBuilder
     private var textInput: some View {
-        // While listening we swap the TextField for a Text overlay
-        // so the user can see the reply transcript update without
-        // the keyboard or the cursor jumping around. Native-style
-        // pulsing dot anchors the visual "I'm hearing you" signal.
+        // Keep the TextField mounted at all times. Swapping the
+        // entire input out for a different view while dictation
+        // flips the focus state was crashing SwiftUI mid-publish.
+        // Instead we layer a translucent indicator on top while
+        // listening — the TextField stays in the tree, focus
+        // state stays valid, and the user still gets a clear
+        // "live mic" affordance.
         ZStack(alignment: .topLeading) {
+            editableField
             if dictation.state == .listening {
-                listeningOverlay
-            } else {
-                editableField
+                listeningBadge
+                    .allowsHitTesting(false)
             }
         }
     }
@@ -181,8 +184,8 @@ struct ReplyDock: View {
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
             .padding(.leading, 14)
-            // Reserve space for mic + (maybe) send button. Mic is
-            // always there; send appears alongside it when canSend.
+            // Reserve space for mic + (maybe) send button + the
+            // small listening dot we overlay on the left edge.
             .padding(.trailing, showSend ? 84 : 46)
             .padding(.vertical, 12)
             .frame(minHeight: 48)
@@ -199,31 +202,21 @@ struct ReplyDock: View {
         }
     }
 
-    /// Apple-native dictation feedback. A small pulsing red dot
-    /// (the universal "live mic" affordance) and the streamed
-    /// transcript with a subtle cursor caret at the tail so the
-    /// user sees motion even before the first word lands.
-    private var listeningOverlay: some View {
-        HStack(alignment: .top, spacing: 8) {
+    /// "Live mic" indicator overlaid on top of the TextField while
+    /// dictation is active. Non-interactive (allowsHitTesting=false
+    /// at the parent) so taps still pass through to the field.
+    private var listeningBadge: some View {
+        HStack(spacing: 6) {
             PulsingDot()
-                .padding(.top, 18)
-            Group {
-                if reply.isEmpty {
-                    Text("Listening…")
-                        .foregroundStyle(SteerColors.secondaryInk)
-                        .italic()
-                } else {
-                    (Text(reply) + Text(" |"))
-                        .foregroundStyle(SteerColors.ink)
-                }
-            }
-            .font(.system(size: 17))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, 46)
-            .padding(.vertical, 12)
+            Text("Listening…")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(SteerColors.secondaryInk)
         }
-        .padding(.leading, 14)
-        .frame(minHeight: 48, alignment: .topLeading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.leading, 12)
+        .padding(.top, 4)
     }
 
     private var micButton: some View {
