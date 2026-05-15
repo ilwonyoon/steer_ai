@@ -183,13 +183,14 @@ struct ProjectMark: View {
 
     var body: some View {
         Text(emoji)
-            // Emoji glyphs render visually smaller than their font
-            // size, so 0.78× keeps the disc visually balanced
-            // against the previous provider art (Mac mirrors this
-            // multiplier so the two clients look the same).
-            .font(.system(size: size * 0.78))
+            // The emoji glyph itself is the affordance; the previous
+            // disc background was an artifact of when this slot held
+            // a rectangular image that needed a circle clip. Emoji
+            // already read as a self-contained mark, and the disc
+            // boxed it in awkwardly, so we drop the background and
+            // let the glyph sit against the header tint.
+            .font(.system(size: size))
             .frame(width: size, height: size)
-            .background(SteerColors.subtleFill, in: Circle())
             .accessibilityLabel("Project marker \(emoji)")
     }
 }

@@ -136,12 +136,11 @@ struct ProjectMark: View {
 
     var body: some View {
         Text(emoji)
-            // Emoji glyphs render at ~0.7× the requested font size
-            // before clipping in a Circle, so the visible weight
-            // matches the previous Image-based mark.
-            .font(.system(size: size * 0.78))
+            // Same trade-off as iOS — the previous disc background
+            // was there to clip a rectangular Image. Emoji read as a
+            // self-contained mark; no need for an extra container.
+            .font(.system(size: size))
             .frame(width: size, height: size)
-            .background(SteerColors.subtleFill, in: Circle())
             .accessibilityLabel("Project marker \(emoji)")
     }
 }
