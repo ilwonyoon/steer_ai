@@ -144,9 +144,12 @@ struct ReplyDock: View {
         }
     }
 
-    /// Always-mounted TextField. While listening the text is hidden
-    /// (foreground = clear) and the placeholder is forced to
-    /// "Listening…" so the dots overlay sits on a clean field.
+    /// Always-mounted TextField. While listening the placeholder
+    /// switches to "Listening…" and the field is disabled to block
+    /// typing, but the dictated text stays visible (live
+    /// transcription) so the user can verify what's being heard.
+    /// The dots cluster lives in the trailing capsule, not over
+    /// the text — so they never collide.
     @ViewBuilder
     private var textField: some View {
         let displayedPlaceholder: String = dictation.state == .listening
@@ -156,14 +159,15 @@ struct ReplyDock: View {
         let base = TextField(displayedPlaceholder, text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 17))
-            // While listening, hide the typed/dictated text behind
-            // the dots overlay. Transcript still accumulates in
-            // $reply — it just becomes visible when listening ends.
-            .foregroundStyle(dictation.state == .listening ? Color.clear : SteerColors.ink)
+            .foregroundStyle(SteerColors.ink)
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
             .padding(.leading, 14)
-            .padding(.trailing, dictationEnabled ? (showSend ? 84 : 46) : (showSend ? 48 : 14))
+            // Trailing padding needs to accommodate the dots+mic
+            // capsule (≈72pt wide) while listening, so the live
+            // transcript doesn't run under it. Idle leaves the
+            // standard mic / mic+send footprint.
+            .padding(.trailing, trailingPadding)
             .padding(.vertical, 12)
             .frame(minHeight: 48)
             .disabled(dictation.state == .listening)
@@ -173,6 +177,13 @@ struct ReplyDock: View {
         } else {
             base.focused($fallbackFocus)
         }
+    }
+
+    private var trailingPadding: CGFloat {
+        if dictation.state == .listening {
+            return showSend ? 120 : 88
+        }
+        return dictationEnabled ? (showSend ? 84 : 46) : (showSend ? 48 : 14)
     }
 
     /// Border stays exactly the same in idle and listening — the
@@ -195,7 +206,7 @@ struct ReplyDock: View {
         } else if dictation.state == .listening {
             Button(action: handleMicTap) {
                 HStack(spacing: 8) {
-                    ListeningDots(level: dictation.audioLevel)
+                    ListeningDots(levels: dictation.dotLevels)
                     Image(systemName: "mic.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
@@ -284,39 +295,36 @@ struct ReplyDock: View {
     }
 }
 
-/// Three amplitude-reactive dots that sit inside the reply field
-/// while dictation is live. Pattern: a phase offset per dot so
-/// they look like a small wave (left → center → right), with the
-/// vertical scale tied to mic level. Color: accent.
+/// Three amplitude-reactive capsule dots that sit inside the
+/// trailing mic cluster while dictation is live. Spec from the
+/// audio-visualizer research note:
+///
+///   - 4pt wide capsules, 6pt → 18pt height range, 4pt gap.
+///   - 30% idle floor so the dots read as "live mic" at silence.
+///   - All three driven from the same RMS envelope, but each
+///     samples the envelope at 0ms / 80ms / 160ms delays
+///     (computed in DictationController.dotLevels) so they
+///     ripple instead of pulsing in unison.
+///   - Single accent color, no gradient (too small for one).
 private struct ListeningDots: View {
-    let level: Float
-    @State private var phase: CGFloat = 0
+    let levels: [Float]
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ForEach(0..<3, id: \.self) { i in
                 Capsule()
                     .fill(Color.accentColor)
-                    .frame(width: 8, height: dotHeight(for: i))
+                    .frame(width: 4, height: dotHeight(for: i))
+                    .animation(.easeOut(duration: 0.08), value: levels)
             }
         }
-        .frame(height: 20)
-        .onAppear {
-            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
-                phase = .pi * 2
-            }
-        }
+        .frame(height: 18)
     }
 
     private func dotHeight(for i: Int) -> CGFloat {
-        // Each dot lags the previous by 1/3 of the cycle so the
-        // wave reads as motion across the row. Amplitude is a
-        // base floor (so silence still shows three dots) plus the
-        // live mic level for reactivity.
-        let offset = CGFloat(i) * (.pi * 2 / 3)
-        let positional = sin(phase + offset)
-        let amplitude: CGFloat = 0.45 + CGFloat(level) * 0.55
-        let scale = 0.6 + 0.4 * (0.5 + 0.5 * positional) * amplitude
-        return max(8, 22 * scale)
+        let level = CGFloat(levels.indices.contains(i) ? levels[i] : 0)
+        // 30% floor + 70% live range = [6pt, 18pt].
+        let scale = 0.3 + level * 0.7
+        return 6 + 12 * scale
     }
 }

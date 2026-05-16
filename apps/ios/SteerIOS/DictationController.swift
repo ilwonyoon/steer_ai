@@ -42,13 +42,30 @@ final class DictationController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var partialText: String = ""
-    /// 0…1 normalized RMS amplitude of the most recent audio buffer.
-    /// Drives reactive visuals (waveforms, level meters). Updated on
-    /// the main actor at the audio frame rate; consumers should treat
-    /// it as a smoothed approximation, not a precise level meter.
-    @Published private(set) var audioLevel: Float = 0
+    /// Per-dot smoothed amplitude (0…1) for the three-capsule
+    /// visualizer. Index 0 is the leftmost dot (live), 1 and 2 are
+    /// the same envelope delayed 80ms and 160ms — that delay is
+    /// what creates the left→right "ripple" instead of all three
+    /// dots pulsing in unison.
+    ///
+    /// Smoothing is asymmetric in the dB domain (attack 30ms,
+    /// release 220ms) so syllable onsets pop while decay reads
+    /// natural. See sub-agent research notes captured in the
+    /// commit message for the chosen constants.
+    @Published private(set) var dotLevels: [Float] = [0, 0, 0]
 
     private var baseText: String = ""
+
+    // Visualizer envelope state. Lives outside any actor isolation
+    // (a class-internal serial queue would also work) because the
+    // audio tap closure runs on a realtime queue; we mutate via a
+    // lock-free pattern (only the audio thread writes, only the
+    // main actor reads once per frame via the publish hop).
+    private let envelopeLock = NSLock()
+    private var smoothedDb: Float = -80.0   // dBFS
+    private var levelHistory: [Float] = []  // ring buffer of recent linear levels for delay channels
+    private var levelHistoryCursor: Int = 0
+    private let levelHistoryCapacity: Int = 32 // ~640ms @ 50Hz buffers
 
     private let audioEngine = AVAudioEngine()
     private let recognizer: SFSpeechRecognizer? = {
@@ -58,7 +75,9 @@ final class DictationController: ObservableObject {
     private var request: SFSpeechAudioBufferRecognitionRequest? = nil
     private var recognitionTask: SFSpeechRecognitionTask? = nil
 
-    init() {}
+    init() {
+        levelHistory = Array(repeating: 0, count: levelHistoryCapacity)
+    }
 
     // MARK: - Authorization
 
@@ -118,7 +137,12 @@ final class DictationController: ObservableObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
 
-        audioLevel = 0
+        dotLevels = [0, 0, 0]
+        envelopeLock.lock()
+        smoothedDb = -80
+        for i in 0..<levelHistory.count { levelHistory[i] = 0 }
+        levelHistoryCursor = 0
+        envelopeLock.unlock()
         if state == .listening || state == .requestingPermission {
             state = .idle
         }
@@ -173,26 +197,46 @@ final class DictationController: ObservableObject {
         let requestRef = request
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { @Sendable [weak self] buffer, _ in
             requestRef.append(buffer)
-            // Compute a quick RMS so the UI can react to real
-            // amplitude (waveforms, level meters). Channel 0
-            // only — mono inputs return one channel; stereo /
-            // multi-channel inputs are still well-represented
-            // by the first channel for a "loudness" cue.
+            guard let self else { return }
             guard let channels = buffer.floatChannelData else { return }
             let frames = Int(buffer.frameLength)
             guard frames > 0 else { return }
+
+            // 1) RMS on channel 0.
             let samples = channels[0]
             var sum: Float = 0
-            for i in 0..<frames {
-                let v = samples[i]
-                sum += v * v
-            }
+            for i in 0..<frames { sum += samples[i] * samples[i] }
             let rms = sqrtf(sum / Float(frames))
-            // Pull through a gentle log mapping so quiet speech
-            // still moves the meter; clamp to [0, 1].
-            let normalized = min(1.0, max(0.0, (rms * 8.0)))
+
+            // 2) dBFS conversion + asymmetric one-pole smoothing
+            //    in the dB domain. Attack ~30ms, release ~220ms
+            //    (research-backed audio compressor envelope shape).
+            //    Buffer cadence ≈ 1024 frames / 48kHz ≈ 21ms per
+            //    call, so alphaAttack ≈ 1 - exp(-21/30) ≈ 0.50 and
+            //    alphaRelease ≈ 1 - exp(-21/220) ≈ 0.09.
+            let db = 20 * log10f(max(rms, 1e-7))
+            self.envelopeLock.lock()
+            let target = db
+            let alpha: Float = target > self.smoothedDb ? 0.50 : 0.09
+            self.smoothedDb = alpha * target + (1 - alpha) * self.smoothedDb
+            // 3) Map [-50, -10] dBFS → [0, 1], then pow(0.7) to
+            //    stretch the low end so quiet speech still moves
+            //    the bars without background hiss flickering.
+            let clamped = min(max((self.smoothedDb - (-50)) / 40.0, 0), 1)
+            let curved = powf(clamped, 0.7)
+            // 4) Push into ring history so delayed channels can
+            //    sample older values for the per-dot phase offset.
+            self.levelHistory[self.levelHistoryCursor] = curved
+            // Per-buffer ≈ 21ms; dot delays target 0ms / 80ms /
+            // 160ms → 0 / 4 / 8 buffers back.
+            let live = curved
+            let dot2 = self.sampleHistory(stepsBack: 4)
+            let dot3 = self.sampleHistory(stepsBack: 8)
+            self.levelHistoryCursor = (self.levelHistoryCursor + 1) % self.levelHistoryCapacity
+            self.envelopeLock.unlock()
+
             Task { @MainActor [weak self] in
-                self?.audioLevel = normalized
+                self?.dotLevels = [live, dot2, dot3]
             }
         }
 
@@ -238,6 +282,14 @@ final class DictationController: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Audio-thread helper: read a curved level value from N
+    /// buffers ago in the ring history. Caller must hold
+    /// envelopeLock.
+    private func sampleHistory(stepsBack: Int) -> Float {
+        let idx = (levelHistoryCursor - stepsBack + levelHistoryCapacity) % levelHistoryCapacity
+        return levelHistory[idx]
     }
 
     private func publishPartial(recognized: String) {
