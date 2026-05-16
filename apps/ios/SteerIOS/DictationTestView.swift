@@ -4,11 +4,16 @@ import SwiftUI
 /// sign-in, sync, carousel, and card lifecycle so the recognizer
 /// + ReplyDock + mic plumbing can be verified in isolation.
 ///
+/// A picker at the top swaps between the four candidate listening
+/// visuals (rowWaveform / inlineBars / outlinePulse / edgeGlow)
+/// so we can dogfood them side-by-side before picking one.
+///
 /// Gated by `#if targetEnvironment(simulator)` in SteerIOSApp's
 /// root — production builds never see this screen.
 struct DictationTestView: View {
     @State private var reply: String = ""
     @State private var sentTranscripts: [String] = []
+    @State private var style: DictationVisualStyle = .rowWaveform
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -17,11 +22,19 @@ struct DictationTestView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Dictation spike")
                         .font(.system(size: 20, weight: .semibold))
-                    Text("Tap the mic, allow Speech + Microphone, speak. The recognized text streams into the field. Tap stop, then send — the transcript appears below.")
-                        .font(.system(size: 14))
+                    Text("Tap the mic, speak. Switch the picker below to compare the four candidate listening visuals while dictation is live.")
+                        .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+
+                Picker("Listening visual", selection: $style) {
+                    ForEach(DictationVisualStyle.allCases) { variant in
+                        Text(variant.label).tag(variant)
+                    }
+                }
+                .pickerStyle(.segmented)
                 .padding(.horizontal)
 
                 ReplyDock(
@@ -30,7 +43,9 @@ struct DictationTestView: View {
                         sentTranscripts.append(text)
                     },
                     placeholder: "Tap mic and speak…",
-                    externalFocus: $focused.projectedValue
+                    externalFocus: $focused.projectedValue,
+                    dictationEnabled: true,
+                    dictationStyle: style
                 )
                 .padding(.horizontal)
 

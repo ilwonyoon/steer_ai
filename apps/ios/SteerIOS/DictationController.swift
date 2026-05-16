@@ -42,6 +42,11 @@ final class DictationController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var partialText: String = ""
+    /// 0…1 normalized RMS amplitude of the most recent audio buffer.
+    /// Drives reactive visuals (waveforms, level meters). Updated on
+    /// the main actor at the audio frame rate; consumers should treat
+    /// it as a smoothed approximation, not a precise level meter.
+    @Published private(set) var audioLevel: Float = 0
 
     private var baseText: String = ""
 
@@ -113,6 +118,7 @@ final class DictationController: ObservableObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
 
+        audioLevel = 0
         if state == .listening || state == .requestingPermission {
             state = .idle
         }
@@ -165,8 +171,29 @@ final class DictationController: ObservableObject {
         // mark the closure @Sendable to make the lack of
         // main-actor work explicit.
         let requestRef = request
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { @Sendable buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { @Sendable [weak self] buffer, _ in
             requestRef.append(buffer)
+            // Compute a quick RMS so the UI can react to real
+            // amplitude (waveforms, level meters). Channel 0
+            // only — mono inputs return one channel; stereo /
+            // multi-channel inputs are still well-represented
+            // by the first channel for a "loudness" cue.
+            guard let channels = buffer.floatChannelData else { return }
+            let frames = Int(buffer.frameLength)
+            guard frames > 0 else { return }
+            let samples = channels[0]
+            var sum: Float = 0
+            for i in 0..<frames {
+                let v = samples[i]
+                sum += v * v
+            }
+            let rms = sqrtf(sum / Float(frames))
+            // Pull through a gentle log mapping so quiet speech
+            // still moves the meter; clamp to [0, 1].
+            let normalized = min(1.0, max(0.0, (rms * 8.0)))
+            Task { @MainActor [weak self] in
+                self?.audioLevel = normalized
+            }
         }
 
         audioEngine.prepare()
