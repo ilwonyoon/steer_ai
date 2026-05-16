@@ -225,23 +225,42 @@ final class SteerAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        // No main window alive. The SwiftUI WindowGroup listens for
-        // the `steerOpenMainWindow` notification via
-        // OpenMainWindowReceiver and re-opens itself via
-        // `openWindow(id: "main")`. We deliberately don't call
-        // `newDocument:` — under macOS 26's LSUIElement apps it
-        // surfaces a "No document could be created" alert instead of
-        // wiring back to the SwiftUI WindowGroup.
+        // No main window alive. Try the SwiftUI receiver first —
+        // it still works if the user closed only a secondary window
+        // but a Settings or similar scene kept the modifier alive.
         NotificationCenter.default.post(name: .steerOpenMainWindow, object: nil)
-        // applicationShouldHandleReopen is the AppKit hook AppKit
-        // itself calls on Dock click — invoking it manually nudges
-        // macOS to recreate the scene when the receiver above was
-        // already torn down.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            _ = NSApplication.shared.delegate?.applicationShouldHandleReopen?(
-                NSApplication.shared,
-                hasVisibleWindows: false
+
+        // Fallback: send ourselves the same AppleEvent the Dock
+        // sends when the user clicks the app icon
+        // (`kAEReopenApplication`). AppKit's reopen path is what
+        // actually instantiates a SwiftUI WindowGroup whose
+        // modifier was torn down with the last window — invoking
+        // `applicationShouldHandleReopen` directly only returns the
+        // delegate's verdict, it doesn't run the AppKit work that
+        // a real Dock click triggers. The 0.05s delay gives the
+        // notification path a chance to win when it can.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            // Skip if the notification path already produced a
+            // key-able window. We deliberately don't filter on
+            // window.title here — SwiftUI sets the title
+            // asynchronously after the window appears, so a strict
+            // title match would treat a freshly-opened window as
+            // "still missing" and double-open via the AppleEvent
+            // path below.
+            let alreadyOpen = NSApplication.shared.windows.contains { window in
+                window.canBecomeKey && !window.className.contains("NSStatusBarWindow")
+            }
+            guard !alreadyOpen else { return }
+
+            let target = NSAppleEventDescriptor(processIdentifier: getpid())
+            let event = NSAppleEventDescriptor(
+                eventClass: AEEventClass(kCoreEventClass),
+                eventID: AEEventID(kAEReopenApplication),
+                targetDescriptor: target,
+                returnID: AEReturnID(kAutoGenerateReturnID),
+                transactionID: AETransactionID(kAnyTransactionID)
             )
+            _ = try? event.sendEvent(options: .defaultOptions, timeout: 5)
         }
     }
 
