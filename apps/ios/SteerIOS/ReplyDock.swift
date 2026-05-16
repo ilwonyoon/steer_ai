@@ -42,18 +42,6 @@ struct ReplyDock: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(borderStroke, lineWidth: borderWidth)
                 }
-            // Top-left "Listening…" badge with a pulsing dot. Sits
-            // above the TextField as a non-interactive overlay so
-            // the user has an unmistakable "I'm hearing you"
-            // signal — the swap mic→stop icon alone wasn't
-            // strong enough.
-            if dictation.state == .listening {
-                ListeningBadge()
-                    .padding(.leading, 12)
-                    .padding(.top, 6)
-                    .allowsHitTesting(false)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
             HStack(spacing: 6) {
                 micButton
                 if showSend {
@@ -138,31 +126,49 @@ struct ReplyDock: View {
 
     @ViewBuilder
     private var textInput: some View {
-        let base = TextField(placeholder ?? "Reply to this session", text: $reply, axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(.system(size: 17))
-            .foregroundStyle(SteerColors.ink)
-            .lineLimit(1...8)
-            .accessibilityIdentifier("reply-input")
-            .padding(.leading, 14)
-            .padding(.trailing, showSend ? 84 : 46)
-            .padding(.vertical, 12)
-            .frame(minHeight: 48)
-
-        if let externalFocus {
-            base.focused(externalFocus)
+        // While dictating, swap the editable TextField for a static
+        // Text view that paints the transcript plus a glowing tail
+        // caret — same visual register iOS uses for keyboard
+        // dictation (text + pulsing accent-tinted bar). When idle
+        // / failed, the TextField returns for normal typing.
+        if dictation.state == .listening {
+            DictationTranscriptView(text: reply)
+                .padding(.leading, 14)
+                .padding(.trailing, 46)
+                .padding(.vertical, 12)
+                .frame(minHeight: 48, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            base.focused($fallbackFocus)
+            let base = TextField(placeholder ?? "Reply to this session", text: $reply, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 17))
+                .foregroundStyle(SteerColors.ink)
+                .lineLimit(1...8)
+                .accessibilityIdentifier("reply-input")
+                .padding(.leading, 14)
+                .padding(.trailing, showSend ? 84 : 46)
+                .padding(.vertical, 12)
+                .frame(minHeight: 48)
+
+            if let externalFocus {
+                base.focused(externalFocus)
+            } else {
+                base.focused($fallbackFocus)
+            }
         }
     }
 
     private var micButton: some View {
         Button(action: handleMicTap) {
             Image(systemName: micIconName)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(micIconColor)
+                // Keep the 32x32 hit area but render only the
+                // glyph — no background disc. contentShape(.rect)
+                // makes the whole square tappable so the touch
+                // target survives the visual cleanup.
                 .frame(width: 32, height: 32)
-                .background(micBackground, in: Circle())
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("reply-mic")
@@ -179,13 +185,10 @@ struct ReplyDock: View {
     }
     private var micIconColor: Color {
         switch dictation.state {
-        case .listening: return .white
+        case .listening: return Color.accentColor   // stop glyph in accent
         case .denied: return SteerColors.blocked
         default: return SteerColors.secondaryInk
         }
-    }
-    private var micBackground: Color {
-        dictation.state == .listening ? Color.accentColor : SteerColors.subtleFill
     }
 
     private func handleMicTap() {
@@ -226,39 +229,30 @@ struct ReplyDock: View {
     }
 }
 
-/// Small "Listening…" badge with a pulsing dot, overlaid on top of
-/// the TextField while dictation is live. Non-interactive — taps
-/// fall through to the underlying field. The badge alone provides
-/// a much stronger "I'm hearing you" signal than the icon swap.
-private struct ListeningBadge: View {
-    var body: some View {
-        HStack(spacing: 5) {
-            PulsingDot()
-            Text("Listening…")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(SteerColors.secondaryInk)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.ultraThinMaterial, in: Capsule())
-    }
-}
-
-/// Pulsing red dot — universal "live mic" affordance.
-private struct PulsingDot: View {
-    @State private var pulse: Bool = false
+/// Renders the streaming dictation transcript with a system-style
+/// glowing tail caret. SwiftUI Text composition: `Text(transcript)
+/// + Text(" ") + Text(caretGlyph)`. The caret glyph is a thin bar
+/// (▎ U+258E) tinted accent and pulsed via opacity animation —
+/// the visual register iOS keyboard dictation uses, just without
+/// the system keyboard up.
+private struct DictationTranscriptView: View {
+    let text: String
+    @State private var caretVisible: Bool = true
 
     var body: some View {
-        Circle()
-            .fill(Color.red)
-            .frame(width: 6, height: 6)
-            .scaleEffect(pulse ? 1.0 : 0.55)
-            .opacity(pulse ? 1.0 : 0.35)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    pulse = true
-                }
+        (
+            Text(text)
+                .foregroundStyle(SteerColors.ink)
+            + Text(" ")
+            + Text("▎")
+                .foregroundStyle(Color.accentColor.opacity(caretVisible ? 1.0 : 0.15))
+        )
+        .font(.system(size: 17))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+                caretVisible = false
             }
-            .accessibilityHidden(true)
+        }
+        .accessibilityLabel("Dictation in progress, current transcript \(text)")
     }
 }
