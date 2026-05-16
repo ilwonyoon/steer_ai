@@ -195,7 +195,12 @@ final class DictationController: ObservableObject {
         // mark the closure @Sendable to make the lack of
         // main-actor work explicit.
         let requestRef = request
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { @Sendable [weak self] buffer, _ in
+        // bufferSize 512 @ 48kHz ≈ 10.7ms tap cadence — half the
+        // latency of the default 1024. Reference: jnpdx
+        // AudioEngineLoopbackLatencyTest (the canonical AVAudioEngine
+        // latency benchmark) uses 256–512 for "feels live"; 1024
+        // pushes the audio→UI gap into the visibly sluggish band.
+        inputNode.installTap(onBus: 0, bufferSize: 512, format: recordingFormat) { @Sendable [weak self] buffer, _ in
             requestRef.append(buffer)
             guard let self else { return }
             guard let channels = buffer.floatChannelData else { return }
@@ -208,25 +213,23 @@ final class DictationController: ObservableObject {
             for i in 0..<frames { sum += samples[i] * samples[i] }
             let rms = sqrtf(sum / Float(frames))
 
-            // 2) dBFS conversion + asymmetric one-pole smoothing
-            //    in the dB domain. Pulled both ends in hard so
-            //    the visualizer reads as truly live:
-            //      - Attack alpha 0.95 → ≈near-instant (one
-            //        buffer ≈ 21ms latency), so a puff of breath
-            //        or syllable onset hits the top of the
-            //        range in the same frame it arrives.
-            //      - Release alpha 0.25 → ≈70ms time constant,
-            //        so each peak decays away fast enough that
-            //        the NEXT peak can re-launch from a low
-            //        baseline. Anything slower (220ms+) made
-            //        the dots feel sluggish — peaks stacked on
-            //        top of each other and the variation
-            //        shrank.
+            // 2) dBFS conversion + asymmetric envelope. With the
+            //    smaller 512-frame buffer (≈11ms tap cadence),
+            //    we now:
+            //      - Attack: SNAP. If target dB is higher than
+            //        smoothed, jump straight to it. No smoothing
+            //        on the way up — speech onsets read on the
+            //        very next frame.
+            //      - Release: one-pole alpha 0.20 ≈ 50ms time
+            //        constant. Peaks decay fast enough that the
+            //        next peak launches from a low baseline.
             let db = 20 * log10f(max(rms, 1e-7))
             self.envelopeLock.lock()
-            let target = db
-            let alpha: Float = target > self.smoothedDb ? 0.95 : 0.25
-            self.smoothedDb = alpha * target + (1 - alpha) * self.smoothedDb
+            if db > self.smoothedDb {
+                self.smoothedDb = db
+            } else {
+                self.smoothedDb = 0.20 * db + 0.80 * self.smoothedDb
+            }
             // 3) Map [-45, -15] dBFS → [0, 1], then pow(0.4) to
             //    aggressively stretch the low end. Normal speech
             //    (-30 to -20 dBFS) and breath puffs read as
@@ -244,8 +247,19 @@ final class DictationController: ObservableObject {
             self.levelHistoryCursor = (self.levelHistoryCursor + 1) % self.levelHistoryCapacity
             self.envelopeLock.unlock()
 
-            Task { @MainActor [weak self] in
-                self?.dotLevels = [live, dot2, dot3]
+            // Bridge to UI on the main run loop directly — NOT
+            // `Task { @MainActor in }`. That path enqueues on the
+            // cooperative pool then re-hops to MainActor, costing
+            // 1-2 frames of jitter on every callback (root cause
+            // of the "dots look laggy" feedback). DispatchQueue
+            // .main.async lands within the same runloop tick when
+            // main is idle. Reference: Matt54/SwiftUI-AudioKit-
+            // Visualizer Conductor.swift and Brukakis's CoreAudio
+            // + Combine pattern both use this exact bridge.
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.dotLevels = [live, dot2, dot3]
+                }
             }
         }
 
