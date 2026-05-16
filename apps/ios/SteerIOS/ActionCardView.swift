@@ -18,15 +18,6 @@ struct ActionCardView<Card: CardDisplayable>: View {
     /// per-card so the user sees the suggested word inline.
     var replyPlaceholder: String? = nil
 
-    #if DEBUG
-    @AppStorage("ai.steer.ios.dictationStyle") private var spikeStyleRaw: String = DictationVisualStyle.glow.rawValue
-    private var spikeStyle: DictationVisualStyle {
-        DictationVisualStyle(rawValue: spikeStyleRaw) ?? .glow
-    }
-    #else
-    private var spikeStyle: DictationVisualStyle { .glow }
-    #endif
-
     private var headerTint: Color {
         SteerColors.hueTint(hue: card.accentHue, intensity: 0.65)
     }
@@ -68,22 +59,11 @@ struct ActionCardView<Card: CardDisplayable>: View {
             // keyboard. contentShape on the padded wrapper makes the
             // padding hit-testable; onTapGesture forwards focus to
             // the field via the parent's @FocusState binding.
-            #if DEBUG
-            // Spike-only chip row: lets us A/B/C/D the four listening
-            // visuals against the real card on device. The picker
-            // persists via AppStorage so the choice survives card
-            // swipes within the same session. Removed before Stage 2
-            // ships to the App Store.
-            DictationStyleChipRow()
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-            #endif
             ReplyDock(
                 reply: $reply,
                 onSend: onSend,
                 placeholder: replyPlaceholder,
-                externalFocus: replyFieldFocused,
-                dictationStyle: spikeStyle
+                externalFocus: replyFieldFocused
             )
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
@@ -215,50 +195,3 @@ struct ProjectMark: View {
     }
 }
 
-#if DEBUG
-/// Spike-only picker that sits above the ReplyDock in DEBUG
-/// builds so we can compare the four dictation listening visuals
-/// against a real card. Persists the selection via AppStorage so
-/// the choice survives carousel swipes and app relaunches during
-/// the dogfood loop. Removed before the variant ships.
-struct DictationStyleChipRow: View {
-    @AppStorage("ai.steer.ios.dictationStyle") private var selectedRaw: String = DictationVisualStyle.glow.rawValue
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(DictationVisualStyle.allCases) { variant in
-                Button {
-                    selectedRaw = variant.rawValue
-                } label: {
-                    Text(variant.label)
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule().fill(
-                                selectedRaw == variant.rawValue
-                                    ? Color.accentColor.opacity(0.18)
-                                    : SteerColors.subtleFill
-                            )
-                        )
-                        .overlay {
-                            Capsule().stroke(
-                                selectedRaw == variant.rawValue
-                                    ? Color.accentColor
-                                    : SteerColors.softSeparator,
-                                lineWidth: 1
-                            )
-                        }
-                        .foregroundStyle(
-                            selectedRaw == variant.rawValue
-                                ? Color.accentColor
-                                : SteerColors.secondaryInk
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer()
-        }
-    }
-}
-#endif
