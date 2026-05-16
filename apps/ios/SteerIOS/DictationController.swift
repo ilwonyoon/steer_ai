@@ -209,21 +209,24 @@ final class DictationController: ObservableObject {
             let rms = sqrtf(sum / Float(frames))
 
             // 2) dBFS conversion + asymmetric one-pole smoothing
-            //    in the dB domain. Attack ~30ms, release ~220ms
-            //    (research-backed audio compressor envelope shape).
-            //    Buffer cadence ≈ 1024 frames / 48kHz ≈ 21ms per
-            //    call, so alphaAttack ≈ 1 - exp(-21/30) ≈ 0.50 and
-            //    alphaRelease ≈ 1 - exp(-21/220) ≈ 0.09.
+            //    in the dB domain. Attack ≈15ms (snappier than
+            //    the 30ms default — speech onsets need to read
+            //    "live"), release ≈220ms for natural decay.
+            //    Buffer cadence ≈ 21ms, so alphaAttack ≈ 0.75,
+            //    alphaRelease ≈ 0.09.
             let db = 20 * log10f(max(rms, 1e-7))
             self.envelopeLock.lock()
             let target = db
-            let alpha: Float = target > self.smoothedDb ? 0.50 : 0.09
+            let alpha: Float = target > self.smoothedDb ? 0.75 : 0.09
             self.smoothedDb = alpha * target + (1 - alpha) * self.smoothedDb
-            // 3) Map [-50, -10] dBFS → [0, 1], then pow(0.7) to
-            //    stretch the low end so quiet speech still moves
-            //    the bars without background hiss flickering.
-            let clamped = min(max((self.smoothedDb - (-50)) / 40.0, 0), 1)
-            let curved = powf(clamped, 0.7)
+            // 3) Map [-45, -15] dBFS → [0, 1], then pow(0.5) to
+            //    stretch the low end strongly. Window is narrower
+            //    than a typical mic meter on purpose: regular
+            //    speech sits around -30 to -20 dBFS, so this
+            //    keeps the dots in their visually-active middle
+            //    range during normal use.
+            let clamped = min(max((self.smoothedDb - (-45)) / 30.0, 0), 1)
+            let curved = powf(clamped, 0.5)
             // 4) Push into ring history so delayed channels can
             //    sample older values for the per-dot phase offset.
             self.levelHistory[self.levelHistoryCursor] = curved

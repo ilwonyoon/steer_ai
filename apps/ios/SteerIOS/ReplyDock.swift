@@ -295,17 +295,19 @@ struct ReplyDock: View {
     }
 }
 
-/// Three amplitude-reactive capsule dots that sit inside the
-/// trailing mic cluster while dictation is live. Spec from the
-/// audio-visualizer research note:
+/// Three amplitude-reactive capsule dots in the trailing mic
+/// cluster. Tuned to the user's spec:
 ///
-///   - 4pt wide capsules, 6pt → 18pt height range, 4pt gap.
-///   - 30% idle floor so the dots read as "live mic" at silence.
-///   - All three driven from the same RMS envelope, but each
-///     samples the envelope at 0ms / 80ms / 160ms delays
-///     (computed in DictationController.dotLevels) so they
-///     ripple instead of pulsing in unison.
-///   - Single accent color, no gradient (too small for one).
+///   - Silence: each dot reads as a circle (height == width =
+///     4pt). The dots literally sit at zero envelope.
+///   - Loud speech: dots stretch to 24pt tall, full capsule.
+///   - Range is wide and the response is snappy — the
+///     DictationController already smooths in the dB domain
+///     (attack 30ms / release 220ms), so we apply NO extra
+///     SwiftUI animation here. Whatever the controller publishes
+///     is what we draw, frame-perfect.
+///   - Each dot reads its own delayed envelope (0 / 80 / 160ms)
+///     from DictationController.dotLevels so the row ripples.
 private struct ListeningDots: View {
     let levels: [Float]
 
@@ -315,16 +317,14 @@ private struct ListeningDots: View {
                 Capsule()
                     .fill(Color.accentColor)
                     .frame(width: 4, height: dotHeight(for: i))
-                    .animation(.easeOut(duration: 0.08), value: levels)
             }
         }
-        .frame(height: 18)
+        .frame(height: 24)
     }
 
     private func dotHeight(for i: Int) -> CGFloat {
         let level = CGFloat(levels.indices.contains(i) ? levels[i] : 0)
-        // 30% floor + 70% live range = [6pt, 18pt].
-        let scale = 0.3 + level * 0.7
-        return 6 + 12 * scale
+        // Floor = width (4pt → perfect circle at silence), top = 24pt.
+        return 4 + 20 * level
     }
 }
