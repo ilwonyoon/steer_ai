@@ -1,4 +1,3 @@
-import Accelerate
 import AVFoundation
 import Foundation
 import OSLog
@@ -43,33 +42,27 @@ final class DictationController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var partialText: String = ""
-    /// Per-dot smoothed amplitude (0…1) for the three-capsule
-    /// visualizer. Index 0 is the leftmost dot (live), 1 and 2 are
-    /// the same envelope delayed 80ms and 160ms — that delay is
-    /// what creates the left→right "ripple" instead of all three
-    /// dots pulsing in unison.
-    ///
-    /// Smoothing is asymmetric in the dB domain (attack 30ms,
-    /// release 220ms) so syllable onsets pop while decay reads
-    /// natural. See sub-agent research notes captured in the
-    /// commit message for the chosen constants.
-    @Published private(set) var dotLevels: [Float] = [0, 0, 0]
+    /// Time-domain scrolling waveform samples. Each entry is a
+    /// normalized 0…1 amplitude representing one buffer of mic
+    /// input. Index 0 is the OLDEST sample (leftmost bar on
+    /// screen), last is the NEWEST (rightmost). On every audio
+    /// buffer we drop the oldest and append the newest — that's
+    /// what makes the bars "flow" left like the ChatGPT mac
+    /// listening indicator.
+    @Published private(set) var waveformSamples: [Float] = Array(repeating: 0, count: 14)
 
     private var baseText: String = ""
 
-    // Per-band envelope state. Three bands (low / mid / high)
-    // drive the three dots respectively, so the row reads as a
-    // tiny spectrum rather than three copies of the same level.
-    // Audio thread writes; main actor reads via DispatchQueue hop.
+    // Smoothed dB envelope so a single short syllable doesn't
+    // disappear instantly. Asymmetric: snap on attack, ~50ms
+    // release. Single value, not per-band — the visualizer is
+    // a time-domain scroll, every bar shows the same kind of
+    // signal but at a different moment in time.
     private let envelopeLock = NSLock()
-    private var smoothedBandDb: [Float] = [-80, -80, -80]
-    // FFT scratch — allocated once at init, reused on every
-    // audio callback. nonisolated(unsafe) because the audio
-    // thread reads them but only the main actor's init/deinit
-    // writes; treat as effectively immutable after init.
-    private let fftLog2N: vDSP_Length = 9 // 512-sample FFT
-    nonisolated(unsafe) private var fftSetup: vDSP_DFT_Setup? = nil
-    nonisolated(unsafe) private var fftWindow: [Float] = []
+    private var smoothedDb: Float = -80
+    // Local ring of recent normalized samples; copied to the
+    // published `waveformSamples` array each callback.
+    private var sampleRing: [Float] = Array(repeating: 0, count: 14)
 
     private let audioEngine = AVAudioEngine()
     private let recognizer: SFSpeechRecognizer? = {
@@ -79,19 +72,7 @@ final class DictationController: ObservableObject {
     private var request: SFSpeechAudioBufferRecognitionRequest? = nil
     private var recognitionTask: SFSpeechRecognitionTask? = nil
 
-    init() {
-        let n = 1 << fftLog2N  // 512
-        // Forward real DFT — gives us a complex spectrum from a
-        // 512-sample real input. Reused across every buffer.
-        fftSetup = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(n), .FORWARD)
-        // Hann window so FFT bin boundaries don't ring.
-        fftWindow = [Float](repeating: 0, count: n)
-        vDSP_hann_window(&fftWindow, vDSP_Length(n), Int32(vDSP_HANN_NORM))
-    }
-
-    deinit {
-        if let setup = fftSetup { vDSP_DFT_DestroySetup(setup) }
-    }
+    init() {}
 
     // MARK: - Authorization
 
@@ -151,9 +132,10 @@ final class DictationController: ObservableObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
 
-        dotLevels = [0, 0, 0]
+        waveformSamples = Array(repeating: 0, count: 14)
         envelopeLock.lock()
-        smoothedBandDb = [-80, -80, -80]
+        smoothedDb = -80
+        for i in 0..<sampleRing.count { sampleRing[i] = 0 }
         envelopeLock.unlock()
         if state == .listening || state == .requestingPermission {
             state = .idle
@@ -212,7 +194,6 @@ final class DictationController: ObservableObject {
         // AudioEngineLoopbackLatencyTest (the canonical AVAudioEngine
         // latency benchmark) uses 256–512 for "feels live"; 1024
         // pushes the audio→UI gap into the visibly sluggish band.
-        let sampleRate = Float(recordingFormat.sampleRate)
         inputNode.installTap(onBus: 0, bufferSize: 512, format: recordingFormat) { @Sendable [weak self] buffer, _ in
             requestRef.append(buffer)
             guard let self else { return }
@@ -220,39 +201,38 @@ final class DictationController: ObservableObject {
             let frames = Int(buffer.frameLength)
             guard frames > 0 else { return }
 
-            // 1) FFT-based per-band dBFS. Three bands chosen for
-            //    human speech, mapped to bin ranges at sampleRate
-            //    (typically 48kHz, 93.75Hz/bin at 512 FFT):
-            //      low  : 80–500 Hz   — vowel fundamentals
-            //      mid  : 500–2k Hz   — vowel formants
-            //      high : 2k–6k Hz    — consonants / sibilance
-            let bandDb = self.computeBandLevels(samples: channels[0], frameCount: frames, sampleRate: sampleRate)
+            // 1) RMS on channel 0 → dBFS → smoothed envelope →
+            //    normalized 0…1 amplitude. Asymmetric: snap on
+            //    attack, one-pole alpha 0.20 release (~50ms).
+            let samples = channels[0]
+            var sum: Float = 0
+            for i in 0..<frames { sum += samples[i] * samples[i] }
+            let rms = sqrtf(sum / Float(frames))
+            let db = 20 * log10f(max(rms, 1e-7))
 
-            // 2) Asymmetric envelope per band: snap on attack,
-            //    one-pole release at alpha 0.20 (~50ms).
             self.envelopeLock.lock()
-            var out: [Float] = [0, 0, 0]
-            for i in 0..<3 {
-                let db = bandDb[i]
-                if db > self.smoothedBandDb[i] {
-                    self.smoothedBandDb[i] = db
-                } else {
-                    self.smoothedBandDb[i] = 0.20 * db + 0.80 * self.smoothedBandDb[i]
-                }
-                // 3) Tighter dB window than the single-RMS pipe.
-                //    Per-band energy sits ~6-10dB lower than the
-                //    overall RMS, so quiet speech needs the floor
-                //    pulled down to register. pow(0.35) stretches
-                //    the bottom end aggressively.
-                let clamped = min(max((self.smoothedBandDb[i] - (-55)) / 30.0, 0), 1)
-                out[i] = powf(clamped, 0.35)
+            if db > self.smoothedDb {
+                self.smoothedDb = db
+            } else {
+                self.smoothedDb = 0.20 * db + 0.80 * self.smoothedDb
             }
+            let clamped = min(max((self.smoothedDb - (-55)) / 35.0, 0), 1)
+            let curved = powf(clamped, 0.4)
+
+            // 2) Scrolling ring: shift left, append newest.
+            //    The view reads index 0 as oldest (leftmost,
+            //    fading), last as newest (rightmost, full).
+            for i in 0..<(self.sampleRing.count - 1) {
+                self.sampleRing[i] = self.sampleRing[i + 1]
+            }
+            self.sampleRing[self.sampleRing.count - 1] = curved
+            let snapshot = self.sampleRing
             self.envelopeLock.unlock()
 
-            // Lowest-latency bridge — same shape as before.
+            // Lowest-latency bridge.
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
-                    self?.dotLevels = out
+                    self?.waveformSamples = snapshot
                 }
             }
         }
@@ -298,61 +278,6 @@ final class DictationController: ObservableObject {
                     self.stop()
                 }
             }
-        }
-    }
-
-    /// Audio-thread FFT band analysis. Returns [low, mid, high]
-    /// magnitudes in dBFS (-∞ … 0). Runs on the realtime queue,
-    /// uses preallocated FFT setup + Hann window.
-    nonisolated private func computeBandLevels(samples: UnsafePointer<Float>, frameCount: Int, sampleRate: Float) -> [Float] {
-        let n = 1 << fftLog2N    // 512
-        let frames = min(frameCount, n)
-        guard let setup = fftSetup else { return [-80, -80, -80] }
-
-        // 1) Window the input. Pad with zeros if buffer shorter
-        //    than the FFT size (rare with 512 tap on 48kHz).
-        var windowed = [Float](repeating: 0, count: n)
-        vDSP_vmul(samples, 1, fftWindow, 1, &windowed, 1, vDSP_Length(frames))
-
-        // 2) Run the real-to-complex DFT.
-        var realIn = [Float](repeating: 0, count: n / 2)
-        var imagIn = [Float](repeating: 0, count: n / 2)
-        // Split real input into even/odd halves (vDSP convention).
-        windowed.withUnsafeBufferPointer { bufPtr in
-            bufPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: n / 2) { complexPtr in
-                var split = DSPSplitComplex(realp: &realIn, imagp: &imagIn)
-                vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(n / 2))
-            }
-        }
-        var realOut = [Float](repeating: 0, count: n / 2)
-        var imagOut = [Float](repeating: 0, count: n / 2)
-        vDSP_DFT_Execute(setup, realIn, imagIn, &realOut, &imagOut)
-
-        // 3) Magnitudes: sqrt(re² + im²) per bin, half spectrum.
-        let halfN = n / 2
-        var mags = [Float](repeating: 0, count: halfN)
-        var split = DSPSplitComplex(realp: &realOut, imagp: &imagOut)
-        vDSP_zvabs(&split, 1, &mags, 1, vDSP_Length(halfN))
-
-        // 4) Average magnitude per band, then convert to dBFS.
-        let binHz = sampleRate / Float(n)
-        let bands: [(low: Float, high: Float)] = [
-            (80, 500),
-            (500, 2000),
-            (2000, 6000)
-        ]
-        return bands.map { band in
-            let lo = max(1, Int((band.low / binHz).rounded()))
-            let hi = min(halfN - 1, Int((band.high / binHz).rounded()))
-            guard hi > lo else { return Float(-80) }
-            var sum: Float = 0
-            for i in lo...hi { sum += mags[i] }
-            // Avg magnitude across band, normalised by sample
-            // count (windowed signal has half-energy of unit
-            // peak), → dBFS.
-            let avg = sum / Float(hi - lo + 1)
-            let normalised = avg / Float(n) * 2.0
-            return 20 * log10f(max(normalised, 1e-7))
         }
     }
 

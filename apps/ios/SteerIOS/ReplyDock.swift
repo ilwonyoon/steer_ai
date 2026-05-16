@@ -206,7 +206,7 @@ struct ReplyDock: View {
         } else if dictation.state == .listening {
             Button(action: handleMicTap) {
                 HStack(spacing: 8) {
-                    ListeningDots(levels: dictation.dotLevels)
+                    ScrollingWaveform(samples: dictation.waveformSamples)
                     Image(systemName: "mic.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
@@ -295,36 +295,40 @@ struct ReplyDock: View {
     }
 }
 
-/// Three amplitude-reactive capsule dots in the trailing mic
-/// cluster. Tuned to the user's spec:
+/// ChatGPT-mac-style scrolling waveform. The audio thread keeps
+/// a ring of recent normalized amplitudes; on every buffer the
+/// ring shifts left (oldest sample drops off, newest sample
+/// appears on the right). The bars are drawn directly from the
+/// snapshot — no SwiftUI animation needed, the shifting comes
+/// from the array contents changing each frame.
 ///
-///   - Silence: each dot reads as a circle (height == width =
-///     4pt). The dots literally sit at zero envelope.
-///   - Loud speech: dots stretch to 24pt tall, full capsule.
-///   - Range is wide and the response is snappy — the
-///     DictationController already smooths in the dB domain
-///     (attack 30ms / release 220ms), so we apply NO extra
-///     SwiftUI animation here. Whatever the controller publishes
-///     is what we draw, frame-perfect.
-///   - Each dot reads its own delayed envelope (0 / 80 / 160ms)
-///     from DictationController.dotLevels so the row ripples.
-private struct ListeningDots: View {
-    let levels: [Float]
+/// Visual spec matches the user's reference image: thin bars,
+/// short total width, leftmost bars fade into transparency so
+/// the row reads as "time is flowing."
+private struct ScrollingWaveform: View {
+    let samples: [Float]
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { i in
+        HStack(alignment: .center, spacing: 1.5) {
+            ForEach(0..<samples.count, id: \.self) { i in
                 Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: 4, height: dotHeight(for: i))
+                    .fill(Color.accentColor.opacity(opacity(for: i)))
+                    .frame(width: 1.8, height: height(for: samples[i]))
             }
         }
-        .frame(height: 24)
+        .frame(height: 16)
     }
 
-    private func dotHeight(for i: Int) -> CGFloat {
-        let level = CGFloat(levels.indices.contains(i) ? levels[i] : 0)
-        // Floor = width (4pt → perfect circle at silence), top = 24pt.
-        return 4 + 20 * level
+    private func height(for level: Float) -> CGFloat {
+        // Floor 2pt (≈circle at width 1.8), top 16pt. Speech
+        // peaks land near full height.
+        2 + 14 * CGFloat(level)
+    }
+
+    private func opacity(for i: Int) -> Double {
+        // Leftmost bar fades to 25% so the scroll motion reads
+        // as "the past is leaving"; rightmost is full opacity.
+        let t = Double(i) / Double(max(1, samples.count - 1))
+        return 0.25 + 0.75 * t
     }
 }
