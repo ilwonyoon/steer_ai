@@ -759,16 +759,28 @@ public final class SyncInbox: ObservableObject {
     // These helpers mutate the canonical arrays directly so future
     // entry points don't have to thread SessionEntry.
 
-    /// Upsert a card from WS / bootstrap. Same sessionId? replace
-    /// in place (focus stays on whatever the user was looking at).
-    /// New? insert at the front of the carousel so the freshly
-    /// notified card sits on the left, matching the user's mental
-    /// model that newest-arrived = leftmost. Focus is NOT moved —
-    /// `focusedSessionId` stays pinned so a notification mid-typing
-    /// doesn't yank the user off the card they were composing on.
+    /// Upsert a card from WS / bootstrap. New sessionId? insert at
+    /// the front. Same sessionId with a *new response* (revision
+    /// bumped)? move it to the front so newest-response = leftmost.
+    /// Same sessionId, same revision (mere state refresh)? replace
+    /// in place — that's not a new arrival from the user's POV.
+    /// Focus is NEVER moved — `focusedSessionId` stays pinned so a
+    /// notification mid-typing doesn't yank the user off the card
+    /// they were composing on.
     private func upsertCardDirect(_ card: CardPayload, reason: String) {
         if let idx = cards.firstIndex(where: { $0.sessionId == card.sessionId }) {
-            cards[idx] = card
+            let existing = cards[idx]
+            let isNewResponse: Bool = {
+                guard let new = card.responseRevision else { return false }
+                guard let old = existing.responseRevision else { return true }
+                return new > old
+            }()
+            if isNewResponse && idx != 0 {
+                cards.remove(at: idx)
+                cards.insert(card, at: 0)
+            } else {
+                cards[idx] = card
+            }
         } else {
             cards.insert(card, at: 0)
         }
