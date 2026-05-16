@@ -13,7 +13,7 @@ import SwiftUI
 struct DictationTestView: View {
     @State private var reply: String = ""
     @State private var sentTranscripts: [String] = []
-    @State private var style: DictationVisualStyle = .rowWaveform
+    @State private var style: DictationVisualStyle = .outlinePulse
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -29,13 +29,44 @@ struct DictationTestView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
 
-                Picker("Listening visual", selection: $style) {
+                // Chip row above the input — same affordance the
+                // production card will use to let the user compare
+                // visuals quickly without leaving the field.
+                HStack(spacing: 8) {
                     ForEach(DictationVisualStyle.allCases) { variant in
-                        Text(variant.label).tag(variant)
+                        Button {
+                            style = variant
+                        } label: {
+                            Text(variant.label)
+                                .font(.system(size: 13, weight: .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule().fill(
+                                        style == variant
+                                            ? Color.accentColor.opacity(0.15)
+                                            : SteerColors.subtleFill
+                                    )
+                                )
+                                .overlay {
+                                    Capsule().stroke(
+                                        style == variant
+                                            ? Color.accentColor
+                                            : SteerColors.softSeparator,
+                                        lineWidth: 1
+                                    )
+                                }
+                                .foregroundStyle(
+                                    style == variant
+                                        ? Color.accentColor
+                                        : SteerColors.ink
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                .pickerStyle(.segmented)
                 .padding(.horizontal)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 ReplyDock(
                     reply: $reply,
