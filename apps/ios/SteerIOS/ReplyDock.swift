@@ -1,30 +1,41 @@
 import SwiftUI
 
 /// Visual treatments for the "I'm listening" state — all four
-/// variants live ENTIRELY on the input field's outline. The text
-/// area is never touched: no overlays inside the field, no padding
-/// shifts, no opacity changes on the TextField itself. The signal
-/// that dictation is live comes from the border alone.
+/// variants live ENTIRELY on the input field's outline and are
+/// all GLOW patterns (a follow-up to user feedback that the glow
+/// direction read the best of the previous variant set). Each
+/// reacts to live mic amplitude in a different way so we can
+/// dogfood the four flavors against each other.
+///
+/// Text area is untouched in every variant.
 enum DictationVisualStyle: String, CaseIterable, Identifiable {
-    /// Accent stroke with opacity + width pulsing on a slow ease.
-    case outlinePulse
-    /// Siri-style soft blurred halo blooming outside the rounded
-    /// rect, breathing slowly.
-    case edgeGlow
-    /// The stroke path itself ripples — a sinusoidal offset on the
-    /// rounded-rect outline that reacts to mic amplitude.
-    case organicWaves
-    /// Accent dash runs around the perimeter like a tracer. Speed
-    /// is modulated by mic amplitude.
-    case traceRunner
+    /// Claude.ai-style halo: soft accent ring bleeding outside the
+    /// rounded rect. Outer ring width + opacity track mic level so
+    /// loud speech briefly "brightens" the halo.
+    case glow
+    /// In-bounds masked halo: blur sits ON the inside of the
+    /// rounded rect, clipped so nothing spills outside. Reads like
+    /// Apple Intelligence's edge-glow pressing inward; inner-blur
+    /// strength tracks amplitude.
+    case innerGlow
+    /// Cursor IDE-style traced light: an angular gradient sweeps
+    /// the stroke perimeter. Rotation speed + brightness scale
+    /// with amplitude — quiet = slow soft sweep, loud = fast
+    /// bright sweep.
+    case sweep
+    /// Heartbeat: a thin solid stroke with an outer soft glow whose
+    /// width and blur expand on every speech peak. Amplitude is
+    /// the entire animation — at silence the field is a calm
+    /// accent line; on speech the glow blooms.
+    case pulseGlow
 
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .outlinePulse:  return "Pulse"
-        case .edgeGlow:      return "Glow"
-        case .organicWaves:  return "Waves"
-        case .traceRunner:   return "Trace"
+        case .glow:       return "Glow"
+        case .innerGlow:  return "Inner"
+        case .sweep:      return "Sweep"
+        case .pulseGlow:  return "Pulse"
         }
     }
 }
@@ -62,7 +73,7 @@ struct ReplyDock: View {
     /// Which native-inspired visual to use for the listening state.
     /// Configurable per-mount so the dogfood comparison page can
     /// flip between them.
-    var dictationStyle: DictationVisualStyle = .outlinePulse
+    var dictationStyle: DictationVisualStyle = .glow
     @Environment(\.onboardingAllowEmptySend) private var envAllowEmpty: Bool
     @FocusState private var fallbackFocus: Bool
 
@@ -195,20 +206,20 @@ struct ReplyDock: View {
     }
 
     /// Border treatment. Idle / failed → simple stroke. Listening →
-    /// one of four outline-only animations driven by the active
-    /// dictationStyle. None of these touch the text area.
+    /// one of four glow variants, each amplitude-reactive in a
+    /// different way. None touch the text area.
     @ViewBuilder
     private var inputBorder: some View {
         if dictation.state == .listening {
             switch dictationStyle {
-            case .outlinePulse:
-                PulsingBorder(color: .accentColor)
-            case .edgeGlow:
-                EdgeGlowBorder(color: .accentColor)
-            case .organicWaves:
-                OrganicWavesBorder(color: .accentColor, level: dictation.audioLevel)
-            case .traceRunner:
-                TraceRunnerBorder(color: .accentColor, level: dictation.audioLevel)
+            case .glow:
+                GlowBorder(color: .accentColor, level: dictation.audioLevel)
+            case .innerGlow:
+                InnerGlowBorder(color: .accentColor, level: dictation.audioLevel)
+            case .sweep:
+                SweepBorder(color: .accentColor, level: dictation.audioLevel)
+            case .pulseGlow:
+                PulseGlowBorder(color: .accentColor, level: dictation.audioLevel)
             }
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -287,181 +298,165 @@ struct ReplyDock: View {
     }
 }
 
-/// Variant 1 — Minimal accent stroke that pulses in opacity and
-/// line width.
-private struct PulsingBorder: View {
-    let color: Color
-    @State private var pulse: Bool = false
+// MARK: - Glow variants
+//
+// Shared shape constants so all four variants use exactly the
+// same corner radius and outer/inner clip frame as the input
+// field. Drift here would make the visuals subtly misaligned.
+private let dictationCornerRadius: CGFloat = 12
 
-    var body: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .stroke(color.opacity(pulse ? 1.0 : 0.4), lineWidth: pulse ? 2.4 : 1.4)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    pulse = true
-                }
-            }
-    }
-}
-
-/// Variant 2 — Siri-style outer glow. Solid border + a wider
-/// blurred ring breathing behind it.
-private struct EdgeGlowBorder: View {
+/// Variant 1 — "Glow". Soft outer halo, Claude.ai pattern. A
+/// thin solid stroke sits on the border; behind it a wider
+/// blurred ring breathes outside the field. Outer ring opacity
+/// + width track mic level: silence reads as a quiet halo,
+/// loud speech briefly brightens and thickens it.
+private struct GlowBorder: View {
     let color: Color
+    let level: Float
     @State private var breathe: Bool = false
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(color, lineWidth: 1.5)
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(color.opacity(breathe ? 0.55 : 0.15), lineWidth: 6)
+            RoundedRectangle(cornerRadius: dictationCornerRadius, style: .continuous)
+                .stroke(color.opacity(0.85), lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: dictationCornerRadius + 4, style: .continuous)
+                .stroke(color.opacity(haloOpacity), lineWidth: haloWidth)
                 .blur(radius: 6)
-                .scaleEffect(breathe ? 1.02 : 1.0)
         }
         .onAppear {
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
                 breathe = true
             }
         }
+        .animation(.easeOut(duration: 0.18), value: level)
+    }
+
+    private var haloOpacity: Double {
+        let base = breathe ? 0.5 : 0.2
+        return min(0.85, base + Double(level) * 0.5)
+    }
+
+    private var haloWidth: CGFloat {
+        4 + CGFloat(level) * 6
     }
 }
 
-/// Variant 3 — Organic waves. The outline path itself ripples on
-/// the top and bottom edges, with amplitude tied to live mic
-/// level. Built as a stroked Shape so the deformation lives on
-/// the path, not on an overlay.
-private struct OrganicWavesBorder: View {
+/// Variant 2 — "Inner". Apple-Intelligence-style edge glow
+/// pressing inward. We render a blurred ring OUTSIDE the field
+/// then clip the whole effect back to the rounded rect, so the
+/// glow feathers from the border toward the center but never
+/// leaks past the rounded corners. Inner blur strength tracks
+/// amplitude.
+private struct InnerGlowBorder: View {
     let color: Color
     let level: Float
-    @State private var phase: CGFloat = 0
+    @State private var breathe: Bool = false
 
     var body: some View {
-        WavyRoundedRect(cornerRadius: 12, amplitude: amplitude, frequency: 3, phase: phase)
-            .stroke(color, style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
+        RoundedRectangle(cornerRadius: dictationCornerRadius, style: .continuous)
+            .strokeBorder(color, lineWidth: 1.2)
+            .background(
+                RoundedRectangle(cornerRadius: dictationCornerRadius, style: .continuous)
+                    .stroke(color.opacity(innerOpacity), lineWidth: innerWidth)
+                    .blur(radius: blurRadius)
+                    .clipShape(RoundedRectangle(cornerRadius: dictationCornerRadius, style: .continuous))
+            )
             .onAppear {
-                withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
-                    phase = .pi * 2
+                withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                    breathe = true
                 }
             }
+            .animation(.easeOut(duration: 0.2), value: level)
     }
 
-    private var amplitude: CGFloat {
-        // Idle floor so the waves are always visible, plus mic
-        // level so loud speech actually flexes the border.
-        1.0 + CGFloat(level) * 4.0
-    }
-}
-
-private struct WavyRoundedRect: Shape {
-    var cornerRadius: CGFloat
-    var amplitude: CGFloat
-    var frequency: CGFloat
-    var phase: CGFloat
-
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(phase, amplitude) }
-        set { phase = newValue.first; amplitude = newValue.second }
+    private var innerOpacity: Double {
+        let base = breathe ? 0.65 : 0.3
+        return min(0.95, base + Double(level) * 0.4)
     }
 
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let r = min(cornerRadius, rect.height / 2)
-        let top = rect.minY
-        let bottom = rect.maxY
-        let left = rect.minX
-        let right = rect.maxX
+    private var innerWidth: CGFloat {
+        6 + CGFloat(level) * 10
+    }
 
-        // Sample the top and bottom edges with a small sine wave;
-        // sides stay straight so the rounded rect shape reads as
-        // an input field.
-        let segments: CGFloat = 40
-        // Top edge (left→right) with wave.
-        p.move(to: CGPoint(x: left + r, y: top))
-        for i in 0...Int(segments) {
-            let t = CGFloat(i) / segments
-            let x = (left + r) + t * (rect.width - 2 * r)
-            let y = top + sin(t * frequency * .pi * 2 + phase) * amplitude
-            p.addLine(to: CGPoint(x: x, y: y))
-        }
-        // Top-right corner.
-        p.addArc(
-            center: CGPoint(x: right - r, y: top + r),
-            radius: r,
-            startAngle: .degrees(-90),
-            endAngle: .degrees(0),
-            clockwise: false
-        )
-        // Right edge (straight).
-        p.addLine(to: CGPoint(x: right, y: bottom - r))
-        // Bottom-right corner.
-        p.addArc(
-            center: CGPoint(x: right - r, y: bottom - r),
-            radius: r,
-            startAngle: .degrees(0),
-            endAngle: .degrees(90),
-            clockwise: false
-        )
-        // Bottom edge (right→left) with wave (mirrored phase).
-        for i in 0...Int(segments) {
-            let t = CGFloat(i) / segments
-            let x = (right - r) - t * (rect.width - 2 * r)
-            let y = bottom - sin(t * frequency * .pi * 2 - phase) * amplitude
-            p.addLine(to: CGPoint(x: x, y: y))
-        }
-        // Bottom-left corner.
-        p.addArc(
-            center: CGPoint(x: left + r, y: bottom - r),
-            radius: r,
-            startAngle: .degrees(90),
-            endAngle: .degrees(180),
-            clockwise: false
-        )
-        // Left edge.
-        p.addLine(to: CGPoint(x: left, y: top + r))
-        // Top-left corner.
-        p.addArc(
-            center: CGPoint(x: left + r, y: top + r),
-            radius: r,
-            startAngle: .degrees(180),
-            endAngle: .degrees(270),
-            clockwise: false
-        )
-        return p
+    private var blurRadius: CGFloat {
+        5 + CGFloat(level) * 6
     }
 }
 
-/// Variant 4 — Trace runner. Faint baseline stroke + an accent
-/// dash that travels around the perimeter. Mic level controls
-/// run speed.
-private struct TraceRunnerBorder: View {
+/// Variant 3 — "Sweep". Cursor IDE-style traced light. A bright
+/// accent arc rotates around the rounded rect; rotation speed
+/// scales with mic level (silence = slow, loud = fast). Behind
+/// it sits a faint stationary stroke so the field always has a
+/// readable outline.
+private struct SweepBorder: View {
     let color: Color
     let level: Float
-    @State private var dashOffset: CGFloat = 0
-    @State private var perimeterEstimate: CGFloat = 600
+    @State private var phase: Double = 0
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(color.opacity(0.25), lineWidth: 1.2)
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .trim(from: 0, to: 0.18)
-                .stroke(color, style: StrokeStyle(lineWidth: 2.0, lineCap: .round))
-                .rotationEffect(.degrees(Double(dashOffset)))
+            RoundedRectangle(cornerRadius: dictationCornerRadius, style: .continuous)
+                .stroke(color.opacity(0.3), lineWidth: 1.2)
+            RoundedRectangle(cornerRadius: dictationCornerRadius, style: .continuous)
+                .trim(from: 0, to: trimFraction)
+                .stroke(color.opacity(strokeOpacity), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                .rotationEffect(.degrees(phase))
+                .blur(radius: 0.6)
         }
         .onAppear {
-            // 2.4s base period; speeds up to ~1.0s when speaking
-            // loudly. linear repeat so the runner motion is even.
-            withAnimation(.linear(duration: animationDuration).repeatForever(autoreverses: false)) {
-                dashOffset = 360
+            phase = 0
+            withAnimation(.linear(duration: rotationDuration).repeatForever(autoreverses: false)) {
+                phase = 360
             }
         }
         .animation(.easeInOut(duration: 0.4), value: level)
     }
 
-    private var animationDuration: Double {
-        let base = 2.4
-        let speedup = Double(level) * 1.4
-        return max(0.6, base - speedup)
+    private var rotationDuration: Double {
+        let base = 2.6
+        let speedup = Double(level) * 1.6
+        return max(0.7, base - speedup)
+    }
+
+    private var trimFraction: CGFloat {
+        0.16 + CGFloat(level) * 0.12
+    }
+
+    private var strokeOpacity: Double {
+        0.55 + Double(level) * 0.4
+    }
+}
+
+/// Variant 4 — "Pulse". Heartbeat-style amplitude bloom. A thin
+/// solid stroke is the resting state; on every speech peak, a
+/// soft outer glow blooms briefly. The animation is entirely
+/// driven by mic level — at silence the field is a calm accent
+/// line, on speech the surround halo expands and brightens.
+private struct PulseGlowBorder: View {
+    let color: Color
+    let level: Float
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: dictationCornerRadius, style: .continuous)
+                .stroke(color.opacity(0.8), lineWidth: 1.4)
+            RoundedRectangle(cornerRadius: dictationCornerRadius + 6, style: .continuous)
+                .stroke(color.opacity(glowOpacity), lineWidth: glowWidth)
+                .blur(radius: blurRadius)
+        }
+        .animation(.spring(response: 0.18, dampingFraction: 0.7), value: level)
+    }
+
+    private var glowOpacity: Double {
+        // Quiet ≈ invisible, loud ≈ vivid.
+        min(0.9, Double(level) * 1.2)
+    }
+
+    private var glowWidth: CGFloat {
+        2 + CGFloat(level) * 14
+    }
+
+    private var blurRadius: CGFloat {
+        4 + CGFloat(level) * 10
     }
 }

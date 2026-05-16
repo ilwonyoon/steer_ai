@@ -19,12 +19,12 @@ struct ActionCardView<Card: CardDisplayable>: View {
     var replyPlaceholder: String? = nil
 
     #if DEBUG
-    @AppStorage("ai.steer.ios.dictationStyle") private var spikeStyleRaw: String = DictationVisualStyle.outlinePulse.rawValue
+    @AppStorage("ai.steer.ios.dictationStyle") private var spikeStyleRaw: String = DictationVisualStyle.glow.rawValue
     private var spikeStyle: DictationVisualStyle {
-        DictationVisualStyle(rawValue: spikeStyleRaw) ?? .outlinePulse
+        DictationVisualStyle(rawValue: spikeStyleRaw) ?? .glow
     }
     #else
-    private var spikeStyle: DictationVisualStyle { .outlinePulse }
+    private var spikeStyle: DictationVisualStyle { .glow }
     #endif
 
     private var headerTint: Color {
@@ -222,7 +222,7 @@ struct ProjectMark: View {
 /// the choice survives carousel swipes and app relaunches during
 /// the dogfood loop. Removed before the variant ships.
 struct DictationStyleChipRow: View {
-    @AppStorage("ai.steer.ios.dictationStyle") private var selectedRaw: String = DictationVisualStyle.outlinePulse.rawValue
+    @AppStorage("ai.steer.ios.dictationStyle") private var selectedRaw: String = DictationVisualStyle.glow.rawValue
 
     var body: some View {
         HStack(spacing: 6) {

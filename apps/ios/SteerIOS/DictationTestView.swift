@@ -13,7 +13,7 @@ import SwiftUI
 struct DictationTestView: View {
     @State private var reply: String = ""
     @State private var sentTranscripts: [String] = []
-    @State private var style: DictationVisualStyle = .outlinePulse
+    @State private var style: DictationVisualStyle = .glow
     @FocusState private var focused: Bool
 
     var body: some View {
