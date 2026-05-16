@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import OSLog
+import QuartzCore
 import Speech
 import SwiftUI
 import UIKit
@@ -51,7 +52,14 @@ final class DictationController: ObservableObject {
     /// listening indicator. 9 bars ≈ 60% of the 14-bar version
     /// the user reviewed — still reads as "time is flowing"
     /// but takes less horizontal room in the input row.
-    @Published private(set) var waveformSamples: [Float] = Array(repeating: 0, count: 9)
+    @Published private(set) var waveformSamples: [Float] = Array(repeating: 0, count: 32)
+    /// Wall-clock time (CACurrentMediaTime) of the most recent
+    /// ring shift. The view uses (now - lastShiftTime) / shiftInterval
+    /// to compute a sub-slot pixel offset, so the row slides
+    /// continuously between buffers.
+    @Published private(set) var lastShiftTime: TimeInterval = 0
+    /// Expected interval between ring shifts (= bufferSize / sampleRate).
+    @Published private(set) var shiftInterval: TimeInterval = 0
 
     private var baseText: String = ""
 
@@ -64,15 +72,24 @@ final class DictationController: ObservableObject {
     private var smoothedDb: Float = -80
     // Local ring of recent normalized samples; copied to the
     // published `waveformSamples` array each callback.
-    private var sampleRing: [Float] = Array(repeating: 0, count: 9)
+    private var sampleRing: [Float] = Array(repeating: 0, count: 32)
 
     private let audioEngine = AVAudioEngine()
-    private let recognizer: SFSpeechRecognizer? = {
-        SFSpeechRecognizer(locale: Locale.current)
-            ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    }()
+    /// Built fresh on every `start()` so the recognizer always
+    /// follows the live system language (Settings → General →
+    /// Language & Region). Falling back to en-US keeps things
+    /// usable when the device locale doesn't have a speech model.
+    private var recognizer: SFSpeechRecognizer? = nil
     private var request: SFSpeechAudioBufferRecognitionRequest? = nil
     private var recognitionTask: SFSpeechRecognitionTask? = nil
+
+    private static func makeRecognizer() -> SFSpeechRecognizer? {
+        let system = Locale.autoupdatingCurrent
+        if let r = SFSpeechRecognizer(locale: system), r.isAvailable {
+            return r
+        }
+        return SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    }
 
     init() {}
 
@@ -82,10 +99,25 @@ final class DictationController: ObservableObject {
     /// Returns once both have resolved. Splitting this from start()
     /// lets ReplyDock handle the denied case without any audio
     /// engine work happening first.
+    /// CRITICAL: this MUST only be called from an explicit user
+    /// gesture (mic-button tap). It never runs on view appear,
+    /// scenePhase change, or any other automatic path.
     func requestAuthorizations() async -> AuthorizationResult {
-        let speechGranted = await Self.requestSpeechAuthorization()
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        let micStatus = AVAudioApplication.shared.recordPermission
+        let speechGranted: Bool
+        if speechStatus == .notDetermined {
+            speechGranted = await Self.requestSpeechAuthorization()
+        } else {
+            speechGranted = (speechStatus == .authorized)
+        }
         guard speechGranted else { return .denied }
-        let micGranted = await Self.requestMicAuthorization()
+        let micGranted: Bool
+        if micStatus == .undetermined {
+            micGranted = await Self.requestMicAuthorization()
+        } else {
+            micGranted = (micStatus == .granted)
+        }
         return micGranted ? .authorized : .denied
     }
 
@@ -99,10 +131,12 @@ final class DictationController: ObservableObject {
         self.baseText = baseText
         self.partialText = baseText
 
+        self.recognizer = Self.makeRecognizer()
         guard let recognizer, recognizer.isAvailable else {
             state = .failed("Speech recognizer is not available right now.")
             return
         }
+        dictationLog.info("dictation locale: \(recognizer.locale.identifier, privacy: .public)")
 
         do {
             try beginRecognition(recognizer: recognizer)
@@ -134,7 +168,7 @@ final class DictationController: ObservableObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
 
-        waveformSamples = Array(repeating: 0, count: 9)
+        waveformSamples = Array(repeating: 0, count: 32)
         envelopeLock.lock()
         smoothedDb = -80
         for i in 0..<sampleRing.count { sampleRing[i] = 0 }
@@ -180,6 +214,9 @@ final class DictationController: ObservableObject {
                 userInfo: [NSLocalizedDescriptionKey: "Microphone not ready. Try again in a moment."]
             )
         }
+
+        self.shiftInterval = 512.0 / recordingFormat.sampleRate
+        self.lastShiftTime = CACurrentMediaTime()
 
         // The tap callback fires on AVAudio's RealtimeMessenger
         // queue. Without `@Sendable` + a capture list that avoids
@@ -231,10 +268,12 @@ final class DictationController: ObservableObject {
             let snapshot = self.sampleRing
             self.envelopeLock.unlock()
 
+            let shiftTime = CACurrentMediaTime()
             // Lowest-latency bridge.
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
                     self?.waveformSamples = snapshot
+                    self?.lastShiftTime = shiftTime
                 }
             }
         }

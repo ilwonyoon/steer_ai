@@ -1,14 +1,22 @@
+import QuartzCore
 import SwiftUI
+import UIKit
 
 
 /// iOS port of the Mac ReplyDock. Drops the Mac-only AppKit pieces
 /// (clipboard image monitor, NSItemProvider drag-and-drop,
 /// .onKeyPress(.return)) and keeps the visual + send semantics:
 ///   - rounded inputFill background with softSeparator stroke
-///   - 13pt monospaced placeholder ("reply to this session")
-///   - chip row above input
+///   - 17pt SF text placeholder ("Reply to this session")
+///   - 56pt input row (matches ChatGPT/Claude/Gemini iOS)
 ///   - floating bottom-right send button that appears only when canSend
 ///   - in-card mic button (v2) driven by `DictationController`
+///
+/// Listening UX matches the ChatGPT/Claude/Gemini takeover pattern:
+/// the entire input row swaps to a full-width waveform + large
+/// stop button, with no partial transcript on screen. The
+/// recognized text is committed to the field only on stop. Tap +
+/// state transitions also fire haptics.
 struct ReplyDock: View {
     @Binding var reply: String
     let onSend: (String) -> Void
@@ -52,15 +60,17 @@ struct ReplyDock: View {
         }
         .animation(.easeOut(duration: 0.16), value: canSend)
         .animation(.easeOut(duration: 0.16), value: dictation.state)
-        .onChange(of: dictation.partialText) { _, newValue in
-            // The controller is the writer while listening; mirror
-            // its composed string into the reply binding so the
-            // transcript appears live in the TextField.
-            if dictation.state == .listening {
-                reply = newValue
+        .onChange(of: dictation.state) { oldState, newState in
+            // Industry pattern (ChatGPT / Claude / Gemini): hide the
+            // partial transcript while listening — the waveform owns
+            // the row. Commit the recognized text into the reply
+            // binding only on listening → not-listening transition.
+            if oldState == .listening && newState != .listening {
+                let finalText = dictation.partialText
+                if !finalText.isEmpty {
+                    reply = finalText
+                }
             }
-        }
-        .onChange(of: dictation.state) { _, newState in
             if newState == .denied {
                 showDeniedAlert = true
             }
@@ -84,13 +94,6 @@ struct ReplyDock: View {
         )
     }
 
-    private var borderStroke: Color {
-        dictation.state == .listening ? Color.accentColor : SteerColors.softSeparator
-    }
-    private var borderWidth: CGFloat {
-        dictation.state == .listening ? 1.5 : 1
-    }
-
     private var trimmedReply: String {
         reply.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -108,53 +111,62 @@ struct ReplyDock: View {
     private func submit() {
         let text = trimmedReply
         if !effectiveAllowEmpty && text.isEmpty { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSend(text)
         reply = ""
         externalFocus?.wrappedValue = false
         fallbackFocus = false
     }
 
-    /// The full input row. Critical invariant: the TextField is
-    /// always mounted and never has its padding / opacity changed
-    /// by the dictation state. All "I'm listening" signals live
-    /// on the border layer only.
+    /// Two visual modes that **cross-fade** between each other so
+    /// the transition into / out of dictation reads as a deliberate
+    /// animation rather than a hard swap:
+    ///
+    /// - **Idle**: TextField + trailing mic/send buttons.
+    /// - **Listening**: TextField hidden, full-width waveform on
+    ///   the leading side and a 44pt circular stop button on the
+    ///   trailing side.
+    ///
+    /// Both layers stay mounted; opacity + `.allowsHitTesting`
+    /// gate which one the user actually interacts with.
     @ViewBuilder
     private var inputFieldContainer: some View {
-        ZStack(alignment: .bottomTrailing) {
+        let listening = dictation.state == .listening
+        ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(tint)
-            textField
-            // Bottom-right cluster. While listening, the amplitude
-            // dots + mic glyph share a single accent-tinted
-            // capsule (matches the user's reference); when idle,
-            // it's just the bare mic / send buttons. The dots
-            // never travel to the leading edge — the "Listening…"
-            // placeholder owns that side.
-            HStack(spacing: 8) {
-                listeningOrMicCluster
-                if showSend {
-                    sendButton
+
+            // Idle layer. mic/send sit on the trailing edge but
+            // are vertically centered on the row.
+            ZStack(alignment: .trailing) {
+                textField
+                HStack(spacing: 8) {
+                    micButton
+                    if showSend {
+                        sendButton
+                    }
                 }
+                .padding(.trailing, 10)
             }
-            .padding(.trailing, 8)
-            .padding(.bottom, 8)
+            .opacity(listening ? 0 : 1)
+            .allowsHitTesting(!listening)
+
+            listeningRow
+                .opacity(listening ? 1 : 0)
+                .allowsHitTesting(listening)
         }
+        .animation(.easeInOut(duration: 0.25), value: listening)
         .overlay {
-            inputBorder
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(SteerColors.softSeparator, lineWidth: 1)
         }
     }
 
-    /// Always-mounted TextField. While listening the placeholder
-    /// switches to "Listening…" and the field is disabled to block
-    /// typing, but the dictated text stays visible (live
-    /// transcription) so the user can verify what's being heard.
-    /// The dots cluster lives in the trailing capsule, not over
-    /// the text — so they never collide.
+    /// Idle TextField. Listening swaps the row out for the waveform
+    /// takeover, so this view only renders in non-listening states.
     @ViewBuilder
     private var textField: some View {
-        let displayedPlaceholder: String = dictation.state == .listening
-            ? "Listening…"
-            : (placeholder ?? "Reply to this session")
+        let displayedPlaceholder: String = placeholder ?? "Reply to this session"
 
         let base = TextField(displayedPlaceholder, text: $reply, axis: .vertical)
             .textFieldStyle(.plain)
@@ -162,15 +174,10 @@ struct ReplyDock: View {
             .foregroundStyle(SteerColors.ink)
             .lineLimit(1...8)
             .accessibilityIdentifier("reply-input")
-            .padding(.leading, 14)
-            // Trailing padding needs to accommodate the dots+mic
-            // capsule (≈72pt wide) while listening, so the live
-            // transcript doesn't run under it. Idle leaves the
-            // standard mic / mic+send footprint.
+            .padding(.leading, 16)
             .padding(.trailing, trailingPadding)
-            .padding(.vertical, 12)
-            .frame(minHeight: 48)
-            .disabled(dictation.state == .listening)
+            .padding(.vertical, 16)
+            .frame(minHeight: 56)
 
         if let externalFocus {
             base.focused(externalFocus)
@@ -180,81 +187,74 @@ struct ReplyDock: View {
     }
 
     private var trailingPadding: CGFloat {
-        if dictation.state == .listening {
-            return showSend ? 120 : 88
+        dictationEnabled ? (showSend ? 92 : 52) : (showSend ? 54 : 16)
+    }
+
+    /// Listening takeover: the row is the waveform + a single big
+    /// stop button. No partial text — that's the industry pattern.
+    /// Waveform sits 20pt off the left wall and 20pt off the stop
+    /// button so it doesn't visually crowd either edge.
+    @ViewBuilder
+    private var listeningRow: some View {
+        HStack(spacing: 20) {
+            ScrollingWaveform(
+                samples: dictation.waveformSamples,
+                lastShiftTime: dictation.lastShiftTime,
+                shiftInterval: dictation.shiftInterval
+            )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            stopButton
         }
-        return dictationEnabled ? (showSend ? 84 : 46) : (showSend ? 48 : 14)
+        .padding(.leading, 20)
+        .padding(.trailing, 10)
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
     }
 
-    /// Border stays exactly the same in idle and listening — the
-    /// "I'm listening" signal lives entirely inside the field as
-    /// the three-dot amplitude visualizer.
+    /// Idle-only mic button.
     @ViewBuilder
-    private var inputBorder: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .stroke(SteerColors.softSeparator, lineWidth: 1)
-    }
-
-    /// Idle: bare mic glyph (32×32 hit area, no background).
-    /// Listening: dots + mic glyph bundled into a single accent
-    /// capsule so they read as one affordance (matches the
-    /// reference). Tap target stays the full capsule.
-    @ViewBuilder
-    private var listeningOrMicCluster: some View {
+    private var micButton: some View {
         if !dictationEnabled {
             EmptyView()
-        } else if dictation.state == .listening {
+        } else {
             Button(action: handleMicTap) {
-                HStack(spacing: 8) {
-                    ScrollingWaveform(samples: dictation.waveformSamples)
-                    // Stop glyph while listening — the capsule is
-                    // the affordance to END the recording, so it
-                    // should read "tap to stop," not "tap mic."
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.accentColor.opacity(0.18), in: Capsule())
-                .contentShape(Capsule())
+                Image(systemName: micIconName)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(micIconColor)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("reply-mic")
-            .accessibilityLabel("Stop dictation")
-        } else {
-            micButton
+            .accessibilityLabel("Start dictation")
+            .disabled(dictation.state == .requestingPermission)
         }
     }
 
-    private var micButton: some View {
+    /// Big circular stop button — independent of the mic capsule.
+    /// 44pt so the glyph reads as a confident "tap to stop"
+    /// affordance, not a tiny inline icon.
+    private var stopButton: some View {
         Button(action: handleMicTap) {
-            Image(systemName: micIconName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(micIconColor)
-                // Keep the 32x32 hit area but render only the
-                // glyph — no background disc. contentShape(.rect)
-                // makes the whole square tappable so the touch
-                // target survives the visual cleanup.
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
+            Image(systemName: "stop.fill")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(Color.accentColor, in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("reply-mic")
-        .accessibilityLabel(dictation.state == .listening ? "Stop dictation" : "Start dictation")
-        .disabled(dictation.state == .requestingPermission)
+        .accessibilityLabel("Stop dictation")
     }
 
     private var micIconName: String {
         switch dictation.state {
-        case .listening: return "stop.fill"
         case .requestingPermission: return "hourglass"
         default: return "mic.fill"
         }
     }
     private var micIconColor: Color {
         switch dictation.state {
-        case .listening: return Color.accentColor   // stop glyph in accent
         case .denied: return SteerColors.blocked
         default: return SteerColors.secondaryInk
         }
@@ -266,17 +266,19 @@ struct ReplyDock: View {
             Task { @MainActor in
                 let result = await dictation.requestAuthorizations()
                 guard result == .authorized else {
-                    // The state machine flips to .denied via the alert
-                    // sink — we just need to set it.
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
                     dictation.objectWillChange.send()
                     showDeniedAlert = true
                     return
                 }
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 dictation.start(appendingTo: reply)
             }
         case .listening:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             dictation.stop()
         case .denied:
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
             showDeniedAlert = true
         case .requestingPermission:
             break
@@ -286,9 +288,9 @@ struct ReplyDock: View {
     private var sendButton: some View {
         Button(action: submit) {
             Image(systemName: "arrow.up")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 32, height: 32)
+                .frame(width: 36, height: 36)
                 .background(Color.accentColor, in: Circle())
         }
         .buttonStyle(.plain)
@@ -298,40 +300,94 @@ struct ReplyDock: View {
     }
 }
 
-/// ChatGPT-mac-style scrolling waveform. The audio thread keeps
-/// a ring of recent normalized amplitudes; on every buffer the
-/// ring shifts left (oldest sample drops off, newest sample
-/// appears on the right). The bars are drawn directly from the
-/// snapshot — no SwiftUI animation needed, the shifting comes
-/// from the array contents changing each frame.
+/// Full-width scrolling waveform — true pixel-sliding.
 ///
-/// Visual spec matches the user's reference image: thin bars,
-/// short total width, leftmost bars fade into transparency so
-/// the row reads as "time is flowing."
+/// The controller pushes one new amplitude per ~11ms (one audio
+/// buffer worth). Between pushes, a TimelineView drives sub-slot
+/// pixel offset on the HStack so the entire row translates left
+/// continuously instead of stepping a slot at a time. When the
+/// next push lands, the ring shifts and `lastShiftTime` resets —
+/// the offset goes back to 0 and a new bar takes the right edge.
+///
+/// Visual: 3pt-wide rectangular sticks; 33 of them rendered with
+/// the rightmost living off-screen as the "incoming" slot that's
+/// half a slide away from being visible. The 20 leftmost visible
+/// slots ride at 0.2 alpha (the past); the 12 nearest the right
+/// edge are full opacity (the live edge). The incoming bar
+/// fades 0 → 0.2 in step with the slide so it doesn't pop on.
 private struct ScrollingWaveform: View {
     let samples: [Float]
+    let lastShiftTime: TimeInterval
+    let shiftInterval: TimeInterval
+
+    private let barWidth: CGFloat = 3
+    /// Leftmost N slots sit at 0.2 alpha; the rest are 1.0.
+    private let fadedZoneCount: Int = 20
 
     var body: some View {
-        HStack(alignment: .center, spacing: 1.5) {
-            ForEach(0..<samples.count, id: \.self) { i in
-                Capsule()
-                    .fill(Color.accentColor.opacity(opacity(for: i)))
-                    .frame(width: 1.8, height: height(for: samples[i]))
+        GeometryReader { proxy in
+            let totalWidth = proxy.size.width
+            let visibleBars = samples.count
+            // Lay out (visibleBars + 1) bars in `totalWidth + slotWidth`
+            // — the extra bar lives in the off-screen pocket on the
+            // right and slides in as the row translates left.
+            let totalBars = barWidth * CGFloat(visibleBars + 1)
+            let spacing = max(2, (totalWidth - totalBars + barWidth) / CGFloat(max(1, visibleBars)))
+            let slotWidth = barWidth + spacing
+
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
+                let progress = computeProgress()
+                let offset = -CGFloat(progress) * slotWidth
+
+                HStack(alignment: .center, spacing: spacing) {
+                    ForEach(0..<(visibleBars + 1), id: \.self) { i in
+                        let amplitude: Float = {
+                            if i < visibleBars { return samples[i] }
+                            // Incoming bar: amplitude grows 0 →
+                            // newest sample as we slide one slot,
+                            // so it never pops at full height.
+                            return Float(progress) * (samples.last ?? 0)
+                        }()
+                        RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
+                            .fill(Color.accentColor.opacity(alpha(for: i, visibleBars: visibleBars, progress: progress)))
+                            .frame(width: barWidth, height: height(for: amplitude))
+                    }
+                }
+                .frame(width: totalWidth + slotWidth, height: proxy.size.height, alignment: .leading)
+                .offset(x: offset)
             }
+            .frame(width: totalWidth, height: proxy.size.height, alignment: .leading)
+            .clipped()
         }
-        .frame(height: 16)
+        .frame(height: 36)
+    }
+
+    private func computeProgress() -> Double {
+        guard shiftInterval > 0 else { return 0 }
+        let now = CACurrentMediaTime()
+        let elapsed = now - lastShiftTime
+        // Clamp into [0, 1]. If audio threading slips past one
+        // buffer we just pin to 1 until the next push lands —
+        // no overshoot, no rebound.
+        return min(1, max(0, elapsed / shiftInterval))
     }
 
     private func height(for level: Float) -> CGFloat {
-        // Floor 2pt (≈circle at width 1.8), top 16pt. Speech
-        // peaks land near full height.
-        2 + 14 * CGFloat(level)
+        8 + 24 * CGFloat(level)
     }
 
-    private func opacity(for i: Int) -> Double {
-        // Leftmost bar fades to 25% so the scroll motion reads
-        // as "the past is leaving"; rightmost is full opacity.
-        let t = Double(i) / Double(max(1, samples.count - 1))
-        return 0.25 + 0.75 * t
+    /// Index 0..fadedZoneCount-1: faded past (0.2).
+    /// Then full opacity until the very last "incoming" slot,
+    /// which fades 0 → 0.2 (matching the trailing edge of the
+    /// faded zone it's about to feed) so the entry doesn't pop.
+    private func alpha(for i: Int, visibleBars: Int, progress: Double) -> Double {
+        if i == visibleBars {
+            // Incoming bar — its destination after one slide is
+            // the rightmost visible slot, which is full opacity.
+            // Fade 0 → 1 in step with the slide so it appears
+            // smoothly out of the right edge.
+            return progress
+        }
+        return i < fadedZoneCount ? 0.2 : 1.0
     }
 }
