@@ -124,22 +124,14 @@ struct ReplyDock: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(tint)
             textField
-            // Three amplitude-reactive dots sit inside the field
-            // while listening, replacing the visible text area
-            // (transcript still lands in $reply, just hidden until
-            // the user taps stop). The placeholder reads
-            // "Listening…" via textFieldPlaceholder, and the dots
-            // sit on top of the empty field.
-            if dictation.state == .listening {
-                ListeningDots(level: dictation.audioLevel)
-                    .allowsHitTesting(false)
-                    .padding(.leading, 18)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            }
-            HStack(spacing: 6) {
-                if dictationEnabled {
-                    micButton
-                }
+            // Bottom-right cluster. While listening, the amplitude
+            // dots + mic glyph share a single accent-tinted
+            // capsule (matches the user's reference); when idle,
+            // it's just the bare mic / send buttons. The dots
+            // never travel to the leading edge — the "Listening…"
+            // placeholder owns that side.
+            HStack(spacing: 8) {
+                listeningOrMicCluster
                 if showSend {
                     sendButton
                 }
@@ -190,6 +182,35 @@ struct ReplyDock: View {
     private var inputBorder: some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
             .stroke(SteerColors.softSeparator, lineWidth: 1)
+    }
+
+    /// Idle: bare mic glyph (32×32 hit area, no background).
+    /// Listening: dots + mic glyph bundled into a single accent
+    /// capsule so they read as one affordance (matches the
+    /// reference). Tap target stays the full capsule.
+    @ViewBuilder
+    private var listeningOrMicCluster: some View {
+        if !dictationEnabled {
+            EmptyView()
+        } else if dictation.state == .listening {
+            Button(action: handleMicTap) {
+                HStack(spacing: 8) {
+                    ListeningDots(level: dictation.audioLevel)
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.accentColor.opacity(0.18), in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("reply-mic")
+            .accessibilityLabel("Stop dictation")
+        } else {
+            micButton
+        }
     }
 
     private var micButton: some View {
