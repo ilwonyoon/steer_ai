@@ -207,8 +207,11 @@ struct ReplyDock: View {
             Button(action: handleMicTap) {
                 HStack(spacing: 8) {
                     ScrollingWaveform(samples: dictation.waveformSamples)
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                    // Stop glyph while listening — the capsule is
+                    // the affordance to END the recording, so it
+                    // should read "tap to stop," not "tap mic."
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                 }
                 .padding(.horizontal, 10)

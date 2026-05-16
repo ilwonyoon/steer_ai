@@ -48,8 +48,10 @@ final class DictationController: ObservableObject {
     /// screen), last is the NEWEST (rightmost). On every audio
     /// buffer we drop the oldest and append the newest — that's
     /// what makes the bars "flow" left like the ChatGPT mac
-    /// listening indicator.
-    @Published private(set) var waveformSamples: [Float] = Array(repeating: 0, count: 14)
+    /// listening indicator. 9 bars ≈ 60% of the 14-bar version
+    /// the user reviewed — still reads as "time is flowing"
+    /// but takes less horizontal room in the input row.
+    @Published private(set) var waveformSamples: [Float] = Array(repeating: 0, count: 9)
 
     private var baseText: String = ""
 
@@ -62,7 +64,7 @@ final class DictationController: ObservableObject {
     private var smoothedDb: Float = -80
     // Local ring of recent normalized samples; copied to the
     // published `waveformSamples` array each callback.
-    private var sampleRing: [Float] = Array(repeating: 0, count: 14)
+    private var sampleRing: [Float] = Array(repeating: 0, count: 9)
 
     private let audioEngine = AVAudioEngine()
     private let recognizer: SFSpeechRecognizer? = {
@@ -132,7 +134,7 @@ final class DictationController: ObservableObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
 
-        waveformSamples = Array(repeating: 0, count: 14)
+        waveformSamples = Array(repeating: 0, count: 9)
         envelopeLock.lock()
         smoothedDb = -80
         for i in 0..<sampleRing.count { sampleRing[i] = 0 }
